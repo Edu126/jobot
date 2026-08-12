@@ -1,0 +1,50 @@
+{# LLM-suggested job-search queries rendered as clickable chips.
+   Click a chip → POST /profile/saved-search with `from=chip` → chip
+   swaps in place to "✓ Saved" without a page reload.
+
+   Also shows how fresh the cached suggestions are + a refresh link. #}
+<div>
+  <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+    <div class="text-xs text-body-muted">
+      Click a chip to save it as a search template.
+    </div>
+    <div class="text-xs text-base-content/40 flex items-center gap-2">
+      {% if age_days is defined and age_days is not none %}
+        {% if age_days == 0 %}
+          <span>Fresh just now</span>
+        {% else %}
+          <span>{{ age_days }}d old</span>
+        {% endif %}
+        <span>·</span>
+      {% endif %}
+      <button hx-post="/profile/suggest-queries?force=1"
+              hx-target="closest div[id]"
+              hx-swap="innerHTML"
+              hx-indicator="#sug-refresh-spin"
+              class="text-primary hover:underline cursor-pointer">
+        <span id="sug-refresh-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+        <i class="ph-thin ph-arrows-clockwise i-4"></i> Refresh
+      </button>
+    </div>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    {% for q in queries %}
+    <form hx-post="/profile/saved-search"
+          hx-target="this"
+          hx-swap="outerHTML"
+          class="inline">
+      <input type="hidden" name="name" value="{{ q }}">
+      <input type="hidden" name="query" value="{{ q }}">
+      <input type="hidden" name="location" value="Ottawa, Ontario, Canada">
+      <input type="hidden" name="hours_old" value="168">
+      <input type="hidden" name="results_wanted" value="30">
+      <input type="hidden" name="from" value="chip">
+      <button type="submit"
+              class="chip chip-accent cursor-pointer hover:brightness-110 transition"
+              title="Click to save as a template">
+        + {{ q }}
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+</div>

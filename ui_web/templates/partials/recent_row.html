@@ -1,0 +1,35 @@
+{# One row in the "Recent searches" list. Extracted so top-3 and expanded-rest
+   render identically. Requires `r` (RecentSearch), and inherits SEARCH_STAGES
+   from the parent template scope. #}
+<div class="card-quiet py-3 flex items-center gap-3 hover:border-base-content/20 transition-colors"
+     x-data="longOp({{ SEARCH_STAGES }}, 'Refresh')">
+  <a href="/jobs/results/{{ r.params.cache_key() }}"
+     class="flex-1 min-w-0 flex items-center justify-between gap-3 cursor-pointer">
+    <div class="min-w-0 flex-1">
+      <div class="font-semibold tracking-tight text-sm truncate">{{ r.label }}</div>
+      <div class="text-xs text-body-muted mt-0.5 truncate">
+        <span class="font-mono">{{ r.params.query }}</span>
+        <span class="text-base-content/30 mx-1">·</span>{{ r.params.location.split(',')[0] }}
+      </div>
+    </div>
+    <div class="text-right shrink-0">
+      <div class="text-sm">
+        <span class="font-semibold tabular-nums">{{ r.job_count }}</span>
+        <span class="text-base-content/50">jobs</span>
+      </div>
+      <div class="text-xs text-base-content/40 mt-0.5">Fetched {{ r.fetched_at | humanize }}</div>
+    </div>
+  </a>
+  <button class="shrink-0 text-xs text-base-content/50 hover:text-base-content px-2 py-1 rounded transition-colors cursor-pointer"
+          title="Fetch new results with the same query"
+          hx-post="/jobs/refresh/{{ r.params.cache_key() }}"
+          @htmx:before-request="start()"
+          @htmx:after-request="stop($event)"
+          :disabled="running">
+    <span x-show="!running">↻ Refresh</span>
+    <span x-show="running" x-cloak class="flex items-center gap-1">
+      <span class="loading loading-spinner loading-xs"></span>
+      <span x-text="`${elapsed}s`"></span>
+    </span>
+  </button>
+</div>

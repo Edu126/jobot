@@ -1,0 +1,87 @@
+{# Right-pane detail view for the split-viewport results page. Rendered by
+   GET /jobs/detail/{id} whenever the user clicks a card on the left. #}
+
+<div class="space-y-5">
+
+  {# ── Header: score + title + meta + save ── #}
+  <div class="flex items-start gap-3">
+    {% if ai %}
+    <div class="score-badge score-badge-{{ ai.verdict }}">
+      <span class="score-num">{{ ai.score }}</span>
+      <span class="score-max">/100</span>
+    </div>
+    {% else %}
+    <div class="score-badge score-badge-none">
+      <span class="score-num text-lg">—</span>
+    </div>
+    {% endif %}
+    <div class="min-w-0 flex-1">
+      <h3 class="text-lg font-semibold tracking-tight leading-tight">{{ job.title }}</h3>
+      <div class="text-sm text-body-muted mt-0.5">
+        <span class="font-medium text-base-content/80">{{ job.company }}</span>
+        {% if job.location %}<span class="text-base-content/30 mx-1">·</span>{{ job.location }}{% endif %}
+      </div>
+      <div class="text-xs text-base-content/40 mt-1">
+        {{ job.site }} · posted {{ job.date_posted or '?' }}
+        {% if ai %} · {{ ai.verdict | title }}{% endif %}
+      </div>
+    </div>
+    <div id="save-action-{{ job.id }}" class="shrink-0">
+      {% include "partials/save_action.html" %}
+    </div>
+  </div>
+
+  {# ── Reasoning ── #}
+  {% if ai and ai.reasoning %}
+  <p class="text-sm italic text-base-content/85 leading-relaxed">
+    "{{ ai.reasoning }}"
+  </p>
+  {% endif %}
+
+  {# ── Matched + Gaps ── #}
+  {% if ai and (ai.matched or ai.gaps) %}
+  <div class="grid grid-cols-1 gap-3 text-sm">
+    {% if ai.matched %}
+    <div>
+      <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-check i-3"></i>Matched</div>
+      <div class="flex flex-wrap gap-1">
+        {% for m in ai.matched %}<span class="chip chip-matched">{{ m }}</span>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if ai.gaps %}
+    <div>
+      <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-warning i-3"></i>Gaps</div>
+      <div class="flex flex-wrap gap-1">
+        {% for g in ai.gaps %}<span class="chip chip-gap">{{ g }}</span>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Actions ── #}
+  <div class="flex items-center gap-2 flex-wrap pt-3 border-t border-base-300">
+    {% if job.job_url %}
+    <a href="{{ job.job_url }}" target="_blank" rel="noopener"
+       class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
+      Open posting <i class="ph-thin ph-arrow-square-out i-4"></i>
+    </a>
+    {% endif %}
+    <button class="btn btn-sm btn-primary cursor-pointer"
+            hx-get="/jobs/tailor/{{ job.id }}"
+            hx-target="#tailor-drawer-body"
+            hx-swap="innerHTML"
+            @click="$store.tailor.openFor('{{ job.id }}')">
+      Tailor
+    </button>
+  </div>
+
+  {# ── Full JD (rendered with structure — headers, lists, bold) ── #}
+  {% if job.description %}
+  <div class="pt-4 border-t border-base-300">
+    <div class="text-label mb-2">Full job description</div>
+    <div class="jd-body">{{ job.description | jd_html }}</div>
+  </div>
+  {% endif %}
+</div>

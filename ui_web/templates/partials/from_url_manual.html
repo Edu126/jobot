@@ -1,0 +1,42 @@
+{# Fallback fragment: fetch failed (Cloudflare, JS-rendered, 403…) or
+   the extractor couldn't find a real job posting. We show a textarea
+   pre-scoped to the same URL so the user can paste the JD by hand and
+   get the same treatment. #}
+<div class="card-quiet mt-3" x-data="{ ...longOp([[8,'Reading pasted text…'],[15,'Extracting fields…'],[999,'Still working…']], 'Import') }">
+  <div class="flex items-start gap-3 mb-3">
+    <i class="ph-thin ph-warning text-lg" style="color: hsl(28 75% 42%);"></i>
+    <div class="flex-1">
+      <div class="font-semibold text-sm">Couldn't fetch that page automatically</div>
+      <div class="text-xs text-body-muted mt-1">{{ reason }}</div>
+    </div>
+  </div>
+
+  <form hx-post="/jobs/from-url"
+        hx-target="#from-url-feedback"
+        hx-swap="innerHTML"
+        @htmx:before-request="start()"
+        @htmx:after-request="stop($event)">
+    <input type="hidden" name="job_url" value="{{ job_url }}">
+
+    <label class="text-label block mb-1">Paste the job description here</label>
+    <textarea name="manual_text"
+              rows="10"
+              required
+              :disabled="running"
+              placeholder="Paste the full job posting — title, company, requirements, everything you can see on the page."
+              class="textarea textarea-bordered w-full font-mono text-xs leading-relaxed"></textarea>
+
+    <div class="flex items-center justify-between mt-3">
+      <span class="text-xs text-body-muted">Your paste stays local — only sent to Gemini for parsing.</span>
+      <button type="submit"
+              :disabled="running"
+              class="btn btn-sm btn-primary cursor-pointer min-w-[8rem]">
+        <span x-show="!running">Analyze</span>
+        <span x-show="running" x-cloak class="flex items-center gap-2">
+          <span class="loading loading-spinner loading-xs"></span>
+          <span x-text="`${elapsed}s`"></span>
+        </span>
+      </button>
+    </div>
+  </form>
+</div>

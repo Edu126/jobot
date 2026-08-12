@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} — Jobot{% endblock %}
+{% block container_class %}max-w-4xl{% endblock %}
+
+{% block content %}
+
+<div class="mb-4">
+  <a href="/jobs" class="text-sm text-body-muted hover:text-base-content inline-flex items-center gap-1"><i class="ph-thin ph-arrow-left i-4"></i>Back to Jobs</a>
+</div>
+
+<div class="mb-3 flex items-center gap-2">
+  <span class="pill pill-accent inline-flex items-center gap-1"><i class="ph-thin ph-link i-3"></i> imported from URL</span>
+  {% if not ai and has_resume %}
+  <span class="pill" style="background: hsl(35 85% 96%); color: hsl(28 75% 32%); border-color: hsl(35 70% 82%);">
+    <span class="pill-dot warn"></span>score unavailable (quota / error)
+  </span>
+  {% elif not has_resume %}
+  <span class="pill" style="background: hsl(35 85% 96%); color: hsl(28 75% 32%); border-color: hsl(35 70% 82%);">
+    Upload a resume on <a href="/profile" class="underline">Profile</a> to see match score
+  </span>
+  {% endif %}
+</div>
+
+<div class="card-quiet">
+  {% include "partials/job_detail.html" %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,172 @@
+{# Tailored output — appears inside the tailor drawer after Generate finishes.
+   Stacked layout (no tabs) so both resume sections and cover letter are
+   visible without hunting. Title-like items in sections render without a
+   bullet prefix — company/role headers stand apart from achievements. #}
+
+<div class="space-y-6 pt-4 border-t border-base-300">
+
+  {# ── Score hero — mirrors the job-card visual language.
+     LEFT: big score badge, verdict-tinted (same colors as .score-badge).
+     RIGHT: verdict pill + meta line (delta, level, %) + italic insight.
+     Small ribbon at top-right when the verdict jumped a tier. #}
+  {% if tailored.tailoring_match %}
+    {% set m = tailored.tailoring_match %}
+    {% set after = m.after %}
+
+    <div class="score-hero {% if m.verdict_jumped and m.before %}score-hero--jumped{% endif %}">
+
+      {% if m.verdict_jumped and m.before %}
+      <div class="score-hero__ribbon">
+        <i class="ph-thin ph-sparkle i-3"></i> Moved up a tier
+      </div>
+      {% endif %}
+
+      <div class="score-hero__badge score-hero__badge--{{ after.verdict }}">
+        <span class="score-hero__num">{{ after.score }}</span>
+        <span class="score-hero__max">/ 100</span>
+      </div>
+
+      <div class="score-hero__body">
+        <div class="score-hero__row">
+          <span class="verdict-pill verdict-pill--{{ after.verdict }}">
+            {% if after.verdict == 'strong_fit' %}<i class="ph-thin ph-check i-3"></i>
+            {% elif after.verdict == 'workable' %}<i class="ph-thin ph-check i-3"></i>
+            {% elif after.verdict == 'stretch' %}<i class="ph-thin ph-warning i-3"></i>
+            {% else %}<i class="ph-thin ph-x i-3"></i>
+            {% endif %}
+            {{ after.verdict | verdict_label }}
+          </span>
+        </div>
+
+        <div class="score-hero__meta">
+          {% if m.before %}
+            <span>
+              {% if m.delta > 0 %}<i class="ph-thin ph-trend-up i-4" style="color: oklch(var(--su));"></i>
+              {% elif m.delta < 0 %}<i class="ph-thin ph-trend-down i-4" style="color: oklch(var(--er));"></i>
+              {% else %}<i class="ph-thin ph-minus i-4"></i>{% endif %}
+              <strong>{% if m.delta > 0 %}+{% endif %}{{ m.delta }} pts</strong>
+              from {{ m.before.score }}
+            </span>
+            <span class="text-base-content/25">·</span>
+          {% endif %}
+          <span><strong>{{ tailored.tailoring_level | title }}</strong> tailoring</span>
+          {% if tailored.tailoring_change %}
+            <span class="text-base-content/25">·</span>
+            <span title="How much of your resume text differs from the original — a rough guide for fact-checking effort">
+              Resume modified <strong>{{ tailored.tailoring_change.overall_pct }}%</strong>
+            </span>
+          {% endif %}
+        </div>
+
+        {# Italic insight — prefer the LLM's own tailoring notes if present.
+           Falls back to a synthesized one-liner so the block always has voice. #}
+        {% if tailored.tailoring_notes %}
+        <p class="score-hero__insight">"{{ tailored.tailoring_notes }}"</p>
+        {% elif m.verdict_jumped and m.before %}
+        <p class="score-hero__insight">
+          {{ tailored.tailoring_level | title }} tailoring moved this from
+          {{ m.before.verdict | verdict_label }} to {{ after.verdict | verdict_label }} — worth applying.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# Editor notes are now surfaced as the italic insight inside the score hero
+     above — no need for a separate block. #}
+
+  {# ── Warnings ── #}
+  {% if tailored.tailoring_warnings %}
+  <div class="rounded-lg p-3 text-sm" style="background: hsl(35 85% 96%); border: 1px solid hsl(35 70% 82%);">
+    <div class="text-label mb-1 inline-flex items-center gap-1" style="color: hsl(28 75% 32%);">
+      <i class="ph-thin ph-warning i-4"></i> Gaps flagged
+    </div>
+    <ul class="list-disc pl-5 space-y-0.5">
+      {% for w in tailored.tailoring_warnings %}<li>{{ w }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# ── Tailored sections (all visible, stacked) ── #}
+  <div>
+    <div class="flex items-center gap-2 mb-3">
+      <h3 class="text-title">Tailored resume</h3>
+      <span class="text-xs text-body-muted">preview — full DOCX below</span>
+    </div>
+    <div class="space-y-4">
+      {% for section, items in tailored.sections.items() %}
+        {% if items and section != 'header' %}
+        <div class="rounded-lg border border-base-300 p-4">
+          <div class="text-label mb-2 uppercase tracking-wider">{{ section.title() }}</div>
+          <div class="text-sm leading-relaxed">
+            {% for item in items %}
+              {% if item | is_title_line %}
+                <div class="font-semibold text-base-content mt-3 first:mt-0">{{ item }}</div>
+              {% else %}
+                <div class="pl-4 relative"><span class="absolute left-0 text-base-content/50">•</span>{{ item }}</div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ── Cover letter (below sections — always visible) ──
+     Render each paragraph as its own <p> so on-screen layout matches the
+     DOCX output. `mono-peek` used to force monospace here, which read as
+     an unrelated font next to the resume — swapped for Inter body text
+     with paragraph spacing. #}
+  {% if tailored.cover_letter %}
+  <div>
+    <h3 class="text-title mb-3">Cover letter</h3>
+    <div class="rounded-lg border border-base-300 p-4">
+      <div class="text-sm leading-relaxed text-base-content/90 space-y-3">
+        {% for para in tailored.cover_letter.split('\n\n') if para.strip() %}
+          <p style="white-space: pre-line;">{{ para.strip() }}</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Save + download row ── #}
+  <div class="flex flex-wrap gap-2 pt-4 border-t border-base-300">
+    <button class="btn btn-sm btn-primary"
+            hx-post="/jobs/tailor/{{ job_id }}/save"
+            hx-vals='{"status": "interested"}'
+            hx-target="#tailor-save-status"
+            hx-swap="innerHTML">
+      Save as interested
+    </button>
+    <button class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium"
+            hx-post="/jobs/tailor/{{ job_id }}/save"
+            hx-vals='{"status": "applied"}'
+            hx-target="#tailor-save-status"
+            hx-swap="innerHTML">
+      Mark applied
+    </button>
+    <a href="/jobs/tailor/{{ job_id }}/download{% if run_index is defined %}?run={{ run_index }}{% endif %}"
+       class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium ml-auto cursor-pointer">
+      <i class="ph-thin ph-download-simple i-4"></i> Resume DOCX
+    </a>
+    {% if tailored.cover_letter %}
+    <a href="/jobs/tailor/{{ job_id }}/cover-letter{% if run_index is defined %}?run={{ run_index }}{% endif %}"
+       class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer">
+      <i class="ph-thin ph-download-simple i-4"></i> Cover letter DOCX
+    </a>
+    {% endif %}
+  </div>
+  <div id="tailor-save-status" class="min-h-[1.5rem]"></div>
+
+</div>
+
+{# ── OOB: refresh the "Runs for this job" list so the new entry appears
+   without reloading. `runs` + `job` come from the POST handler; the `view`
+   handler doesn't include them, and the OOB block is skipped in that case. #}
+{% if runs is defined and job is defined %}
+<div id="tailor-runs-{{ job.id }}" hx-swap-oob="innerHTML">
+  {% include "partials/tailor_runs_list.html" %}
+</div>
+{% endif %}

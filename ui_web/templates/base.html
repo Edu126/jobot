@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="jobot">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Jobot{% endblock %}</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  {# Alpine plugins MUST be loaded before Alpine core. Both use `defer` so
+     the browser executes them in document order. Collapse enables `x-collapse`
+     used in the mobile-menu drawer + job-card description expander. #}
+  <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.14.9/dist/cdn.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+  {# Phosphor icons — thin variant for the Wealthsimple-esque minimal look.
+     Font-based, zero JS init needed, scales with font-size, inherits color.
+     Usage: <i class="ph-thin ph-magnifying-glass"></i>. Size via text-* utility. #}
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/thin/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+
+  <link rel="stylesheet" href="/static/app.css">
+
+  {# ── Alpine global stores + reusable components. Loaded once. ── #}
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.store('tailor', {
+        open: false,
+        jobId: null,
+        openFor(jobId) { this.jobId = jobId; this.open = true; },
+        close()        { this.open = false; },
+      });
+      // Selected job for the split-viewport results page. Detail pane HTMX-
+      // loads content when this changes. Keeps state so highlighting persists
+      // as the user scrolls / filters.
+      Alpine.store('selectedJob', {
+        id: null,
+        select(id) {
+          this.id = id;
+          if (window.htmx) {
+            htmx.ajax('GET', `/jobs/detail/${id}`, {
+              target: '#job-detail-pane',
+              swap: 'innerHTML',
+            });
+          }
+          // Reset the detail pane's own scroll to the top so long JDs from
+          // the previous card don't leave the new content mid-scroll.
+          const scroll = document.getElementById('job-detail-scroll');
+          if (scroll) scroll.scrollTop = 0;
+        },
+      });
+
+      Alpine.store('filters', {
+        minScore: 0,
+        hideFrench: true,
+        remoteFilter: 'any',   // 'any' | 'remote' | 'onsite'
+        maxAgeDays: null,      // null = no limit; used by Top matches date filter
+        onlyNew: false,        // if true, only jobs first_seen within 48h
+        matches(job) {
+          if (job.score < this.minScore) return false;
+          if (this.hideFrench && job.french) return false;
+          if (this.remoteFilter === 'remote' && !job.remote) return false;
+          if (this.remoteFilter === 'onsite' && job.remote) return false;
+          if (this.maxAgeDays !== null && job.age_days !== undefined && job.age_days > this.maxAgeDays) return false;
+          if (this.onlyNew && !job.is_new) return false;
+          return true;
+        },
+        visibleCount(jobs) {
+          return jobs.filter(j => this.matches(j)).length;
+        },
+      });
+
+      // Toast queue — surface transient success/info messages bottom-right.
+      // Anywhere in the app can call: Alpine.store('toast').show('Saved!', 'success')
+      Alpine.store('toast', {
+        items: [],
+        show(msg, type = 'info') {
+          const id = Date.now() + Math.random();
+          this.items.push({ id, msg, type });
+          setTimeout(() => this.dismiss(id), 5000);
+        },
+        dismiss(id) {
+          this.items = this.items.filter(t => t.id !== id);
+        },
+      });
+
+      // Full-screen overlay for long ops. Blocks interaction + shows a
+      // geometric animation + prevents accidental tab close. Wired into
+      // `longOp` below so every long-running operation gets it for free.
+      Alpine.store('overlay', {
+        active: false,
+        label: 'Working',
+        message: 'Please wait…',
+        elapsed: 0,
+        _beforeUnload: null,
+        show(label, message) {
+          this.label = label || 'Working';
+          this.message = message || '';
+          this.elapsed = 0;
+          this.active = true;
+          document.body.style.overflow = 'hidden';
+          // Warn the user if they try to close/reload during a long op —
+          // most long ops are non-recoverable (they'd lose their in-memory
+          // tailor result / search progress).
+          this._beforeUnload = (e) => {
+            e.preventDefault();
+            e.returnValue = 'A task is still running — leaving will lose the result.';
+            return e.returnValue;
+          };
+          window.addEventListener('beforeunload', this._beforeUnload);
+        },
+        update(message, elapsed) {
+          if (message !== undefined && message !== null) this.message = message;
+          if (elapsed !== undefined && elapsed !== null) this.elapsed = elapsed;
+        },
+        hide() {
+          this.active = false;
+          document.body.style.overflow = '';
+          if (this._beforeUnload) {
+            window.removeEventListener('beforeunload', this._beforeUnload);
+            this._beforeUnload = null;
+          }
+        },
+      });
+
+      // Notification preference — persists in localStorage. Only used to decide
+      // whether to fire OS notifications on long-op completion.
+      Alpine.store('notif', {
+        get enabled() { return localStorage.getItem('jobot.notif') === '1'; },
+        get permission() { return (window.Notification && Notification.permission) || 'unsupported'; },
+        async enable() {
+          if (!window.Notification) return 'unsupported';
+          if (Notification.permission === 'granted') {
+            localStorage.setItem('jobot.notif', '1');
+            return 'granted';
+          }
+          const p = await Notification.requestPermission();
+          if (p === 'granted') {
+            localStorage.setItem('jobot.notif', '1');
+          }
+          return p;
+        },
+        disable() { localStorage.removeItem('jobot.notif'); },
+        fire(title, body) {
+          if (this.enabled && this.permission === 'granted' && document.hidden) {
+            try { new Notification(title, { body }); } catch (_) { /* noop */ }
+          }
+        },
+      });
+
+      // Reusable component for long HTMX operations. Feedback layers:
+      //   1. `elapsed` timer + `message()` for the in-page indicator
+      //   2. Tab title flash after 60s ("⏳ Running… — Jobot")
+      //   3. Toast + optional browser notification on completion
+      //
+      // On htmx:after-request, we DON'T stop the timer if the response contains
+      // an HX-Redirect header — the browser is still navigating, so keeping
+      // the visual "loading" state gives continuous feedback until it arrives.
+      Alpine.data('longOp', (stages, label = 'Task') => ({
+        running: false,
+        elapsed: 0,
+        timer: null,
+        titleFlashed: false,
+        originalTitle: null,
+        stages,
+        label,
+        start() {
+          this.running = true;
+          this.elapsed = 0;
+          this.titleFlashed = false;
+          this.originalTitle = document.title;
+          // Activate the full-screen overlay so the whole app becomes visibly
+          // "busy" — user can't navigate away accidentally.
+          Alpine.store('overlay').show(this.label, this.message());
+          if (this.timer) clearInterval(this.timer);
+          this.timer = setInterval(() => {
+            this.elapsed++;
+            Alpine.store('overlay').update(this.message(), this.elapsed);
+            if (this.elapsed >= 60 && !this.titleFlashed) {
+              document.title = `⏳ Running… — Jobot`;
+              this.titleFlashed = true;
+            }
+          }, 1000);
+        },
+        stop(evt) {
+          const xhr = evt && evt.detail && evt.detail.xhr;
+          const isRedirect = xhr && xhr.getResponseHeader && xhr.getResponseHeader('HX-Redirect');
+          const ok = !evt || !evt.detail || evt.detail.successful !== false;
+
+          // Restore title with a "done" flash when we'd shown a running indicator
+          if (this.titleFlashed && this.originalTitle) {
+            document.title = ok ? `✓ Done — Jobot` : `⚠ Error — Jobot`;
+            const orig = this.originalTitle;
+            setTimeout(() => { document.title = orig; }, 5000);
+          }
+
+          // Toast + browser notif on successful completion (skip if redirecting —
+          // the new page will render its own signal).
+          if (ok && !isRedirect) {
+            Alpine.store('toast').show(`${this.label} complete`, 'success');
+            Alpine.store('notif').fire(`Jobot: ${this.label} complete`, 'Return to the tab to see results.');
+          }
+
+          if (isRedirect) return;   // hold loading state through navigation (overlay stays up)
+          this.running = false;
+          if (this.timer) { clearInterval(this.timer); this.timer = null; }
+          Alpine.store('overlay').hide();
+        },
+        message() {
+          for (const [t, msg] of this.stages) {
+            if (this.elapsed < t) return msg;
+          }
+          return this.stages[this.stages.length - 1][1];
+        },
+      }));
+    });
+  </script>
+</head>
+<body class="bg-base-200 min-h-screen flex flex-col text-base-content">
+
+  <header class="border-b border-base-300 bg-base-100 sticky top-0 z-30"
+          x-data="{ mobileOpen: false }">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <a href="/" class="flex items-baseline gap-2 shrink-0">
+        <span class="text-lg font-semibold tracking-tight">Jobot</span>
+        <span class="text-xs text-base-content/40 font-medium">v2</span>
+      </a>
+
+      {# Desktop nav — hidden below sm #}
+      <nav class="hidden sm:flex items-center gap-8">
+        <a href="/jobs" class="nav-tab {% if active_tab == 'jobs' %}active{% endif %}">Jobs</a>
+        <a href="/applications" class="nav-tab {% if active_tab == 'applications' %}active{% endif %}">Applications</a>
+        <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">Profile</a>
+      </nav>
+
+      {# Desktop-only "local" pill #}
+      <div class="hidden sm:block">
+        <span class="pill"><span class="pill-dot live"></span>local</span>
+      </div>
+
+      {# Mobile hamburger — visible below sm #}
+      <button class="sm:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors"
+              @click="mobileOpen = !mobileOpen"
+              :aria-expanded="mobileOpen"
+              aria-label="Toggle menu">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path x-show="!mobileOpen" stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+          <path x-show="mobileOpen" x-cloak stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    {# Mobile menu — collapsible below the nav bar #}
+    <div class="sm:hidden border-t border-base-300 bg-base-100"
+         x-show="mobileOpen" x-cloak x-collapse>
+      <nav class="flex flex-col px-4 py-3 gap-1">
+        {% for label, href, key in [
+          ('Jobs', '/jobs', 'jobs'),
+          ('Applications', '/applications', 'applications'),
+          ('Profile', '/profile', 'profile'),
+        ] %}
+        <a href="{{ href }}"
+           class="py-2 px-3 rounded-lg text-base {% if active_tab == key %}bg-base-200 font-semibold{% else %}text-base-content/70 hover:bg-base-200/60{% endif %}">
+          {{ label }}
+        </a>
+        {% endfor %}
+        <div class="px-3 pt-2">
+          <span class="pill"><span class="pill-dot live"></span>local</span>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="{% block container_class %}max-w-5xl{% endblock %} mx-auto px-4 sm:px-6 py-12 flex-1 w-full">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-6 py-6 w-full">
+    <div class="flex items-center justify-between text-xs text-base-content/40">
+      <p>Local · single-user · $0/month</p>
+      <div class="flex gap-5">
+        <a href="/healthz" class="hover:text-base-content transition-colors">Status</a>
+        <a href="/docs" class="hover:text-base-content transition-colors">API</a>
+      </div>
+    </div>
+  </footer>
+
+  {# ── Toast queue — bottom-right, fixed, auto-dismisses in 5s ── #}
+  <div x-data class="fixed bottom-4 right-4 z-[100] space-y-2 pointer-events-none max-w-sm">
+    <template x-for="t in $store.toast.items" :key="t.id">
+      <div class="pointer-events-auto rounded-lg shadow-lg px-4 py-3 flex items-center gap-3"
+           :class="t.type === 'success'
+                   ? 'bg-base-100 border border-base-300'
+                   : 'bg-base-100 border border-base-300'"
+           x-transition:enter="transition ease-out duration-200"
+           x-transition:enter-start="opacity-0 translate-y-2"
+           x-transition:enter-end="opacity-100 translate-y-0"
+           x-transition:leave="transition ease-in duration-150"
+           x-transition:leave-start="opacity-100"
+           x-transition:leave-end="opacity-0">
+        <i class="ph-fill text-lg"
+           :class="t.type === 'success' ? 'ph-check-circle' : 'ph-info'"
+           :style="t.type === 'success' ? 'color: oklch(var(--su))' : 'color: oklch(var(--in))'"></i>
+        <span class="text-sm flex-1" x-text="t.msg"></span>
+        <button @click="$store.toast.dismiss(t.id)"
+                class="text-base-content/40 hover:text-base-content cursor-pointer"><i class="ph-thin ph-x i-4"></i></button>
+      </div>
+    </template>
+  </div>
+
+  {# ── Full-screen overlay loader — geometric wave grid ──
+     Blocks interaction while a longOp is running. Activated automatically
+     by `longOp.start()`; user can't dismiss it (that's the point). #}
+  <div x-data
+       x-show="$store.overlay.active"
+       x-cloak
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="overlay-scrim">
+    <div class="geo-loader" aria-hidden="true">
+      <div class="geo-loader__cell"></div>
+      <div class="geo-loader__cell"></div>
+      <div class="geo-loader__cell"></div>
+      <div class="geo-loader__cell"></div>
+      <div class="geo-loader__cell"></div>
+      <div class="geo-loader__cell"></div>
+      <div class="geo-loader__cell"></div>
+      <div class="geo-loader__cell"></div>
+      <div class="geo-loader__cell"></div>
+    </div>
+    <div class="overlay-caption">
+      <div class="overlay-caption__label" x-text="$store.overlay.label"></div>
+      <div class="overlay-caption__msg" x-text="$store.overlay.message"></div>
+      <div class="overlay-caption__meta">
+        <span x-text="$store.overlay.elapsed"></span>s · please keep this tab open
+      </div>
+    </div>
+  </div>
+
+  {# ── Tailor drawer — mounted at root so any page can trigger it via $store.tailor ── #}
+  <div x-data x-cloak>
+    {# Backdrop #}
+    <div x-show="$store.tailor.open"
+         x-transition.opacity.duration.200ms
+         class="drawer-backdrop"
+         @click="$store.tailor.close()"></div>
+
+    {# Panel #}
+    <div x-show="$store.tailor.open"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="translate-x-full"
+         x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="translate-x-0"
+         x-transition:leave-end="translate-x-full"
+         class="drawer-panel"
+         @keydown.escape.window="$store.tailor.close()">
+      <div class="drawer-header">
+        <div>
+          <div class="text-label">Tailor resume</div>
+          <div class="text-title" x-text="$store.tailor.jobId ? 'Ready when you are' : ''"></div>
+        </div>
+        <button @click="$store.tailor.close()"
+                class="btn btn-ghost btn-sm btn-circle text-lg"
+                aria-label="Close"><i class="ph-thin ph-x i-4"></i></button>
+      </div>
+      <div id="tailor-drawer-body" class="drawer-body">
+        <div class="text-body-muted text-sm">Pick a job to tailor for.</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

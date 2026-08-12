@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}{{ label }} — Jobs — Jobot{% endblock %}
+{# Wider container for the split viewport — need room for list + detail #}
+{% block container_class %}max-w-7xl{% endblock %}
+
+{% block content %}
+
+{# JSON metadata for reactive filters — separate script tag to avoid
+   HTML-attribute JSON parsing quirks. #}
+<script id="jobs-meta-data" type="application/json">{{ jobs_meta | tojson }}</script>
+
+<div x-data="{
+       jobs: JSON.parse(document.getElementById('jobs-meta-data').textContent),
+       init() {
+         // Reset filters that are irrelevant here or bleed in from other pages.
+         $store.filters.maxAgeDays = null;
+         $store.filters.onlyNew = false;
+       }
+     }">
+
+{# ── Header ── #}
+<div class="mb-6">
+  <a href="/jobs" class="text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer inline-flex items-center gap-1"><i class="ph-thin ph-arrow-left i-4"></i>Back to search</a>
+  <h1 class="text-display mt-3">{{ label }}</h1>
+
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-3 mt-4">
+    <div>
+      <div class="text-label">Showing</div>
+      <div class="text-metric-sm mt-1">
+        <span x-text="$store.filters.visibleCount(jobs)">{{ total_jobs }}</span>
+        <span class="text-base-content/30 font-normal text-base"> / {{ total_jobs }}</span>
+      </div>
+    </div>
+    <div>
+      <div class="text-label">Hidden by filters</div>
+      <div class="text-metric-sm mt-1 text-base-content/50"
+           x-text="{{ total_jobs }} - $store.filters.visibleCount(jobs)">0</div>
+    </div>
+    <div>
+      <div class="text-label">Fetched</div>
+      <div class="text-sm mt-2">{{ fetched_at | humanize }}</div>
+    </div>
+    <div>
+      <div class="text-label">AI scoring</div>
+      <div class="text-sm mt-2 leading-tight">
+        {% if quota_exhausted %}
+          <span style="color: hsl(28 75% 32%);">Paused</span>
+          <div class="text-xs text-body-muted">until tomorrow</div>
+        {% elif scoring_note %}
+          <span>{{ scoring_note }}</span>
+        {% elif not has_resume %}
+          <span class="text-body-muted">skipped — no resume</span>
+        {% elif not has_api_key %}
+          <span class="text-body-muted">skipped — no API key</span>
+        {% else %}
+          <span class="text-body-muted">—</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% if quota_exhausted and exhausted_models %}
+    <div class="mt-3 text-xs text-body-muted">
+      Models tried today: {{ exhausted_models | join(', ') }}. Cached scores still visible.
+    </div>
+  {% elif scoring_error %}
+    <div class="mt-3 text-sm text-error/80">{{ scoring_error }}</div>
+  {% endif %}
+</div>
+
+{# ── Filters ── #}
+<div class="card-quiet mb-6">
+  <div class="flex flex-wrap items-center gap-6">
+    <div class="flex-1 min-w-[200px]">
+      <label class="text-label block mb-2">
+        Min score:
+        <span class="text-base-content font-semibold tabular-nums" x-text="$store.filters.minScore"></span>
+      </label>
+      <input type="range" min="0" max="100" step="5"
+             x-model.number="$store.filters.minScore"
+             class="range range-sm range-primary cursor-pointer">
+    </div>
+    <label class="flex items-center gap-2 cursor-pointer select-none">
+      <input type="checkbox" x-model="$store.filters.hideFrench" class="checkbox checkbox-sm">
+      <span class="text-sm">Hide French job postings</span>
+    </label>
+    <label class="flex items-center gap-2 cursor-pointer select-none"
+           title="Only jobs first seen in the last 48 hours">
+      <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
+      <span class="text-sm inline-flex items-center gap-1"><i class="ph-fill ph-sparkle i-4" style="color: oklch(var(--a));"></i>Only new</span>
+    </label>
+    <div>
+      <label class="text-label block mb-1">Remote</label>
+      <select x-model="$store.filters.remoteFilter" class="select select-bordered select-sm cursor-pointer">
+        <option value="any">Any</option>
+        <option value="remote">Remote only</option>
+        <option value="onsite">On-site only</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+{# ── Split viewport: cards left, detail right ── #}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+  {# LEFT: job list #}
+  <div class="space-y-3 min-w-0 cascade-in">
+    {% for job in jobs %}
+      {% include "partials/job_card.html" %}
+    {% else %}
+      <div class="card-quiet text-center py-12">
+        <div class="text-body-muted">No jobs in this search.</div>
+      </div>
+    {% endfor %}
+    <div x-show="$store.filters.visibleCount(jobs) === 0 && jobs.length > 0"
+         x-cloak
+         class="card-quiet text-center py-8">
+      <div class="text-body-muted text-sm">All {{ total_jobs }} jobs hidden by current filters.</div>
+      <button class="mt-2 text-sm text-primary hover:underline cursor-pointer"
+              @click="$store.filters.minScore = 0; $store.filters.hideFrench = false; $store.filters.remoteFilter = 'any'">
+        Reset filters
+      </button>
+    </div>
+  </div>
+
+  {# RIGHT: sticky detail pane with its own scroll container.
+     `max-h` + `overflow-y-auto` = the pane scrolls independently from the
+     job list on the left. Scroll auto-resets to top when switching cards
+     (see `Alpine.store('selectedJob').select` in base.html). #}
+  <aside class="hidden lg:block">
+    <div id="job-detail-scroll"
+         class="sticky top-20 overflow-y-auto"
+         style="max-height: calc(100vh - 6rem);">
+      <div id="job-detail-pane" class="card-quiet min-h-[300px]">
+        <div class="text-body-muted text-sm text-center py-16">
+          Click a job on the left to see full details here.
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+</div>
+
+{% endblock %}

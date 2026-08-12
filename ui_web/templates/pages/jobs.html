@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% block title %}Jobs — Jobot{% endblock %}
+{% block container_class %}max-w-7xl{% endblock %}
+
+{% set SEARCH_STAGES = "[[5,'Starting the search…'],[15,'Scanning LinkedIn postings…'],[30,'Checking Indeed board…'],[50,'Reading full job descriptions…'],[75,'Almost done — organizing results…'],[999,'Still working (this is longer than usual)']]" %}
+
+{% set MULTI_STAGES = "[[30,'Running the first search…'],[75,'Cooling down before the next…'],[130,'Running the second search…'],[175,'Cooling down before the last…'],[230,'Running the last search…'],[280,'Almost done — organizing results…'],[999,'Still working (multi runs can take up to 3 min)']]" %}
+
+{% block content %}
+
+<div class="mb-6 space-y-2">
+  <h1 class="text-display">Jobs</h1>
+  <p class="text-body-muted">
+    Search job boards, see AI-scored matches with reasoning, curate what to apply to.
+  </p>
+</div>
+
+{% if not has_resume or not has_api_key %}
+<div class="rounded-lg p-3 mb-4 text-sm flex items-start gap-3"
+     style="background: hsl(35 85% 96%); border: 1px solid hsl(35 70% 82%);">
+  <span class="pill shrink-0" style="background: hsl(35 85% 92%); color: hsl(28 75% 32%); border-color: hsl(35 70% 82%);">
+    <span class="pill-dot warn"></span>Setup
+  </span>
+  <div>
+    {% if not has_resume %}<div>Upload a resume on <a href="/profile" class="underline cursor-pointer">Profile</a> to enable AI scoring.</div>{% endif %}
+    {% if not has_api_key %}<div>Add a Gemini API key on <a href="/profile" class="underline cursor-pointer">Profile</a> for AI scoring.</div>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div id="search-feedback"></div>
+
+{# ═══ SEARCH CARD — two modes as tabs: "Broad search" + "Targeted analysis" ═══
+   Outer x-data holds the tab state so both panels stay in DOM (Alpine state
+   for each form isn't destroyed when switching tabs). Each panel scopes its
+   own longOp because the stage timings differ (search ~1-3 min, URL ~30s). #}
+<section class="mb-6">
+  <div class="card-quiet" x-data="{ mode: 'search' }">
+
+    {# Tab strip — segmented control style: active tab is a solid pill so
+       the current mode reads instantly. Icons via Lucide, no emojis. #}
+    <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+      <div class="seg-tabs">
+        <button type="button" @click="mode = 'search'"
+                :class="mode === 'search' ? 'seg-tab seg-tab--active' : 'seg-tab'">
+          <i class="ph-thin ph-magnifying-glass i-4"></i>
+          Broad search
+        </button>
+        <button type="button" @click="mode = 'targeted'"
+                :class="mode === 'targeted' ? 'seg-tab seg-tab--active' : 'seg-tab'">
+          <i class="ph-thin ph-crosshair-simple i-4"></i>
+          Targeted analysis
+        </button>
+      </div>
+      <span class="text-xs text-body-muted"
+            x-text="mode === 'search'
+                    ? 'Cast a wide net — up to 3 titles at once'
+                    : 'Paste a specific job link — deep-analyze one'"></span>
+    </div>
+
+    {# ─── PANEL A: broad search ─── #}
+    <div x-show="mode === 'search'"
+         x-data="{
+           ...longOp({{ MULTI_STAGES }}, 'Search'),
+           queries: [{value: ''}],
+           addQuery() { if (this.queries.length < 3) this.queries.push({value: ''}); },
+           removeQuery(idx) { if (this.queries.length > 1) this.queries.splice(idx, 1); },
+           fillFrom(text) { this.queries[0].value = text; },
+         }">
+
+      {% if saved_chips %}
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <span class="text-xs text-base-content/50">Quick fill:</span>
+        {% for s in saved_chips %}
+        <button type="button"
+                data-q="{{ s.query }}"
+                @click="fillFrom($el.dataset.q)"
+                class="chip chip-neutral cursor-pointer hover:brightness-95"
+                title="Fill the first query with this saved search">
+          {{ s.name }}
+        </button>
+        {% endfor %}
+        <a href="/profile" class="text-xs text-base-content/40 hover:text-base-content ml-auto inline-flex items-center gap-1">
+          Manage saved <i class="ph-thin ph-arrow-right i-3"></i>
+        </a>
+      </div>
+      {% endif %}
+
+      <form hx-post="/jobs/run/multi"
+            hx-target="#search-feedback"
+            hx-swap="innerHTML"
+            @htmx:before-request="start(); document.getElementById('search-feedback').innerHTML = ''"
+            @htmx:after-request="stop($event)">
+        <template x-for="(q, idx) in queries" :key="idx">
+          <div class="flex gap-2 items-stretch" :class="idx === 0 ? '' : 'mt-2'">
+            <input type="text" name="queries"
+                   x-model="queries[idx].value"
+                   :placeholder="idx === 0 ? 'Job title (e.g. Revit specialist)' : 'Another job title (e.g. BIM Modeler)'"
+                   required
+                   :disabled="running"
+                   class="input input-bordered flex-1">
+            <template x-if="idx === 0">
+              <input type="text" name="location"
+                     value="Ottawa, Ontario, Canada"
+                     :disabled="running"
+                     class="input input-bordered w-64">
+            </template>
+            <template x-if="idx > 0">
+              <button type="button" @click="removeQuery(idx)"
+                      class="btn btn-ghost text-base-content/40 hover:text-error"
+                      title="Remove this query"><i class="ph-thin ph-x i-4"></i></button>
+            </template>
+          </div>
+        </template>
+
+        <div class="flex items-center justify-between mt-4">
+          <button type="button"
+                  @click="addQuery()"
+                  x-show="queries.length < 3 && !running"
+                  class="text-sm text-primary hover:underline cursor-pointer flex items-center gap-1">
+            + Add another job (<span x-text="queries.length"></span>/3)
+          </button>
+          <span x-show="queries.length >= 3 && !running" class="text-xs text-body-muted">
+            Max 3 queries per run (rate-limit safety).
+          </span>
+          <span></span>
+
+          <button type="submit"
+                  :disabled="running"
+                  class="btn btn-primary cursor-pointer min-w-[10rem]">
+            <span x-text="queries.length > 1 ? `Run ${queries.length} searches` : 'Run search'"></span>
+          </button>
+        </div>
+
+        <div x-show="queries.length > 1" x-cloak class="text-xs text-body-muted mt-2">
+          Sequential — each ~60s, 8s cooldown between to avoid rate-limits. Results merged into one entry.
+        </div>
+      </form>
+    </div>
+
+    {# ─── PANEL B: targeted analysis (URL) ─── #}
+    <div x-show="mode === 'targeted'" x-cloak
+         x-data="{ ...longOp([[5,'Fetching the page…'],[15,'Extracting job details from the layout…'],[30,'Scoring against your resume…'],[999,'Still working — some sites take a bit']], 'Import') }">
+      <form hx-post="/jobs/from-url"
+            hx-target="#from-url-feedback"
+            hx-swap="innerHTML"
+            @htmx:before-request="start(); document.getElementById('from-url-feedback').innerHTML = ''"
+            @htmx:after-request="stop($event)">
+        <div class="flex gap-2 items-stretch">
+          <input type="url" name="job_url"
+                 placeholder="https://… (LinkedIn, Indeed, Workday, company career page, anything)"
+                 required
+                 :disabled="running"
+                 class="input input-bordered flex-1"
+                 autocomplete="off">
+          <button type="submit"
+                  :disabled="running"
+                  class="btn btn-primary cursor-pointer min-w-[8rem]">
+            Analyze
+          </button>
+        </div>
+        <div class="text-xs text-body-muted mt-2">
+          We fetch the page, extract the job, score it against your resume, and open it ready to tailor.
+        </div>
+      </form>
+
+      <div id="from-url-feedback"></div>
+    </div>
+  </div>
+</section>
+
+{# ═══ RECENT — its own row below, full width ═══ #}
+{% if recent %}
+<section class="mb-8" x-data="{ expanded: false }">
+  <div class="flex items-baseline justify-between mb-3">
+    <div class="text-label">Recent searches</div>
+    {% if recent %}
+    <span class="text-xs text-base-content/50">{{ recent | length }} cached</span>
+    {% endif %}
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+    {% for r in recent[:6] %}
+      {% include "partials/recent_row.html" %}
+    {% endfor %}
+  </div>
+  {% if recent | length > 6 %}
+  <div x-show="expanded" x-cloak x-collapse class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+    {% for r in recent[6:] %}
+      {% include "partials/recent_row.html" %}
+    {% endfor %}
+  </div>
+  <button @click="expanded = !expanded"
+          class="text-sm text-base-content/60 hover:text-base-content cursor-pointer pt-2"
+          x-text="expanded ? '⌃ Show less' : `⌄ Show ${ {{ recent | length - 6 }} } more`"></button>
+  {% endif %}
+</section>
+{% endif %}
+
+{# ═══ TOP MATCHES — email-style split view (list left, detail right) ═══ #}
+{% if top_matches %}
+<script id="top-matches-meta" type="application/json">[
+{%- for job in top_matches -%}
+  {"score": {{ job._score }}, "french": {{ 1 if (job.french_required or job.detected_language == 'fr') else 0 }}, "remote": {{ 1 if job.is_remote else 0 }}, "age_days": {{ job._age_days }}, "is_new": {{ 1 if job._is_new else 0 }}}{{ "," if not loop.last }}
+{%- endfor -%}
+]</script>
+
+<section
+  x-data="{
+    jobs: JSON.parse(document.getElementById('top-matches-meta').textContent),
+    init() { $store.filters.maxAgeDays = null; $store.filters.onlyNew = false; }
+  }">
+  <div class="flex items-baseline justify-between mb-4 flex-wrap gap-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <h2 class="text-title label-dot">Top matches for you</h2>
+        <span class="pill pill-accent inline-flex items-center gap-1">
+          <i class="ph-thin ph-star i-3"></i> curated
+        </span>
+      </div>
+      <p class="text-sm text-body-muted mt-1">
+        Best-scoring jobs across your {{ cache_count }} recent search{{ '' if cache_count == 1 else 'es' }}. Click any to see full details.
+      </p>
+    </div>
+    <div class="flex items-center gap-4 flex-wrap">
+      <label class="flex items-center gap-2 cursor-pointer select-none"
+             title="Only jobs first seen in the last 48 hours">
+        <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
+        <span class="text-sm inline-flex items-center gap-1">
+          <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i> Only new
+        </span>
+      </label>
+      <div>
+        <label class="text-label block mb-0.5">Added</label>
+        <select class="select select-bordered select-sm cursor-pointer"
+                x-model.number="$store.filters.maxAgeDays"
+                @change="$store.filters.maxAgeDays = $event.target.value === '' ? null : Number($event.target.value)">
+          <option value="">All</option>
+          <option value="1">Last 24 h</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+        </select>
+      </div>
+      <div class="text-right">
+        <div class="text-label">Showing</div>
+        <div class="text-metric-sm mt-1">
+          <span x-text="$store.filters.visibleCount(jobs)">{{ top_matches | length }}</span>
+          <span class="text-base-content/30 font-normal text-base"> matches</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Split viewport: cards left, detail right (email-style) #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="space-y-3 min-w-0 cascade-in">
+      {% for job in top_matches %}
+        {% include "partials/job_card.html" %}
+      {% endfor %}
+      <div x-show="$store.filters.visibleCount(jobs) === 0 && jobs.length > 0"
+           x-cloak
+           class="card-quiet text-center py-6">
+        <div class="text-body-muted text-sm">No matches with current filters.</div>
+        <button class="mt-2 text-sm text-primary hover:underline cursor-pointer"
+                @click="$store.filters.maxAgeDays = null; $store.filters.onlyNew = false;">
+          Reset
+        </button>
+      </div>
+    </div>
+    <aside class="hidden lg:block">
+      <div id="job-detail-scroll"
+           class="sticky top-20 overflow-y-auto"
+           style="max-height: calc(100vh - 6rem);">
+        <div id="job-detail-pane" class="card-quiet min-h-[300px]">
+          <div class="text-body-muted text-sm text-center py-16">
+            Click a job on the left to see full details here.
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

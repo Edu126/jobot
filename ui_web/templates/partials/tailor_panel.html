@@ -1,0 +1,99 @@
+{# Tailor drawer body. Injected by HTMX when user clicks "Tailor" on a card. #}
+{% set TAILOR_STAGES = "[[5,'Reading your resume…'],[15,'Analyzing the job requirements…'],[30,'Writing tailored bullets…'],[45,'Drafting the cover letter…'],[90,'Almost there — polishing…'],[999,'Model is thinking hard — up to 3 min on Aggressive']]" %}
+
+<div class="space-y-6">
+
+  {# Job context #}
+  <div>
+    <div class="text-label">For this role</div>
+    <div class="text-lg font-semibold tracking-tight mt-1">{{ job.title }}</div>
+    <div class="text-sm text-body-muted">{{ job.company }} · {{ job.location or '?' }}</div>
+  </div>
+
+  {% if not has_resume or not has_api_key %}
+    <div class="card-quiet" style="background: hsl(35 85% 96%); border-color: hsl(35 70% 82%);">
+      <div class="text-sm">
+        <span class="font-semibold">Setup needed:</span>
+        {% if not has_resume %}<div class="mt-1">• Upload a resume on the <a href="/profile" class="underline">Profile</a> tab.</div>{% endif %}
+        {% if not has_api_key %}<div class="mt-1">• Add <code class="text-xs bg-base-200 px-1 rounded">GOOGLE_API_KEY</code> on the <a href="/profile" class="underline">Profile</a> tab.</div>{% endif %}
+      </div>
+    </div>
+  {% else %}
+
+    {# Shared x-data. `hasAnyRuns` persists across the running=false transition
+       so the runs section stays visible after generation completes, even when
+       the panel was first rendered with runs=[]. Server-rendered initial value
+       covers the case where the drawer opens for a job that already has history. #}
+    <div x-data="{
+           ...longOp({{ TAILOR_STAGES }}, 'Tailoring'),
+           level: '{{ default_level }}',
+           hasAnyRuns: {{ 'true' if runs else 'false' }}
+         }">
+
+    {# Runs list — visible whenever there's ever been a run OR one is running now.
+       Wrapped in an ID so POST /jobs/tailor OOB-swaps this content in place
+       when a new run completes. #}
+    <div x-show="hasAnyRuns || running" x-cloak class="mb-5">
+      <div class="text-label mb-2">Runs for this job</div>
+      <div id="tailor-runs-{{ job.id }}">
+        {% include "partials/tailor_runs_list.html" %}
+      </div>
+    </div>
+
+    {% if runs %}
+    <div class="text-xs text-body-muted text-center my-3"
+         x-show="hasAnyRuns && !running" x-cloak>— or generate a new one below —</div>
+    {% endif %}
+
+    <form hx-post="/jobs/tailor/{{ job.id }}"
+          hx-target="#tailor-result-{{ job.id }}"
+          hx-swap="innerHTML"
+          @htmx:before-request="start()"
+          @htmx:after-request="stop($event); if ($event.detail.successful) hasAnyRuns = true"
+          class="space-y-5">
+
+      {# Level selector — .level-tile class + [data-selected] attribute #}
+      <div>
+        <label class="text-label block mb-2">Tailoring level</label>
+        <div class="grid grid-cols-3 gap-2">
+          {% for value, label, desc in levels %}
+          <button type="button"
+                  class="level-tile cursor-pointer"
+                  @click="level = '{{ value }}'"
+                  :data-selected="level === '{{ value }}' ? 'true' : 'false'"
+                  data-selected="{{ 'true' if value == default_level else 'false' }}">
+            <div class="level-tile-title">{{ label }}</div>
+            <div class="level-tile-desc">{{ desc }}</div>
+          </button>
+          {% endfor %}
+        </div>
+        <input type="hidden" name="level" :value="level">
+      </div>
+
+      {# Button — simple "in flight" indicator, NO elapsed timer to avoid
+         duplicating the info that lives in the Runs-list placeholder above. #}
+      <button type="submit"
+              class="btn btn-primary w-full cursor-pointer"
+              :disabled="running">
+        <span x-show="!running">
+          {% if runs %}Generate a new version{% else %}Generate tailored resume + cover letter{% endif %}
+        </span>
+        <span x-show="running" x-cloak class="flex items-center gap-2">
+          <span class="loading loading-spinner loading-xs"></span>
+          <span>Generating…</span>
+        </span>
+      </button>
+    </form>
+
+    <div id="tailor-result-{{ job.id }}" class="pt-2">
+      {% if runs %}
+        {# Auto-load the most recent run when the drawer opens with history. #}
+        <div hx-get="/jobs/tailor/{{ job.id }}/view/{{ runs[0].index }}"
+             hx-trigger="load"
+             hx-target="#tailor-result-{{ job.id }}"
+             hx-swap="innerHTML"></div>
+      {% endif %}
+    </div>
+    </div> {# close the shared x-data wrapper #}
+  {% endif %}
+</div>

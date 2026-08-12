@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Running multi-search — Jobot{% endblock %}
+{% block container_class %}max-w-3xl{% endblock %}
+
+{% block content %}
+
+<div class="mt-8 mb-6">
+  <a href="/jobs" class="text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer inline-flex items-center gap-1"><i class="ph-thin ph-arrow-left i-4"></i>Back to Jobs</a>
+</div>
+
+<div class="card-quiet py-16 text-center"
+     x-data="{
+       // When the poll returns HX-Redirect, HTMX handles navigation.
+       // We hook after-swap to fire the browser notification if enabled.
+       taskId: '{{ task_id }}',
+     }"
+     @htmx:after-request.window="
+       const xhr = $event.detail.xhr;
+       if (xhr && xhr.getResponseHeader && xhr.getResponseHeader('HX-Redirect')) {
+         Alpine.store('notif').fire('Jobot: multi-search done', 'Your results are ready.');
+         Alpine.store('toast').show('Multi-search complete — loading results', 'success');
+       }
+     ">
+
+  {# Big obvious spinner #}
+  <div class="loading loading-spinner loading-lg mx-auto" style="color: oklch(var(--p)); width: 4rem; height: 4rem;"></div>
+
+  <h2 class="text-title mt-6">Running your searches</h2>
+  <p class="text-body-muted mt-2 max-w-md mx-auto">
+    Searching {{ task.queries | length }} job title{{ '' if task.queries|length == 1 else 's' }}
+    with an 8-second cooldown between each to avoid rate-limits.
+    Takes ~{{ (task.queries|length * 70) // 60 }}–{{ ((task.queries|length * 70) // 60) + 1 }} minutes total.
+  </p>
+
+  {# Live status — polled every 2s. Auto-redirect on complete via HX-Redirect. #}
+  <div class="mt-6 text-sm min-h-[2rem]"
+       hx-get="/jobs/loading/{{ task_id }}/status"
+       hx-trigger="load, every 2s"
+       hx-swap="innerHTML">
+    <div class="text-body-muted">Starting…</div>
+  </div>
+
+  {# What the user is searching for #}
+  <div class="mt-8 pt-6 border-t border-base-300 max-w-md mx-auto">
+    <div class="text-label mb-2">Searching for</div>
+    <div class="flex flex-wrap justify-center gap-2">
+      {% for q in task.queries %}
+      <span class="chip chip-neutral">{{ q }}</span>
+      {% endfor %}
+    </div>
+    <div class="text-xs text-base-content/40 mt-3">in {{ task.location }}</div>
+  </div>
+
+  {# Reassurance for the user — can leave the tab #}
+  <div class="mt-8 text-xs text-body-muted max-w-md mx-auto">
+    You can leave this tab open or switch to another tab —
+    we'll <strong>notify you when it's done</strong> (if you enabled browser notifications on Profile).
+  </div>
+
+</div>
+
+{% endblock %}

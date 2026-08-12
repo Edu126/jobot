@@ -1,0 +1,79 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  READ THIS FIRST — macOS "Apple could not verify"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You double-clicked "Install Jobot.command" and got a message
+"Apple could not verify this file..." — THAT IS EXPECTED.
+It's macOS being cautious about scripts from outside the App Store.
+
+Nothing is wrong. Pick ONE of the 3 methods below (they all work,
+Method A is easiest, Method C is the safest one-time fix).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Method A — System Settings (works on all macOS, ~60 sec)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Double-click "Install Jobot.command" — see the blocked message,
+     click "Done" (or close the dialog).
+
+  2. Open  System Settings   (Apple menu → System Settings…)
+
+  3. Sidebar → click  Privacy & Security
+
+  4. Scroll DOWN in the right panel until you see:
+        "'Install Jobot.command' was blocked to protect your Mac"
+
+  5. Click the  Open Anyway  button next to it.
+
+  6. Confirm with your password or Touch ID.
+
+  7. Double-click "Install Jobot.command" again → now it opens.
+
+  After Install finishes it auto-clears the block on all the other
+  files in the folder — you can double-click "Start Jobot.command"
+  normally from then on.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Method B — Right-click → Open (older macOS only, may not work on Sequoia+)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. RIGHT-CLICK (or Control+click) on "Install Jobot.command"
+
+  2. In the menu → choose  Open
+
+  3. In the dialog → click  Open
+
+  4. If the dialog has NO "Open" button (only "Done" or "Move to Trash"),
+     you're on newer macOS — use Method A or C instead.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Method C — One Terminal command (bulletproof, ~30 sec)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This clears the security flag from the whole folder in one shot.
+After this, EVERYTHING inside works with double-click.
+
+  1. Open  Terminal
+     (Cmd+Space to open Spotlight → type "Terminal" → Enter)
+
+  2. Type this — WITH the trailing space at the end:
+
+        xattr -dr com.apple.quarantine
+
+  3. Now DRAG the "jobot-app" folder from Finder into the Terminal
+     window (the folder path will auto-fill after the space).
+
+  4. Press Enter.
+
+  5. Nothing visible happens — that means it worked.
+
+  6. Close Terminal. Now double-click "Install Jobot.command" —
+     it opens normally.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Once past this step, everything else is in  README-for-boyfriend.txt
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -1,0 +1,33 @@
+{# Contents of the "Runs for this job" list.
+   Rendered inside a wrapper with id="tailor-runs-{job.id}" so a fresh
+   generation can OOB-swap this list in without a full page reload.
+
+   Also includes the in-progress placeholder that reacts to Alpine's
+   `running` state from the enclosing longOp x-data. #}
+
+{# In-progress placeholder — spinner appears at top of list while generating.
+   Alpine `running` comes from the parent x-data (longOp). #}
+<div x-show="running" x-cloak
+     class="rounded-lg p-3 flex items-center gap-3 mb-1.5"
+     style="background: oklch(var(--p) / 0.05); border: 1px solid oklch(var(--p) / 0.3);">
+  <span class="loading loading-spinner loading-xs" style="color: oklch(var(--p));"></span>
+  <div class="flex-1 min-w-0">
+    <div class="text-sm font-medium capitalize" x-text="`Generating ${level}…`"></div>
+    <div class="text-xs text-body-muted mt-0.5" x-text="`${message()} · ${elapsed}s`"></div>
+  </div>
+</div>
+
+{# Past runs — clickable to view without re-generating #}
+{% for r in runs %}
+<button class="w-full flex items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2 hover:border-base-content/30 hover:bg-base-200/50 transition-colors text-left cursor-pointer mb-1.5"
+        hx-get="/jobs/tailor/{{ job.id }}/view/{{ r.index }}"
+        hx-target="#tailor-result-{{ job.id }}"
+        hx-swap="innerHTML">
+  <div class="flex items-center gap-2 text-sm">
+    <span class="font-medium">{{ r.level | title }}</span>
+    <span class="text-base-content/40">·</span>
+    <span class="text-body-muted text-xs">{{ r.at | humanize }}</span>
+  </div>
+  <span class="text-xs text-base-content/40">View →</span>
+</button>
+{% endfor %}

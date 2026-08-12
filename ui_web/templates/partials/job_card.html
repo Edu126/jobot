@@ -1,0 +1,153 @@
+{# Single job card. Included from results list and from any partial re-render.
+   `french` combines both signals (bilingual-required OR detected-fr) — mirrors
+   what the sidebar filter label promises.
+
+   Card is clickable: sets $store.selectedJob so the split-viewport right pane
+   loads this job's details. Highlighted via ring when selected. #}
+<article class="card-quiet cursor-pointer transition-shadow"
+         x-data="{
+           expanded: false,
+           ageDays: {% if job._age_days is defined %}{{ job._age_days }}{% else %}null{% endif %}
+         }"
+         :class="$store.selectedJob.id === '{{ job.id }}' ? 'ring-2' : ''"
+         :style="$store.selectedJob.id === '{{ job.id }}' ? '--tw-ring-color: oklch(var(--p));' : ''"
+         @click="$store.selectedJob.select('{{ job.id }}')"
+         x-show="$store.filters.matches({
+           score: {{ job._score }},
+           french: {{ 1 if (job.french_required or job.detected_language == 'fr') else 0 }},
+           remote: {{ 1 if job.is_remote else 0 }},
+           age_days: {% if job._age_days is defined %}{{ job._age_days }}{% else %}0{% endif %},
+           is_new: {{ 1 if job._is_new else 0 }}
+         })">
+
+  <div class="flex items-start gap-4">
+
+    {# Score badge (verdict-tinted) #}
+    <div class="score-badge score-badge-{{ job._verdict }}">
+      {% if job._verdict == 'none' %}
+        <span class="score-num text-lg">—</span>
+      {% else %}
+        <span class="score-num">{{ job._score }}</span>
+        <span class="score-max">/100</span>
+      {% endif %}
+    </div>
+
+    {# Body #}
+    <div class="flex-1 min-w-0">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="text-lg font-semibold tracking-tight leading-tight truncate">{{ job.title }}</h3>
+          <div class="text-sm text-body-muted mt-0.5">
+            <span class="font-medium text-base-content/80">{{ job.company }}</span>
+            <span class="text-base-content/30 mx-1">·</span>{{ job.location or '?' }}
+            <span class="text-base-content/30 mx-1">·</span>{{ job.site }}
+            <span class="text-base-content/30 mx-1">·</span>{{ job.date_posted or '?' }}
+          </div>
+          {# Requirement + source pills. "New" (salmon accent) surfaces
+             first-time-seen jobs within 48h so the user knows which are fresh
+             vs already-scored from previous scrapes. #}
+          {% if job._is_new or job._experience or job.is_remote or job.min_salary or job._source_label %}
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            {% if job._is_new %}
+            <span class="chip chip-accent inline-flex items-center gap-1" title="First seen in the last 48 hours">
+              <i class="ph-fill ph-sparkle i-3"></i>New
+            </span>
+            {% endif %}
+            {% if job._source_label %}
+            <span class="chip chip-neutral inline-flex items-center gap-1" title="From this search">
+              <i class="ph-thin ph-magnifying-glass i-3"></i>{{ job._source_label }}
+            </span>
+            {% endif %}
+            {% if job._experience %}
+            <span class="chip chip-neutral inline-flex items-center gap-1">
+              <i class="ph-thin ph-calendar-blank i-3"></i>{{ job._experience }}
+            </span>
+            {% endif %}
+            {% if job.is_remote %}
+            <span class="chip chip-neutral inline-flex items-center gap-1">
+              <i class="ph-thin ph-house i-3"></i>Remote
+            </span>
+            {% endif %}
+            {% if job.min_salary or job.max_salary %}
+            <span class="chip chip-neutral inline-flex items-center gap-1">
+              <i class="ph-thin ph-currency-dollar i-3"></i>{{ (job.min_salary or 0) | int }}{% if job.max_salary and job.max_salary != job.min_salary %}–{{ (job.max_salary) | int }}{% endif %}
+            </span>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+
+        {# Save action on the right — swapped in place after HTMX POST #}
+        <div id="save-action-{{ job.id }}" class="shrink-0">
+          {% include "partials/save_action.html" with context %}
+        </div>
+      </div>
+
+      {# Reasoning + skills — only when we have an AI result #}
+      {% if job._verdict != 'none' %}
+        {% if job._reasoning %}
+        <p class="text-sm text-base-content/85 leading-relaxed mt-3 italic">
+          "{{ job._reasoning }}"
+        </p>
+        {% endif %}
+
+        {% if job._matched or job._gaps %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <div>
+            <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-check i-3"></i>Matched</div>
+            <div class="flex flex-wrap gap-1">
+              {% for m in job._matched %}<span class="chip chip-matched">{{ m }}</span>{% endfor %}
+              {% if not job._matched %}<span class="text-xs text-base-content/40">—</span>{% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-warning i-3"></i>Gaps</div>
+            <div class="flex flex-wrap gap-1">
+              {% for g in job._gaps %}<span class="chip chip-gap">{{ g }}</span>{% endfor %}
+              {% if not job._gaps %}<span class="text-xs text-base-content/40">—</span>{% endif %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      {% endif %}
+
+      {# Warning strip for FR-required #}
+      {% if job.french_required %}
+      <div class="mt-3 text-xs text-base-content/50 inline-flex items-center gap-1"><i class="ph-thin ph-warning i-3"></i>Posting requires French — will be hidden if filter is on.</div>
+      {% endif %}
+
+      {# Actions row — visible only BELOW lg breakpoint. On desktop the detail
+         pane covers Open posting / Tailor / full JD, so a per-card action row
+         would be redundant clutter. On mobile it stays for direct access. #}
+      <div class="lg:hidden flex items-center gap-2 mt-4 pt-3 border-t border-base-300/70"
+           @click.stop>
+        {% if job.job_url %}
+        <a href="{{ job.job_url }}" target="_blank" rel="noopener"
+           class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
+          Open posting <i class="ph-thin ph-arrow-square-out i-4"></i>
+        </a>
+        {% endif %}
+        <button class="btn btn-sm btn-primary cursor-pointer"
+                hx-get="/jobs/tailor/{{ job.id }}"
+                hx-target="#tailor-drawer-body"
+                hx-swap="innerHTML"
+                @click="$store.tailor.openFor('{{ job.id }}')">
+          Tailor
+        </button>
+        {% if job.description %}
+        <button class="text-xs text-base-content/50 hover:text-base-content ml-auto cursor-pointer"
+                @click="expanded = !expanded"
+                x-text="expanded ? 'Hide description' : 'Show description'"></button>
+        {% endif %}
+      </div>
+
+      {# Full JD — mobile-only expander. Desktop uses the detail pane. #}
+      {% if job.description %}
+      <div x-show="expanded" x-collapse class="lg:hidden mt-4 pt-4 border-t border-base-300/70">
+        <div class="text-label mb-2">Job description</div>
+        <div class="jd-body">{{ job.description | jd_html }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</article>
