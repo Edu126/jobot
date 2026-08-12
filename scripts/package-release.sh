@@ -84,6 +84,59 @@ cp "$OUT" "$LATEST"
 
 SIZE=$(du -h "$OUT" | cut -f1)
 
+# ─── Privacy / secret scan ──────────────────────────────────
+# Grep the zip contents for common secret patterns so we never ship
+# a real API key, GitHub token, or personal .env. If ANY hit, we
+# nuke the zip and abort — better a failed release than a leak.
+echo ""
+echo "${BOLD}Scanning zip for secrets…${RESET}"
+
+# Patterns that indicate a real leaked value (not just the variable name).
+# - AIza…              Google API keys (Gemini uses these)
+# - sk-[A-Za-z0-9]{20,} OpenAI-style keys
+# - ghp_/gho_/ghs_     GitHub tokens
+# - xox[bp]-           Slack bot / user tokens
+# - AKIA…              AWS access keys
+# - =[A-Za-z0-9]{25,}  suspiciously long value after any KEY=
+LEAKY='AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{30,}|gho_[A-Za-z0-9]{30,}|ghs_[A-Za-z0-9]{30,}|xox[bp]-[A-Za-z0-9-]+|AKIA[0-9A-Z]{16}'
+LEAK_HIT=$(unzip -p "$OUT" '*' 2>/dev/null | grep -aEo "$LEAKY" | head -3 || true)
+
+if [ -n "$LEAK_HIT" ]; then
+  echo "  ${RED}✗ Possible secret leaked into the zip:${RESET}"
+  echo "$LEAK_HIT" | sed 's/^/    /'
+  echo "  ${RED}Aborting.${RESET} Investigate + rebuild after redacting."
+  rm -f "$OUT" "$LATEST"
+  exit 1
+fi
+echo "  ${GREEN}✓${RESET} No secret patterns detected"
+
+# Should-be-excluded paths — belt-and-suspenders in case someone edits
+# the -x list incorrectly. Any of these in the zip = ship-blocker.
+# Use anchored patterns so `.env.example` (safe template) isn't caught
+# alongside `.env` (the real secret file).
+BAD_HIT=$(unzip -Z1 "$OUT" \
+  | grep -E "^${REPO_NAME}/(\.env(/|$)|data/|\.venv/|\.git/)" \
+  | head -3 || true)
+if [ -n "$BAD_HIT" ]; then
+  echo "  ${RED}✗ Excluded paths leaked into the zip:${RESET}"
+  echo "$BAD_HIT" | sed 's/^/    /'
+  rm -f "$OUT" "$LATEST"
+  exit 1
+fi
+echo "  ${GREEN}✓${RESET} No excluded paths present"
+
+FILES_COUNT=$(unzip -l "$OUT" | tail -1 | awk '{print $2}')
+echo "  ${GREEN}✓${RESET} $FILES_COUNT files inside"
+
+echo ""
+echo "${BOLD}Top-level manifest:${RESET}"
+# Extract unique top-level entries under jobot-app/
+unzip -Z1 "$OUT" \
+  | grep -E "^${REPO_NAME}/[^/]+/?$" \
+  | sort -u \
+  | sed 's|^|  |'
+
+echo ""
 echo "  ${GREEN}✓${RESET} Built: ${BOLD}$OUT${RESET} ${DIM}($SIZE)${RESET}"
 echo "  ${GREEN}✓${RESET} Also:  ${BOLD}$LATEST${RESET} ${DIM}(stable alias)${RESET}"
 echo ""
