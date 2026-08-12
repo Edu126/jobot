@@ -122,6 +122,12 @@
         hide() {
           this.active = false;
           document.body.style.overflow = '';
+          this.releaseUnloadGuard();
+        },
+        // Detach the beforeunload listener WITHOUT hiding the overlay. Used
+        // when HTMX is about to trigger a successful HX-Redirect — we don't
+        // want to prompt "Leave site?" during our own navigation.
+        releaseUnloadGuard() {
           if (this._beforeUnload) {
             window.removeEventListener('beforeunload', this._beforeUnload);
             this._beforeUnload = null;
@@ -195,19 +201,27 @@
 
           // Restore title with a "done" flash when we'd shown a running indicator
           if (this.titleFlashed && this.originalTitle) {
-            document.title = ok ? `✓ Done — Jobot` : `⚠ Error — Jobot`;
+            document.title = ok ? `Done — Jobot` : `Error — Jobot`;
             const orig = this.originalTitle;
             setTimeout(() => { document.title = orig; }, 5000);
           }
 
-          // Toast + browser notif on successful completion (skip if redirecting —
-          // the new page will render its own signal).
-          if (ok && !isRedirect) {
+          // Toast + browser notif on successful completion. Fire even on
+          // redirect — the user may be on another tab and needs to know
+          // the work is finished (the redirect just switches which URL loads).
+          if (ok) {
             Alpine.store('toast').show(`${this.label} complete`, 'success');
             Alpine.store('notif').fire(`Jobot: ${this.label} complete`, 'Return to the tab to see results.');
           }
 
-          if (isRedirect) return;   // hold loading state through navigation (overlay stays up)
+          if (isRedirect) {
+            // Release the beforeunload guard so our own successful redirect
+            // doesn't get the "Leave site? Changes may not be saved" prompt.
+            // Overlay stays visible until the new page's HTML loads and
+            // replaces the DOM (naturally clearing all Alpine state).
+            Alpine.store('overlay').releaseUnloadGuard();
+            return;
+          }
           this.running = false;
           if (this.timer) { clearInterval(this.timer); this.timer = null; }
           Alpine.store('overlay').hide();

@@ -9,8 +9,7 @@
            expanded: false,
            ageDays: {% if job._age_days is defined %}{{ job._age_days }}{% else %}null{% endif %}
          }"
-         :class="$store.selectedJob.id === '{{ job.id }}' ? 'ring-2' : ''"
-         :style="$store.selectedJob.id === '{{ job.id }}' ? '--tw-ring-color: oklch(var(--p));' : ''"
+         :class="$store.selectedJob.id === '{{ job.id }}' ? 'card-quiet--selected' : ''"
          @click="$store.selectedJob.select('{{ job.id }}')"
          x-show="$store.filters.matches({
            score: {{ job._score }},

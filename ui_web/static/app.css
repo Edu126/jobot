@@ -149,6 +149,19 @@ body {
     0 10px 25px -18px oklch(var(--p) / 0.28);
 }
 
+/* Selected-state override — a card in the "selected" state should always
+   win over hover. Both .card-quiet--selected and .card-quiet--selected:hover
+   render with the primary-green ring so the selection never gets lost while
+   the user's cursor is anywhere on the card. */
+.card-quiet--selected,
+.card-quiet--selected:hover {
+  border-color: oklch(var(--p));
+  background: oklch(var(--p) / 0.025);
+  box-shadow:
+    0 0 0 2px oklch(var(--p) / 0.55),
+    0 12px 30px -18px oklch(var(--p) / 0.35);
+}
+
 /* Closed statuses (rejected/withdrawn) — denser, muted, less prominent. */
 .card-compact-closed {
   padding: 1rem 1.25rem;

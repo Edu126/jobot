@@ -12,8 +12,13 @@
 
 <div class="space-y-6">
 
-  {# ── Current resume ── #}
-  {% if current %}
+  {# ── Current resume + Upload — 50/50 row on md+ so they sit side by side.
+     Both cards keep their own headers so the pair reads as two focused cards
+     instead of one busy panel. On mobile they stack. #}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+    {# Current resume — left column #}
+    {% if current %}
     <section class="card-quiet">
       <div class="flex items-start justify-between gap-4">
         <div class="min-w-0 flex-1">
@@ -39,32 +44,40 @@
         </a>
       </div>
     </section>
-  {% endif %}
+    {% else %}
+    {# Placeholder when no resume yet — keeps the grid symmetrical #}
+    <section class="card-quiet flex items-center justify-center text-center">
+      <div class="text-body-muted text-sm">
+        No resume yet — upload one on the right to get started.
+      </div>
+    </section>
+    {% endif %}
 
-  {# ── Upload new resume ── #}
-  <section class="card-quiet">
-    <div class="text-label mb-3">
-      {% if current %}Upload new version{% else %}Upload your resume{% endif %}
-    </div>
-    <form hx-post="/profile/resume/upload"
-          hx-encoding="multipart/form-data"
-          hx-target="#upload-status"
-          hx-swap="innerHTML"
-          hx-indicator="#upload-spin">
-      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-        <input type="file" name="file" accept=".docx,.pdf" required
-               class="file-input file-input-bordered file-input-sm w-full sm:flex-1">
-        <button type="submit" class="btn btn-primary btn-sm whitespace-nowrap">
-          <span id="upload-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
-          Upload
-        </button>
+    {# Upload new — right column #}
+    <section class="card-quiet">
+      <div class="text-label mb-3">
+        {% if current %}Upload new version{% else %}Upload your resume{% endif %}
       </div>
-      <div id="upload-status" class="mt-2 min-h-[1.25rem]"></div>
-      <div class="text-xs text-body-muted mt-2">
-        DOCX or PDF. Auto-sets as current after upload.
-      </div>
-    </form>
-  </section>
+      <form hx-post="/profile/resume/upload"
+            hx-encoding="multipart/form-data"
+            hx-target="#upload-status"
+            hx-swap="innerHTML"
+            hx-indicator="#upload-spin">
+        <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+          <input type="file" name="file" accept=".docx,.pdf" required
+                 class="file-input file-input-bordered file-input-sm w-full sm:flex-1">
+          <button type="submit" class="btn btn-primary btn-sm whitespace-nowrap">
+            <span id="upload-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+            Upload
+          </button>
+        </div>
+        <div id="upload-status" class="mt-2 min-h-[1.25rem]"></div>
+        <div class="text-xs text-body-muted mt-2">
+          DOCX or PDF. Auto-sets as current after upload.
+        </div>
+      </form>
+    </section>
+  </div>
 
   {# ── ATS report ── #}
   {% if ats_report %}
