@@ -301,6 +301,30 @@
     {% endif %}
   </section>
 
+  {# ── App updates — pulls latest release from GitHub, downloads pending zip ── #}
+  <section class="card-quiet">
+    <div class="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+      <div>
+        <div class="text-label inline-flex items-center gap-1">
+          <i class="ph-thin ph-cloud-arrow-down i-4"></i>App updates
+        </div>
+        <p class="text-sm text-body-muted mt-1">
+          Currently running <strong>v{{ jobot_version }}</strong>. Check GitHub for a newer release
+          and download it — installing runs via <code>Update Jobot.command</code>.
+        </p>
+      </div>
+    </div>
+    <div id="update-status"
+         hx-get="/profile/updates/check"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <div class="text-sm text-body-muted inline-flex items-center gap-2">
+        <span class="loading loading-spinner loading-xs"></span>
+        Checking for updates…
+      </div>
+    </div>
+  </section>
+
   {# ── Browser notifications (opt-in) ── #}
   <section class="card-quiet" x-data>
     <div class="text-label mb-2">Browser notifications</div>

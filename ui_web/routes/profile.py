@@ -28,7 +28,8 @@ from dotenv import set_key
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
-from core import db
+from core import db, updater
+from core.version import current as current_version
 from core.llm.gemini import (
     DEFAULT_MODEL_CHAIN,
     MODEL_QUOTAS,
@@ -99,6 +100,7 @@ async def profile_page(request: Request):
             "api_key_masked": _mask_key(key),
             "quota_rows": quota_rows,
             "saved_searches": db.list_saved_searches(),
+            "jobot_version": current_version(),
         },
     )
 
@@ -361,4 +363,65 @@ async def download_resume(resume_id: int):
         io.BytesIO(raw),
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# In-app updater — check GitHub Releases, download the pending zip.
+# Installing the update happens via the "Update Jobot.command" script
+# (kills the server, extracts, pip installs, restarts).
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/profile/updates/check")
+async def profile_updates_check(request: Request):
+    """HTMX-swappable status fragment for the 'Updates' card. Hits GitHub
+    on every call — the API is generous enough (60/hr unauth) and users
+    rarely mash this."""
+    status = updater.check()
+    return templates.TemplateResponse(
+        request,
+        "partials/update_status.html",
+        {"status": status.to_dict()},
+    )
+
+
+@router.post("/profile/updates/download")
+async def profile_updates_download(request: Request):
+    """Downloads the pending release zip to dist/pending-update.zip so
+    the Update.command script can pick it up. Returns the status fragment
+    with a follow-up instruction (double-click Update.command)."""
+    status = updater.check()
+    if not status.has_update or not status.download_url:
+        return templates.TemplateResponse(
+            request,
+            "partials/update_status.html",
+            {"status": status.to_dict()},
+        )
+    try:
+        updater.download(status.download_url)
+    except Exception as exc:  # noqa: BLE001
+        status.error = f"Download failed: {exc}"
+        return templates.TemplateResponse(
+            request,
+            "partials/update_status.html",
+            {"status": status.to_dict()},
+        )
+    # Re-check so the fragment reflects the new pending_downloaded=True
+    refreshed = updater.check()
+    return templates.TemplateResponse(
+        request,
+        "partials/update_status.html",
+        {"status": refreshed.to_dict()},
+    )
+
+
+@router.post("/profile/updates/cancel")
+async def profile_updates_cancel(request: Request):
+    """Discard a pending downloaded update — user changed their mind."""
+    updater.clear_pending()
+    status = updater.check()
+    return templates.TemplateResponse(
+        request,
+        "partials/update_status.html",
+        {"status": status.to_dict()},
     )

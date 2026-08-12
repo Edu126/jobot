@@ -1,0 +1,101 @@
+{# Update-status fragment inside the "Updates" card on Profile.
+   Rendered fresh on:
+     - Initial /profile load (with a "not checked yet" placeholder shape)
+     - GET  /profile/updates/check
+     - POST /profile/updates/download (after downloading)
+     - POST /profile/updates/cancel
+   Uses the `status` dict from updater.check().to_dict(). #}
+
+<div class="text-sm">
+
+  {# ── Error state (network, GitHub 404, etc.) ── #}
+  {% if status.error %}
+    <div class="rounded-lg p-3 flex items-start gap-3"
+         style="background: hsl(35 85% 96%); border: 1px solid hsl(35 70% 82%);">
+      <i class="ph-thin ph-warning i-5" style="color: hsl(28 75% 42%);"></i>
+      <div class="flex-1">
+        <div class="font-medium">Couldn't check for updates</div>
+        <div class="text-body-muted text-xs mt-1">{{ status.error }}</div>
+      </div>
+    </div>
+
+  {# ── Update already downloaded → prompt to run Update.command ── #}
+  {% elif status.pending_downloaded %}
+    <div class="rounded-lg p-4"
+         style="background: oklch(var(--a) / 0.06); border: 1px solid oklch(var(--a) / 0.35);">
+      <div class="flex items-start gap-3 mb-3">
+        <i class="ph-fill ph-download-simple i-5" style="color: oklch(var(--a));"></i>
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold">Update downloaded — ready to install</div>
+          <div class="text-body-muted text-xs mt-1">
+            Now: close this tab, open your Jobot folder in Finder, and
+            <strong>double-click <code>Update Jobot.command</code></strong>.
+            It'll stop the server, apply v{{ status.latest }}, and restart Jobot.
+          </div>
+        </div>
+      </div>
+      <button hx-post="/profile/updates/cancel"
+              hx-target="#update-status"
+              hx-swap="innerHTML"
+              class="text-xs text-body-muted hover:text-base-content underline cursor-pointer">
+        Cancel — discard the download
+      </button>
+    </div>
+
+  {# ── Update available ── #}
+  {% elif status.has_update %}
+    <div class="rounded-lg p-4"
+         style="background: oklch(var(--p) / 0.04); border: 1px solid oklch(var(--p) / 0.28);">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div class="flex items-start gap-3 flex-1 min-w-0">
+          <i class="ph-thin ph-sparkle i-5" style="color: oklch(var(--a));"></i>
+          <div class="min-w-0">
+            <div class="font-semibold">
+              v{{ status.latest }} available
+              <span class="text-body-muted font-normal text-xs ml-1">— you have v{{ status.current }}</span>
+            </div>
+            {% if status.release_notes %}
+            <details class="mt-2">
+              <summary class="text-xs text-body-muted cursor-pointer hover:text-base-content">
+                What's new
+              </summary>
+              <div class="text-xs text-base-content/75 mt-2 whitespace-pre-line max-h-40 overflow-y-auto pr-2">
+                {{ status.release_notes }}
+              </div>
+            </details>
+            {% endif %}
+          </div>
+        </div>
+        <button hx-post="/profile/updates/download"
+                hx-target="#update-status"
+                hx-swap="innerHTML"
+                hx-disabled-elt="this"
+                class="btn btn-sm btn-primary cursor-pointer shrink-0 inline-flex items-center gap-1.5">
+          <span class="htmx-indicator loading loading-spinner loading-xs"></span>
+          <i class="ph-thin ph-download-simple i-4"></i>
+          Download update
+        </button>
+      </div>
+    </div>
+
+  {# ── Up to date ── #}
+  {% else %}
+    <div class="flex items-center gap-3 rounded-lg p-3"
+         style="background: hsl(155 40% 95%); border: 1px solid hsl(155 30% 84%);">
+      <i class="ph-thin ph-check-circle i-5" style="color: oklch(var(--su));"></i>
+      <div class="flex-1">
+        <div class="font-medium">You're up to date</div>
+        <div class="text-body-muted text-xs">Running v{{ status.current }}.</div>
+      </div>
+      <button hx-get="/profile/updates/check"
+              hx-target="#update-status"
+              hx-swap="innerHTML"
+              hx-disabled-elt="this"
+              class="text-xs text-body-muted hover:text-base-content cursor-pointer inline-flex items-center gap-1">
+        <span class="htmx-indicator loading loading-spinner loading-xs"></span>
+        <i class="ph-thin ph-arrows-clockwise i-3"></i>
+        Check again
+      </button>
+    </div>
+  {% endif %}
+</div>
