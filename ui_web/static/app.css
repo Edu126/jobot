@@ -574,6 +574,40 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Nav progress bar — thin top ribbon that pulses across the viewport
+   during full-page navigations. Reserved for regular <a href> clicks
+   (HTMX ops get the full-screen overlay). Subtle salmon-to-primary
+   gradient so it reads as a brand accent, not a system spinner.
+   ───────────────────────────────────────────────────────────── */
+.nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0;
+  z-index: 1000;
+  background: linear-gradient(90deg,
+    oklch(var(--a)) 0%,
+    oklch(var(--p)) 60%,
+    oklch(var(--a)) 100%);
+  box-shadow: 0 0 12px oklch(var(--a) / 0.55);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+.nav-progress--active {
+  opacity: 1;
+  animation: navFill 12s cubic-bezier(0.15, 0.85, 0.45, 1) forwards;
+}
+@keyframes navFill {
+  0%   { width: 0; }
+  30%  { width: 45%; }
+  65%  { width: 78%; }
+  95%  { width: 92%; }
+  100% { width: 95%; }
+}
+
+/* ─────────────────────────────────────────────────────────────
    Score hero — mirrors the results-page card visual language:
    left = big score badge (same colors as .score-badge); right =
    verdict pill + meta line + italic insight text. Reads at a glance

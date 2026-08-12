@@ -314,6 +314,51 @@
     </template>
   </div>
 
+  {# ── Nav progress bar — thin top ribbon for full-page <a href> navigations.
+     HTMX ops keep using the full-screen overlay; this covers everything
+     that isn't HTMX-swapped so users always see something is happening. #}
+  <div id="nav-progress" class="nav-progress" aria-hidden="true"></div>
+  <script>
+    (function() {
+      const bar = document.getElementById('nav-progress');
+      // Show bar when the user clicks any internal <a href> that will trigger
+      // a full navigation. Skip: external links, target=_blank, hash-only,
+      // download links, and links inside the tailor drawer body which uses HTMX.
+      document.addEventListener('click', (e) => {
+        const a = e.target.closest('a[href]');
+        if (!a) return;
+        if (a.target === '_blank' || a.hasAttribute('download')) return;
+        if (a.hasAttribute('hx-get') || a.hasAttribute('hx-post')) return;
+        const href = a.getAttribute('href');
+        if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+        if (href.startsWith('http')) {
+          try {
+            const url = new URL(href);
+            if (url.origin !== location.origin) return;
+          } catch (_) { return; }
+        }
+        // If default is prevented (e.g. by Alpine), don't show the bar
+        setTimeout(() => {
+          if (!e.defaultPrevented) {
+            bar.classList.remove('nav-progress--active');
+            void bar.offsetWidth;                    // restart animation
+            bar.classList.add('nav-progress--active');
+          }
+        }, 0);
+      });
+      // Non-HTMX form submissions (full-page POST → redirect) also navigate
+      document.addEventListener('submit', (e) => {
+        const form = e.target;
+        if (form.hasAttribute('hx-post') || form.hasAttribute('hx-get')) return;
+        bar.classList.remove('nav-progress--active');
+        void bar.offsetWidth;
+        bar.classList.add('nav-progress--active');
+      });
+      // Reset when page comes back from bfcache (browser back button)
+      window.addEventListener('pageshow', () => bar.classList.remove('nav-progress--active'));
+    })();
+  </script>
+
   {# ── Full-screen overlay loader — geometric wave grid ──
      Blocks interaction while a longOp is running. Activated automatically
      by `longOp.start()`; user can't dismiss it (that's the point). #}
