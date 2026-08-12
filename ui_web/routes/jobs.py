@@ -304,7 +304,7 @@ async def jobs_run(
         return HTMLResponse(
             f'''<div class="rounded-lg p-3 my-3 flex items-start gap-3 text-sm"
                      style="background: hsl(0 60% 96%); border: 1px solid hsl(0 50% 88%);">
-                  <span>❌</span>
+                  <i class="ph-thin ph-warning-octagon" style="font-size: 1.25rem; color: hsl(0 60% 45%);"></i>
                   <div>
                     <div class="font-semibold">Search failed</div>
                     <div class="text-body-muted mt-0.5">{exc}</div>
@@ -319,7 +319,7 @@ async def jobs_run(
         return HTMLResponse(
             f'''<div class="rounded-lg p-4 my-3 flex items-start gap-3 text-sm"
                      style="background: hsl(35 85% 96%); border: 1px solid hsl(35 70% 82%);">
-                  <span>🔍</span>
+                  <i class="ph-thin ph-magnifying-glass" style="font-size: 1.25rem; color: hsl(28 75% 42%);"></i>
                   <div>
                     <div class="font-semibold">No results for "{params.query}"</div>
                     <div class="text-body-muted mt-1">

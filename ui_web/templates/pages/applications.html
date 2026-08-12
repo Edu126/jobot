@@ -31,7 +31,7 @@
       {% for status in ['interested', 'applied', 'interviewing', 'offer'] %}
         {% set meta = status_meta[status] %}
         <div>
-          <div class="text-label">{{ meta.emoji }} {{ meta.label }}</div>
+          <div class="text-label inline-flex items-center gap-1.5"><i class="ph-thin {{ meta.icon }} i-4" style="color: oklch(var(--bc) / 0.5);"></i>{{ meta.label }}</div>
           <div class="text-metric-sm mt-1">{{ counts.get(status, 0) }}</div>
         </div>
       {% endfor %}
@@ -46,7 +46,7 @@
         {% set meta = status_meta[status] %}
         <section>
           <div class="flex items-baseline gap-3 mb-4">
-            <h2 class="text-title">{{ meta.emoji }} {{ meta.label }}</h2>
+            <h2 class="text-title inline-flex items-center gap-2"><i class="ph-thin {{ meta.icon }} i-5" style="color: oklch(var(--a));"></i>{{ meta.label }}</h2>
             <span class="text-sm text-base-content/40 tabular-nums">{{ bucket | length }}</span>
           </div>
 

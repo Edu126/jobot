@@ -90,6 +90,21 @@
         },
       });
 
+      // Global HTMX hook: release the overlay's beforeunload guard as
+      // soon as an HX-Redirect header arrives, BEFORE htmx sets location.
+      // The per-longOp release in stop() runs on htmx:afterRequest, which
+      // fires AFTER htmx has already begun the navigation — the browser
+      // then prompts "Leave site?" because our guard is still registered.
+      // htmx:beforeOnLoad is the earliest observable moment for the response,
+      // so releasing here beats the redirect handler to the punch.
+      document.addEventListener('htmx:beforeOnLoad', (evt) => {
+        const xhr = evt.detail && evt.detail.xhr;
+        if (!xhr || !xhr.getResponseHeader) return;
+        if (xhr.getResponseHeader('HX-Redirect')) {
+          try { Alpine.store('overlay').releaseUnloadGuard(); } catch (_) {}
+        }
+      });
+
       // Full-screen overlay for long ops. Blocks interaction + shows a
       // geometric animation + prevents accidental tab close. Wired into
       // `longOp` below so every long-running operation gets it for free.

@@ -29,13 +29,15 @@ router = APIRouter(tags=["applications"])
 # Order sections top-to-bottom (active funnel first, closed states after).
 STATUS_ORDER = ["interested", "applied", "interviewing", "offer", "rejected", "withdrawn"]
 
+# Icon = Phosphor thin icon name (no "ph-thin " prefix — template adds it).
+# Pill class = semantic color from app.css (pill-neutral/info/celebration/danger).
 STATUS_META = {
-    "interested":   {"emoji": "👀", "label": "Interested"},
-    "applied":      {"emoji": "📤", "label": "Applied"},
-    "interviewing": {"emoji": "💬", "label": "Interviewing"},
-    "offer":        {"emoji": "🎉", "label": "Offer"},
-    "rejected":     {"emoji": "❌", "label": "Rejected"},
-    "withdrawn":    {"emoji": "🚪", "label": "Withdrawn"},
+    "interested":   {"icon": "ph-bookmark-simple", "label": "Interested",   "pill": "pill-neutral"},
+    "applied":      {"icon": "ph-paper-plane-tilt","label": "Applied",      "pill": "pill-neutral"},
+    "interviewing": {"icon": "ph-chat-circle",     "label": "Interviewing", "pill": "pill-info"},
+    "offer":        {"icon": "ph-sparkle",         "label": "Offer",        "pill": "pill-celebration"},
+    "rejected":     {"icon": "ph-x-circle",        "label": "Rejected",     "pill": "pill-danger"},
+    "withdrawn":    {"icon": "ph-sign-out",        "label": "Withdrawn",    "pill": "pill-neutral"},
 }
 
 

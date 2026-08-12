@@ -132,7 +132,8 @@ async def create_saved_search(
     )
     if from_ == "chip":
         return HTMLResponse(
-            '<span class="chip" style="background: hsl(155 40% 92%); color: hsl(165 60% 25%); border-color: hsl(155 40% 82%);">✓ Saved</span>',
+            '<span class="chip pill-success inline-flex items-center gap-1">'
+            '<i class="ph-thin ph-check i-3"></i>Saved</span>',
             status_code=200,
         )
     return Response(status_code=200, headers={"HX-Refresh": "true"})

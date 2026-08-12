@@ -1,6 +1,6 @@
 {# Single application card. Rendered per-status-section.
    Requires `app` (row dict from db.list_applications) and `status_meta`. #}
-{% set curr = status_meta.get(app.status, {'emoji': '•', 'label': app.status.title()}) %}
+{% set curr = status_meta.get(app.status, {'icon': 'ph-circle', 'label': app.status.title(), 'pill': 'pill-neutral'}) %}
 {% set is_closed = app.status in ('rejected', 'withdrawn') %}
 
 <article class="card-quiet {% if is_closed %}card-compact-closed{% endif %}"
@@ -27,22 +27,14 @@
 
     {# Right: status pill + move-to menu #}
     <div class="shrink-0 flex items-start gap-2">
-      {% set _c = {
-        'interested':   ('hsl(155 40% 92%)', 'hsl(165 60% 25%)', 'hsl(155 40% 82%)'),
-        'applied':      ('hsl(210 60% 94%)', 'hsl(215 70% 32%)', 'hsl(210 50% 84%)'),
-        'interviewing': ('hsl(280 40% 94%)', 'hsl(280 50% 35%)', 'hsl(280 40% 84%)'),
-        'offer':        ('hsl(35 85% 92%)',  'hsl(28 75% 32%)',  'hsl(35 70% 82%)'),
-        'rejected':     ('hsl(0 60% 95%)',   'hsl(358 60% 45%)', 'hsl(0 50% 88%)'),
-        'withdrawn':    ('oklch(var(--b3))', 'oklch(var(--bc)/0.6)','oklch(var(--b3))'),
-      }[app.status] %}
-      <div class="pill" style="background: {{ _c[0] }}; color: {{ _c[1] }}; border-color: {{ _c[2] }};">
-        {{ curr.emoji }} {{ curr.label }}
+      <div class="pill {{ curr.pill }} inline-flex items-center gap-1.5">
+        <i class="ph-thin {{ curr.icon }} i-4"></i>{{ curr.label }}
       </div>
 
       <div class="relative">
         <button @click="menuOpen = !menuOpen"
-                class="btn btn-sm btn-ghost text-base-content/60 hover:text-base-content px-2">
-          Move to ▾
+                class="btn btn-sm btn-ghost text-base-content/60 hover:text-base-content px-2 inline-flex items-center gap-1">
+          Move to <i class="ph-thin ph-caret-down i-3"></i>
         </button>
         <div x-show="menuOpen" x-cloak
              @click.outside="menuOpen = false"
