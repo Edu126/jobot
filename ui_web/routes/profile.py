@@ -23,6 +23,7 @@ from __future__ import annotations
 import io
 import os
 from pathlib import Path
+from typing import Optional
 
 from dotenv import set_key
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile

@@ -18,7 +18,9 @@ Design notes:
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
+import socket
 from datetime import date
 from typing import Optional
 from urllib.parse import urlparse
@@ -47,12 +49,55 @@ class UrlExtractError(RuntimeError):
     """Raised when the LLM couldn't extract usable fields from the page."""
 
 
+def _is_safe_public_ip(host: str) -> bool:
+    """Return False if `host` resolves to any private/loopback/link-local/
+    multicast/reserved IP — blocks SSRF against cloud metadata endpoints
+    (169.254.169.254), localhost, and internal networks. `host` may be a
+    hostname or a literal IP address."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError):
+        return False
+    for info in infos:
+        raw_ip = info[4][0]
+        try:
+            ip = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            continue
+        if (
+            ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
 def fetch_page_text(url: str) -> str:
     """Download the page and return plain text (nav/script/style stripped).
 
-    Raises UrlFetchError on any HTTP/network failure. Successful returns
-    are truncated to _MAX_PAGE_CHARS to keep the LLM prompt reasonable.
+    Enforces scheme = http/https + rejects hostnames that resolve to any
+    non-public IP (private / loopback / link-local / metadata endpoints).
+    This is the SSRF guard for a user-supplied URL that we then hand to
+    an LLM prompt — a malicious URL could otherwise let a caller read
+    internal admin pages or cloud metadata via the model's output.
+
+    Raises UrlFetchError on any validation, network, or HTTP failure.
+    Successful returns are truncated to _MAX_PAGE_CHARS.
     """
+    parsed = urlparse(url or "")
+    if parsed.scheme not in ("http", "https"):
+        raise UrlFetchError(
+            f"Only http(s) URLs are supported (got '{parsed.scheme}://')."
+        )
+    host = parsed.hostname
+    if not host:
+        raise UrlFetchError("URL has no hostname.")
+    if not _is_safe_public_ip(host):
+        raise UrlFetchError(
+            f"'{host}' resolves to a private or internal address — "
+            "only public URLs are allowed for security reasons."
+        )
+
     try:
         resp = requests.get(
             url,
@@ -62,6 +107,14 @@ def fetch_page_text(url: str) -> str:
         )
     except requests.RequestException as exc:
         raise UrlFetchError(f"Network error fetching {url}: {exc}") from exc
+
+    # Redirect landed on an internal address? requests followed it silently.
+    # Re-check the FINAL URL's host against the same allowlist.
+    final = urlparse(resp.url or url)
+    if final.hostname and not _is_safe_public_ip(final.hostname):
+        raise UrlFetchError(
+            f"Redirect landed on a private address ('{final.hostname}') — refusing."
+        )
 
     if resp.status_code >= 400:
         raise UrlFetchError(

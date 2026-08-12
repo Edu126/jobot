@@ -85,9 +85,7 @@
       {# Reasoning + skills — only when we have an AI result #}
       {% if job._verdict != 'none' %}
         {% if job._reasoning %}
-        <p class="text-sm text-base-content/85 leading-relaxed mt-3 italic">
-          "{{ job._reasoning }}"
-        </p>
+        <p class="text-sm text-base-content/85 leading-relaxed mt-3 italic quoted">{{ job._reasoning }}</p>
         {% endif %}
 
         {% if job._matched or job._gaps %}

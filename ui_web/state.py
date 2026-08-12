@@ -8,6 +8,8 @@ Currently holds:
   job, newest last. Capped at MAX_TAILOR_HISTORY so we don't blow up
   memory over long sessions. Each entry:
       {"tailored": dict, "at": iso_string, "level": "conservative|balanced|aggressive"}
+- `search_tasks[task_id]` — bookkeeping for background multi-search
+  worker threads. Consumed by /jobs/loading/{task_id}/status poller.
 """
 from __future__ import annotations
 
@@ -60,23 +62,3 @@ def list_runs(job_id: str) -> list[dict[str, str]]:
         {"index": i, "at": e["at"], "level": e["level"]}
         for i, e in enumerate(hist)
     ][::-1]
-
-
-# Backward-compat alias — old code still writes to this. Redirect to new API.
-class _TailoredResultsCompat(dict):
-    """Legacy shim: writing `tailored_results[job_id] = dict` also records history."""
-    def __setitem__(self, key: str, value: Any) -> None:
-        super().__setitem__(key, value)
-        if isinstance(value, dict) and "sections" in value:
-            record_tailor(key, value)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        v = super().get(key, None)
-        if v is not None:
-            return v
-        # Fall back to history's latest
-        latest = get_tailored(key)
-        return latest if latest is not None else default
-
-
-tailored_results: _TailoredResultsCompat = _TailoredResultsCompat()

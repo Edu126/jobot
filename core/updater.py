@@ -17,6 +17,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from core.version import current as current_version, is_newer
 
@@ -31,6 +32,21 @@ API_URL = f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/releases/latest"
 APP_ROOT = Path(__file__).resolve().parent.parent
 DIST_DIR = APP_ROOT / "dist"
 PENDING_ZIP = DIST_DIR / "pending-update.zip"
+
+# Only hosts we'll accept in download() — bounds the trust model. Even if a
+# poisoned env var swaps GH_OWNER/GH_REPO, the download can't be redirected
+# to attacker infrastructure that then gets extracted by Update.command.
+_ALLOWED_DOWNLOAD_HOSTS = frozenset({
+    "api.github.com",
+    "github.com",
+    "codeload.github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+})
+
+
+class UpdateDownloadError(RuntimeError):
+    """Raised when the download URL fails validation or the fetch errors out."""
 
 
 @dataclass
@@ -105,7 +121,23 @@ def check() -> UpdateStatus:
 
 def download(url: str) -> Path:
     """Stream the release zip to dist/pending-update.zip. Overwrites any
-    previous pending download. Returns the path on success; raises on error."""
+    previous pending download. Returns the path on success; raises on error.
+
+    Enforces an https + host allowlist so a poisoned check() response can't
+    trick us into fetching arbitrary content that Update.command would then
+    extract onto disk.
+    """
+    parsed = urlparse(url or "")
+    if parsed.scheme != "https":
+        raise UpdateDownloadError(
+            f"Update URL must be https, got '{parsed.scheme}://'"
+        )
+    if parsed.hostname not in _ALLOWED_DOWNLOAD_HOSTS:
+        raise UpdateDownloadError(
+            f"Update host '{parsed.hostname}' not in the allowlist. "
+            "Only GitHub-served asset URLs are accepted."
+        )
+
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     tmp = PENDING_ZIP.with_suffix(".zip.tmp")
 

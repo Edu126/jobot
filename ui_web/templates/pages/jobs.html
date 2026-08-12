@@ -38,7 +38,7 @@
   <div class="card-quiet" x-data="{ mode: 'search' }">
 
     {# Tab strip — segmented control style: active tab is a solid pill so
-       the current mode reads instantly. Icons via Lucide, no emojis. #}
+       the current mode reads instantly. Icons via Phosphor thin, no emojis. #}
     <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
       <div class="seg-tabs">
         <button type="button" @click="mode = 'search'"
@@ -190,8 +190,10 @@
     {% endfor %}
   </div>
   <button @click="expanded = !expanded"
-          class="text-sm text-base-content/60 hover:text-base-content cursor-pointer pt-2"
-          x-text="expanded ? '⌃ Show less' : `⌄ Show ${ {{ recent | length - 6 }} } more`"></button>
+          class="text-sm text-base-content/60 hover:text-base-content cursor-pointer pt-2 inline-flex items-center gap-1">
+    <template x-if="!expanded"><span><i class="ph-thin ph-caret-down i-3"></i> Show {{ recent | length - 6 }} more</span></template>
+    <template x-if="expanded"><span><i class="ph-thin ph-caret-up i-3"></i> Show less</span></template>
+  </button>
   {% endif %}
 </section>
 {% endif %}

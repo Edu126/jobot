@@ -33,9 +33,7 @@
 
   {# ── Reasoning ── #}
   {% if ai and ai.reasoning %}
-  <p class="text-sm italic text-base-content/85 leading-relaxed">
-    "{{ ai.reasoning }}"
-  </p>
+  <p class="text-sm italic text-base-content/85 leading-relaxed quoted">{{ ai.reasoning }}</p>
   {% endif %}
 
   {# ── Matched + Gaps ── #}

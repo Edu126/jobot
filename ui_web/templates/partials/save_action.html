@@ -15,8 +15,11 @@
           hx-post="/jobs/save/{{ jid }}"
           hx-target="#save-action-{{ jid }}"
           hx-swap="innerHTML"
-          hx-vals='{"status": "interested"}'>
-    <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+          hx-vals='{"status": "interested"}'
+          hx-indicator=".save-spin-{{ jid }}"
+          hx-disabled-elt="this">
+    <span class="save-spin-{{ jid }} htmx-indicator loading loading-spinner loading-xs"></span>
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 htmx-only-when-idle" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
       <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
     </svg>
   </button>
@@ -26,23 +29,28 @@
           title="Remove from Applications"
           hx-post="/jobs/unsave/{{ jid }}"
           hx-target="#save-action-{{ jid }}"
-          hx-swap="innerHTML">
-    <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+          hx-swap="innerHTML"
+          hx-indicator=".save-spin-{{ jid }}"
+          hx-disabled-elt="this">
+    <span class="save-spin-{{ jid }} htmx-indicator loading loading-spinner loading-xs" style="color: currentColor;"></span>
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 htmx-only-when-idle" fill="currentColor" viewBox="0 0 24 24">
       <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
     </svg>
   </button>
 {% else %}
+  {# Semantic pill class + Phosphor icon per status. Offer wears the
+     salmon celebration tint — the funnel's "win" moment finally uses the
+     accent color the design system has been holding for value moments. #}
   {% set _map = {
-    'applied':      ('hsl(210 60% 94%)', 'hsl(215 70% 32%)', 'hsl(210 50% 84%)', 'ph-paper-plane-tilt', 'Applied'),
-    'interviewing': ('hsl(280 40% 94%)', 'hsl(280 50% 35%)', 'hsl(280 40% 84%)', 'ph-chat-circle',      'Interviewing'),
-    'offer':        ('hsl(35 85% 92%)',  'hsl(28 75% 32%)',  'hsl(35 70% 82%)',  'ph-sparkle',          'Offer'),
-    'rejected':     ('hsl(0 60% 95%)',   'hsl(358 60% 45%)', 'hsl(0 50% 88%)',   'ph-x-circle',         'Rejected'),
-    'withdrawn':    ('oklch(var(--b3))', 'oklch(var(--bc)/0.6)','oklch(var(--b3))', 'ph-sign-out',       'Withdrawn'),
+    'applied':      ('pill-neutral',     'ph-paper-plane-tilt', 'Applied'),
+    'interviewing': ('pill-info',        'ph-chat-circle',      'Interviewing'),
+    'offer':        ('pill-celebration', 'ph-sparkle',          'Offer'),
+    'rejected':     ('pill-danger',      'ph-x-circle',         'Rejected'),
+    'withdrawn':    ('pill-neutral',     'ph-sign-out',         'Withdrawn'),
   }[status] %}
   <a href="/applications"
-     class="pill hover:opacity-80 transition-opacity cursor-pointer inline-flex items-center gap-1.5"
-     title="View on Applications tab — click to open"
-     style="background: {{ _map[0] }}; color: {{ _map[1] }}; border-color: {{ _map[2] }};">
-    <i class="ph-thin {{ _map[3] }} i-4"></i>{{ _map[4] }}
+     class="pill {{ _map[0] }} hover:opacity-80 transition-opacity cursor-pointer inline-flex items-center gap-1.5"
+     title="View on Applications tab — click to open">
+    <i class="ph-thin {{ _map[1] }} i-4"></i>{{ _map[2] }}
   </a>
 {% endif %}

@@ -32,7 +32,7 @@
           </div>
         </div>
         <div class="shrink-0">
-          <div class="pill" style="background: hsl(155 40% 92%); color: hsl(165 60% 25%); border-color: hsl(155 40% 82%);">
+          <div class="pill pill-success">
             <span class="pill-dot live"></span>Active
           </div>
         </div>
@@ -91,15 +91,15 @@
         </div>
         <div>
           {% if ats_report.score >= 80 %}
-            <div class="pill" style="background: hsl(155 40% 92%); color: hsl(165 60% 25%); border-color: hsl(155 40% 82%);">
+            <div class="pill pill-success">
               <span class="pill-dot live"></span>Good
             </div>
           {% elif ats_report.score >= 60 %}
-            <div class="pill" style="background: hsl(35 85% 92%); color: hsl(28 75% 32%); border-color: hsl(35 70% 82%);">
+            <div class="pill pill-warn">
               <span class="pill-dot warn"></span>Needs work
             </div>
           {% else %}
-            <div class="pill" style="background: hsl(0 60% 95%); color: hsl(358 60% 45%); border-color: hsl(0 50% 88%);">
+            <div class="pill pill-danger">
               <span class="pill-dot" style="background: hsl(0 60% 55%);"></span>Serious issues
             </div>
           {% endif %}
@@ -219,13 +219,13 @@
         {% if api_key_present %}
           <div class="flex items-center gap-2 mt-1">
             <span class="font-mono text-sm" x-text="showKey ? '(full key hidden — reveal via env)' : '{{ api_key_masked }}'"></span>
-            <div class="pill" style="background: hsl(155 40% 92%); color: hsl(165 60% 25%); border-color: hsl(155 40% 82%);">
+            <div class="pill pill-success">
               <span class="pill-dot live"></span>Connected
             </div>
           </div>
         {% else %}
           <div class="mt-1">
-            <div class="pill" style="background: hsl(35 85% 92%); color: hsl(28 75% 32%); border-color: hsl(35 70% 82%);">
+            <div class="pill pill-warn">
               <span class="pill-dot warn"></span>Not set
             </div>
             <div class="text-xs text-body-muted mt-1">
@@ -289,7 +289,7 @@
           <div class="tabular-nums text-xs w-24 text-right">
             <span class="font-semibold">{{ row.used }}</span>
             <span class="text-base-content/40"> / {{ row.limit }}</span>
-            {% if row.exhausted %}<span class="ml-1" title="Quota exhausted for today">🚫</span>{% endif %}
+            {% if row.exhausted %}<i class="ph-thin ph-prohibit i-4 ml-1" style="color: oklch(var(--er));" title="Quota exhausted for today"></i>{% endif %}
           </div>
         </div>
         {% endfor %}
@@ -339,7 +339,7 @@
 
     <template x-if="$store.notif.permission === 'denied'">
       <div>
-        <div class="pill" style="background: hsl(0 60% 95%); color: hsl(358 60% 45%); border-color: hsl(0 50% 88%);">
+        <div class="pill pill-danger">
           Blocked
         </div>
         <div class="text-xs text-body-muted mt-2">
@@ -350,7 +350,7 @@
 
     <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && $store.notif.enabled">
       <div class="flex items-center gap-3">
-        <div class="pill" style="background: hsl(155 40% 92%); color: hsl(165 60% 25%); border-color: hsl(155 40% 82%);">
+        <div class="pill pill-success">
           <span class="pill-dot live"></span>Enabled
         </div>
         <button @click="$store.notif.disable(); $store.toast.show('Notifications disabled')"
@@ -372,7 +372,7 @@
   <section class="card-quiet">
     <div class="flex items-baseline justify-between mb-2 flex-wrap gap-2">
       <div>
-        <div class="text-label">💡 Suggested queries</div>
+        <div class="text-label inline-flex items-center gap-1"><i class="ph-thin ph-lightbulb i-4" style="color: oklch(var(--a));"></i>Suggested queries</div>
         <p class="text-xs text-body-muted mt-1">
           Based on your resume — 5 titles you might not have thought to search. Cached for 7 days.
         </p>

@@ -87,10 +87,14 @@ body {
 }
 
 .text-display {
-  font-size: 2.5rem;              /* 40px */
-  line-height: 1.1;
+  /* Was 2.5rem/40px — dropped so a one-word H1 ("Jobs", "Profile",
+     "Applications") doesn't dwarf the muted subtitle underneath. The
+     smaller size also matches the Wealthsimple typographic feel where
+     display type earns weight through space + weight, not raw size. */
+  font-size: 2rem;                /* 32px */
+  line-height: 1.15;
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.028em;
 }
 
 .text-title {
@@ -132,11 +136,16 @@ body {
    ───────────────────────────────────────────────────────────── */
 
 .card-quiet {
-  background: oklch(var(--b1));
+  /* 82% alpha lets the warm wash bleed through cards so they read
+     "on the wash" instead of pasted rectangles. Resting box-shadow
+     is barely there — enough to imply lift without competing with
+     the hover glow. */
+  background: oklch(var(--b1) / 0.85);
   border: 1px solid oklch(var(--b3));
   border-radius: var(--rounded-box);
   padding: 1.5rem;
-  transition: border-color 0.2s ease, box-shadow 0.3s ease, transform 0.2s ease;
+  box-shadow: 0 1px 2px oklch(var(--p) / 0.04);
+  transition: border-color 0.2s ease, box-shadow 0.3s ease, transform 0.2s ease, background 0.2s ease;
 }
 
 /* Hover state — warm shadow tint + subtle salmon border edge. The soft
@@ -363,6 +372,51 @@ body {
   border-color: oklch(var(--a));
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Status-pill palette — semantic classes replacing the ~15 ad-hoc
+   `style="background: hsl(...);"` inline blocks that had grown into
+   6 different color families across statuses. Now: 5 semantic tints,
+   all sourced from design tokens. The "celebration" tint uses the
+   salmon accent so the win-state (offer) wears the brand's energy
+   color — accent finally shows up at a value moment, not just decor.
+   ───────────────────────────────────────────────────────────── */
+.pill-success {
+  background: oklch(var(--su) / 0.14);
+  color: oklch(var(--su) / 0.9);
+  border-color: oklch(var(--su) / 0.35);
+}
+.pill-warn {
+  background: oklch(var(--wa) / 0.16);
+  color: oklch(30% 0.09 65);
+  border-color: oklch(var(--wa) / 0.45);
+}
+.pill-danger {
+  background: oklch(var(--er) / 0.12);
+  color: oklch(var(--er));
+  border-color: oklch(var(--er) / 0.35);
+}
+.pill-info {
+  background: oklch(var(--in) / 0.12);
+  color: oklch(var(--in) / 0.9);
+  border-color: oklch(var(--in) / 0.35);
+}
+.pill-neutral {
+  background: oklch(var(--b3) / 0.6);
+  color: oklch(var(--bc) / 0.7);
+  border-color: oklch(var(--b3));
+}
+.pill-celebration {
+  background: oklch(var(--a) / 0.15);
+  color: oklch(var(--af));
+  border-color: oklch(var(--a) / 0.45);
+}
+
+/* Quoted-italic — pseudo-element quotes so LLM content that already
+   contains " chars doesn't produce nested "" in the reasoning line.
+   Uses proper curly typography (U+201C / U+201D). */
+.quoted::before { content: '\201C'; margin-right: 0.05em; }
+.quoted::after  { content: '\201D'; margin-left: 0.05em; }
+
 /* Breathing pulse — the accent pill exhales a soft glow every 2.8s. Signals
    "this is where the eye should land" on hero moments (curated top matches). */
 .pill-accent {
@@ -533,6 +587,11 @@ body {
 /* Hide anything with x-cloak until Alpine is ready */
 [x-cloak] { display: none !important; }
 
+/* Hide the "idle" element (icon) while HTMX is in-flight — its sibling
+   .htmx-indicator becomes visible per HTMX defaults. Used on the heart
+   save/unsave button so users see a spinner instead of a stale icon. */
+.htmx-request .htmx-only-when-idle { display: none; }
+
 /* ─────────────────────────────────────────────────────────────
    Utilities
    ───────────────────────────────────────────────────────────── */
@@ -629,7 +688,10 @@ body {
 .score-hero {
   position: relative;
   padding: 1.25rem 1.25rem;
-  border-radius: 0.875rem;
+  /* Consolidated to var(--rounded-box) = 12px so score-hero, card-quiet,
+     and the drawer panel all share one radius — kills the 4-different-radii
+     drift on the same screen the designer flagged. */
+  border-radius: var(--rounded-box);
   border: 1px solid oklch(var(--b3));
   background: oklch(var(--b1));
   display: flex;
