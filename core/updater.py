@@ -22,7 +22,7 @@ from core.version import current as current_version, is_newer
 
 
 # Where to pull release metadata from. Override with env vars for forks.
-GH_OWNER = os.environ.get("JOBOT_GH_OWNER", "eemc0126")
+GH_OWNER = os.environ.get("JOBOT_GH_OWNER", "Edu126")
 GH_REPO = os.environ.get("JOBOT_GH_REPO", "jobot")
 
 API_URL = f"https://api.github.com/repos/{GH_OWNER}/{GH_REPO}/releases/latest"
