@@ -30,7 +30,7 @@ from typing import Optional
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
-from core import db
+from core import db, events
 from core.jobs import cache as jobs_cache
 from core.jobs.from_url import (
     UrlExtractError,
@@ -598,6 +598,13 @@ def _run_multi_background(task_id: str, queries: list[str], location: str) -> No
     jobs_cache.save(bulk_params, merged_list, label=bulk_label)
     db.upsert_jobs([j.to_dict() for j in merged_list])
 
+    events.track(
+        events.SEARCH_BROAD,
+        queries=successes,
+        result_count=len(merged_list),
+        failure_count=len(failures),
+    )
+
     task["status"] = "done"
     task["result_url"] = f"/jobs/results/{bulk_params.cache_key()}"
     task["message"] = f"Done — {len(merged_list)} jobs across {len(successes)} searches."
@@ -845,6 +852,12 @@ async def jobs_from_url(
 
     # 3) Persist to jobs table so scoring + tailoring see it
     db.upsert_jobs([job_dict])
+    events.track(
+        events.SEARCH_URL_IMPORT,
+        job_id=job_dict["id"],
+        source=job_dict.get("site", ""),
+        used_manual=bool(manual_text),
+    )
 
     # 4) Score against current resume, if we have one
     resume = db.get_current_resume()
@@ -938,6 +951,13 @@ async def jobs_detail(request: Request, job_id: str):
     app = db.get_application_by_job(job_id)
     job["_app_status"] = app["status"] if app else None
 
+    events.track(
+        events.JOB_DETAIL_VIEWED,
+        job_id=job_id,
+        score=(ai or {}).get("score"),
+        verdict=(ai or {}).get("verdict"),
+    )
+
     return templates.TemplateResponse(
         request,
         "partials/job_detail.html",
@@ -962,6 +982,8 @@ async def jobs_save(request: Request, job_id: str, status: str = Form("intereste
     if existing and existing["status"] != status:
         db.update_application(app_id, status=status)
 
+    events.track(events.JOB_SAVED, job_id=job_id, status=status)
+
     return templates.TemplateResponse(
         request,
         "partials/save_action.html",
@@ -978,6 +1000,7 @@ async def jobs_unsave(request: Request, job_id: str):
     app = db.get_application_by_job(job_id)
     if app and app["status"] == "interested":
         db.delete_application(app["id"])
+        events.track(events.JOB_UNSAVED, job_id=job_id)
     return templates.TemplateResponse(
         request,
         "partials/save_action.html",
@@ -1096,6 +1119,22 @@ async def jobs_tailor_generate(
     # Persist to history — user can revisit past runs without re-generating
     run_index = record_tailor(job_id, tailored)
 
+    _match = tailored.get("tailoring_match") or {}
+    _before = _match.get("before") or {}
+    _after = _match.get("after") or {}
+    events.track(
+        events.TAILOR_GENERATED,
+        job_id=job_id,
+        level=str(level),
+        before_verdict=_before.get("verdict"),
+        after_verdict=_after.get("verdict"),
+        before_score=_before.get("score"),
+        after_score=_after.get("score"),
+        delta=_match.get("delta"),
+        verdict_jumped=bool(_match.get("verdict_jumped")),
+        change_pct=(tailored.get("tailoring_change") or {}).get("overall_pct"),
+    )
+
     return templates.TemplateResponse(
         request,
         "partials/tailor_result.html",
@@ -1198,6 +1237,8 @@ async def jobs_tailor_download(job_id: str, run: int = -1):
     pieces.append(slugify(level))
     filename = "_".join(pieces) + ".docx"
 
+    events.track(events.TAILOR_RESUME_DOWNLOAD, job_id=job_id, level=str(level), run=run)
+
     return StreamingResponse(
         io.BytesIO(docx_bytes),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -1253,6 +1294,8 @@ async def jobs_tailor_cover_letter_download(job_id: str, run: int = -1):
     pieces = [p for p in [name_part, company_part, position_part] if p]
     pieces.append("cover-letter")
     filename = "_".join(pieces) + ".docx"
+
+    events.track(events.TAILOR_CL_DOWNLOAD, job_id=job_id, run=run)
 
     return StreamingResponse(
         io.BytesIO(docx_bytes),

@@ -29,7 +29,7 @@ from dotenv import set_key
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
-from core import db, updater
+from core import db, events, updater
 from core.version import current as current_version
 from core.llm.gemini import (
     DEFAULT_MODEL_CHAIN,
@@ -318,6 +318,12 @@ async def upload_resume(file: UploadFile = File(...)):
         )
 
     db.save_resume(file.filename, parsed, raw, set_current=True)
+    events.track(
+        events.RESUME_UPLOADED,
+        filename=file.filename,
+        word_count=parsed.get("stats", {}).get("word_count"),
+        page_estimate=parsed.get("stats", {}).get("page_estimate"),
+    )
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
@@ -426,4 +432,78 @@ async def profile_updates_cancel(request: Request):
         request,
         "partials/update_status.html",
         {"status": status.to_dict()},
+    )
+
+
+# ─────────────────────────────────────────────────────────────
+# Analytics — beacon endpoint + Insights view
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/events/track")
+async def events_track(
+    request: Request,
+    type: str = Form(...),
+    payload: str = Form("{}"),
+):
+    """Frontend beacon endpoint. Fired via `navigator.sendBeacon()` on
+    tab visibility changes so we can measure real time-on-tab. Payload
+    is a JSON string. Never returns 5xx — bad payloads become empty dicts."""
+    import json as _json
+    try:
+        parsed = _json.loads(payload) if payload else {}
+        if not isinstance(parsed, dict):
+            parsed = {"raw": str(parsed)[:200]}
+    except Exception:
+        parsed = {}
+    events.track(type, **parsed)
+    return Response(status_code=204)
+
+
+@router.get("/profile/insights")
+async def profile_insights(request: Request):
+    """Insights tab content — swapped into the Settings hub when the
+    'Insights' seg-tab is clicked. Aggregates from the events table +
+    applications table."""
+    counts = events.counts_by_type_last_week()
+    daily = events.daily_activity(days=14)
+    hourly = events.hour_of_day_histogram(days=14)
+    funnel = events.funnel_last_month()
+    total = events.total_events()
+    active_days = events.days_with_activity(days=14)
+    median_seconds = events.median_time_to_download_seconds(days=30)
+
+    # Simple key numbers pre-computed for template convenience
+    key_metrics = {
+        "sessions_week": counts.get(events.PAGE_VIEW, 0),
+        "searches_broad": counts.get(events.SEARCH_BROAD, 0),
+        "searches_url": counts.get(events.SEARCH_URL_IMPORT, 0),
+        "jobs_viewed": counts.get(events.JOB_DETAIL_VIEWED, 0),
+        "tailors_generated": counts.get(events.TAILOR_GENERATED, 0),
+        "resumes_downloaded": counts.get(events.TAILOR_RESUME_DOWNLOAD, 0),
+    }
+
+    return templates.TemplateResponse(
+        request,
+        "partials/insights.html",
+        {
+            "total_events": total,
+            "active_days_14d": active_days,
+            "key_metrics": key_metrics,
+            "daily": daily,
+            "hourly": hourly,
+            "hourly_max": max(hourly) if hourly else 1,
+            "funnel": funnel,
+            "median_seconds_to_download": median_seconds,
+        },
+    )
+
+
+@router.post("/profile/insights/clear")
+async def profile_insights_clear(request: Request):
+    """Wipe all events. Behind a hx-confirm on the client."""
+    n = events.clear_all()
+    return HTMLResponse(
+        f'<div class="pill pill-success inline-flex items-center gap-1.5">'
+        f'<i class="ph-thin ph-trash i-3"></i>Cleared {n} events</div>',
+        status_code=200,
     )

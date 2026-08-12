@@ -18,7 +18,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
-from core import db
+from core import db, events
 
 from ..deps import templates
 
@@ -76,7 +76,16 @@ async def applications_status(app_id: int, status: str = Form(...)):
     if not existing:
         raise HTTPException(status_code=404, detail="application not found")
 
+    old_status = existing["status"]
     db.update_application(app_id, status=status)
+    if old_status != status:
+        events.track(
+            events.APP_STATUS_CHANGED,
+            job_id=existing["job_id"],
+            application_id=app_id,
+            from_status=old_status,
+            to_status=status,
+        )
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 

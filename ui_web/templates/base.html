@@ -90,6 +90,40 @@
         },
       });
 
+      // Analytics beacons — fire-and-forget POST to /events/track. Uses
+      // navigator.sendBeacon so it survives tab close. Never blocks UX.
+      // Emits page_view on load, page_hidden when the tab loses focus with
+      // the visible-duration in ms, so we can compute real time-on-tab.
+      window.__jobotBeacon = (type, payload) => {
+        try {
+          const body = new FormData();
+          body.append('type', type);
+          body.append('payload', JSON.stringify(payload || {}));
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon('/events/track', body);
+          } else {
+            fetch('/events/track', { method: 'POST', body, keepalive: true });
+          }
+        } catch (_) { /* analytics must never break UX */ }
+      };
+      window.__jobotBeacon('page_view', { path: location.pathname });
+      let __visStart = Date.now();
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          const ms = Date.now() - __visStart;
+          window.__jobotBeacon('page_hidden', { path: location.pathname, visible_ms: ms });
+        } else {
+          __visStart = Date.now();
+        }
+      });
+      window.addEventListener('pagehide', () => {
+        window.__jobotBeacon('page_hidden', {
+          path: location.pathname,
+          visible_ms: Date.now() - __visStart,
+          reason: 'pagehide',
+        });
+      });
+
       // Global HTMX hook: release the overlay's beforeunload guard as
       // soon as an HX-Redirect header arrives, BEFORE htmx sets location.
       // The per-longOp release in stop() runs on htmx:afterRequest, which

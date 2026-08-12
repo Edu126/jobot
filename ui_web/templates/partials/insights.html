@@ -1,0 +1,151 @@
+{# Insights fragment — swapped into the Settings hub when the Insights
+   seg-tab is clicked. Aggregates data from the events table + applications
+   table, all local to this SQLite. No external analytics. #}
+
+<div class="space-y-6">
+
+  {# ── Empty state ── #}
+  {% if total_events == 0 %}
+  <div class="rounded-lg p-4 text-sm text-body-muted"
+       style="background: oklch(var(--b2) / 0.5); border: 1px solid oklch(var(--b3));">
+    <div class="inline-flex items-center gap-2 font-medium text-base-content">
+      <i class="ph-thin ph-chart-line i-4"></i>No activity yet
+    </div>
+    <p class="mt-2">
+      Insights start building as you use the app — searches, tailored resumes,
+      status changes. Come back after a few sessions.
+    </p>
+  </div>
+  {% else %}
+
+  {# ── Header ── #}
+  <div class="flex items-baseline justify-between gap-3 flex-wrap">
+    <div>
+      <div class="text-label">This week</div>
+      <p class="text-xs text-body-muted mt-1">
+        Everything below is computed locally from your own activity — nothing leaves this Mac.
+      </p>
+    </div>
+    <button hx-post="/profile/insights/clear"
+            hx-confirm="Wipe all activity data? This can't be undone."
+            hx-target="#insights-clear-status"
+            hx-swap="innerHTML"
+            class="text-xs text-body-muted hover:text-error cursor-pointer inline-flex items-center gap-1">
+      <i class="ph-thin ph-trash i-3"></i>Clear all
+    </button>
+  </div>
+  <div id="insights-clear-status"></div>
+
+  {# ── Key metrics grid ── #}
+  <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    <div class="rounded-lg border border-base-300 p-3">
+      <div class="text-label">Sessions</div>
+      <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.sessions_week }}</div>
+    </div>
+    <div class="rounded-lg border border-base-300 p-3">
+      <div class="text-label">Jobs viewed</div>
+      <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.jobs_viewed }}</div>
+    </div>
+    <div class="rounded-lg border border-base-300 p-3">
+      <div class="text-label">Tailors generated</div>
+      <div class="text-metric-sm mt-1 tabular-nums" style="color: oklch(var(--a));">{{ key_metrics.tailors_generated }}</div>
+    </div>
+    <div class="rounded-lg border border-base-300 p-3">
+      <div class="text-label">Broad searches</div>
+      <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.searches_broad }}</div>
+    </div>
+    <div class="rounded-lg border border-base-300 p-3">
+      <div class="text-label">URL imports</div>
+      <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.searches_url }}</div>
+    </div>
+    <div class="rounded-lg border border-base-300 p-3">
+      <div class="text-label">Resume DOCX</div>
+      <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.resumes_downloaded }}</div>
+    </div>
+  </div>
+
+  {# ── Funnel (30-day rolling) ── #}
+  <div>
+    <div class="text-label mb-3">Funnel — last 30 days</div>
+    {% set _steps = [
+      ('Viewed', funnel.viewed, 'oklch(var(--bc) / 0.6)'),
+      ('Saved', funnel.saved, 'oklch(var(--p))'),
+      ('Applied', funnel.applied, 'oklch(var(--in))'),
+      ('Interviewing', funnel.interviewing, 'oklch(var(--a))'),
+      ('Offer', funnel.offer, 'oklch(var(--su))'),
+    ] %}
+    {% set _max = (funnel.viewed if funnel.viewed > 0 else 1) %}
+    <div class="space-y-1.5">
+      {% for label, n, color in _steps %}
+      <div class="flex items-center gap-3 text-sm">
+        <div class="w-24 text-body-muted">{{ label }}</div>
+        <div class="flex-1 h-6 rounded overflow-hidden relative" style="background: oklch(var(--b3) / 0.4);">
+          <div class="h-full rounded transition-all"
+               style="width: {{ ((n / _max * 100) | round(1)) if _max else 0 }}%; background: {{ color }};"></div>
+          <span class="absolute inset-0 flex items-center px-2 text-xs font-semibold text-base-content"
+                style="mix-blend-mode: normal;">{{ n }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="text-xs text-body-muted mt-2">
+      Distinct jobs at each step. Later stages include everyone who reached and moved past.
+    </div>
+  </div>
+
+  {# ── Time-of-day heatmap (last 14 days, UTC) ── #}
+  <div>
+    <div class="text-label mb-3">Activity by hour — last 14 days (UTC)</div>
+    <div class="flex items-end gap-0.5 h-16">
+      {% for count in hourly %}
+      {% set pct = (count / hourly_max * 100) if hourly_max else 0 %}
+      <div class="flex-1 rounded-t transition-all"
+           style="height: {{ pct }}%; min-height: 2px; background: {% if count %}oklch(var(--p) / {{ 0.4 + (count / hourly_max * 0.6) }}){% else %}oklch(var(--b3) / 0.5){% endif %};"
+           title="{{ '%02d' | format(loop.index0) }}:00 — {{ count }} events"></div>
+      {% endfor %}
+    </div>
+    <div class="flex justify-between text-xs text-body-muted mt-1 font-mono">
+      <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
+    </div>
+  </div>
+
+  {# ── Daily sparkline (last 14 days) ── #}
+  {% if daily %}
+  <div>
+    <div class="text-label mb-3">Days with activity — last 14 days</div>
+    <div class="flex items-end gap-1 h-12">
+      {% set _daily_max = daily | map(attribute='count') | max %}
+      {% for d in daily %}
+      <div class="flex-1 rounded-t"
+           style="height: {{ (d.count / _daily_max * 100) if _daily_max else 0 }}%; min-height: 3px; background: oklch(var(--a) / 0.65);"
+           title="{{ d.day }} — {{ d.count }} events"></div>
+      {% endfor %}
+    </div>
+    <div class="text-xs text-body-muted mt-1">
+      <strong>{{ active_days_14d }}</strong> active day{{ 's' if active_days_14d != 1 }} in the last 14
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Median time to download ── #}
+  {% if median_seconds_to_download is not none %}
+  <div class="rounded-lg p-4"
+       style="background: oklch(var(--p) / 0.04); border: 1px solid oklch(var(--p) / 0.25);">
+    <div class="text-label">Time to tailored resume</div>
+    <div class="text-metric-sm mt-1 tabular-nums" style="color: oklch(var(--p));">
+      {% set mins = (median_seconds_to_download / 60) | round(1) %}
+      {% if median_seconds_to_download < 60 %}{{ median_seconds_to_download | int }}s
+      {% else %}{{ mins }} min{% endif %}
+    </div>
+    <div class="text-xs text-body-muted mt-1">
+      Median from opening a job to downloading its tailored resume (last 30 days).
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="text-xs text-body-muted pt-2 border-t border-base-300">
+    <strong>{{ total_events }}</strong> events tracked total. All data stays on this Mac.
+  </div>
+
+  {% endif %}
+</div>

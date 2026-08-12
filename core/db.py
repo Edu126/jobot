@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -112,6 +112,17 @@ CREATE TABLE IF NOT EXISTS suggested_queries (
     queries_json  TEXT NOT NULL,
     generated_at  TEXT NOT NULL
 );
+
+-- Analytics — append-only event log. Never leaves this SQLite file.
+-- Used by the Insights view on Profile to visualize activity.
+CREATE TABLE IF NOT EXISTS events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts_utc       TEXT NOT NULL,
+    type         TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_events_ts   ON events(ts_utc);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 """
 
 
