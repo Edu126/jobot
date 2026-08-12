@@ -15,9 +15,26 @@ from core.timeutil import humanize
 
 
 APP_ROOT = Path(__file__).resolve().parent
+STATIC_ROOT = APP_ROOT / "static"
 
 templates = Jinja2Templates(directory=str(APP_ROOT / "templates"))
 templates.env.auto_reload = True
+
+
+def static_url(rel_path: str) -> str:
+    """Build a /static/{path} URL with a cache-buster derived from the file's
+    mtime. Keeps browsers from serving a stale CSS/JS when we edit it —
+    without needing hard-refreshes. Missing files fall back to the plain URL.
+    """
+    p = STATIC_ROOT / rel_path
+    try:
+        v = int(p.stat().st_mtime)
+    except OSError:
+        return f"/static/{rel_path}"
+    return f"/static/{rel_path}?v={v}"
+
+
+templates.env.globals["static_url"] = static_url
 
 # Jinja filters — mirror what the Streamlit UI uses so templates read the same.
 templates.env.filters["humanize"] = humanize
