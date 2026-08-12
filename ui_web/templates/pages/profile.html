@@ -3,397 +3,224 @@
 
 {% block content %}
 
-<div class="mb-8 space-y-3">
+{# ══════════════════════════════════════════════════════════════════
+   PROFILE — Option A recamp: "Resume-first hero"
+   The page has one job: tell you if your resume is good. Hero row =
+   resume + ATS score side-by-side. Suggested queries + saved searches
+   are workflow tools right below. Settings (API key, quota, updates,
+   notifications) collapse into three details at the bottom so config
+   never competes with content.
+   ══════════════════════════════════════════════════════════════════ #}
+
+<div class="mb-10">
   <h1 class="text-display">Profile</h1>
-  <p class="text-body-muted text-lg max-w-xl">
-    Your resume, API key, and saved searches — everything personal in one place.
-  </p>
+  <p class="text-body-muted text-lg mt-2">Your resume, scored.</p>
 </div>
 
 <div class="space-y-6">
 
-  {# ── Current resume + Upload — 50/50 row on md+ so they sit side by side.
-     Both cards keep their own headers so the pair reads as two focused cards
-     instead of one busy panel. On mobile they stack. #}
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+  {# ─── HERO ROW — resume | ATS score ─── #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-    {# Current resume — left column #}
-    {% if current %}
-    <section class="card-quiet">
-      <div class="flex items-start justify-between gap-4">
-        <div class="min-w-0 flex-1">
-          <div class="text-label">Current resume</div>
-          <div class="text-lg font-semibold tracking-tight mt-1 truncate">{{ current.filename }}</div>
-          <div class="text-sm text-body-muted mt-1">
-            {{ current.parsed.stats.word_count }} words ·
-            ~{{ current.parsed.stats.page_estimate }}p ·
-            {{ current.parsed.stats.bullet_count }} bullets ·
-            uploaded {{ current.uploaded_at | humanize }}
-          </div>
-        </div>
-        <div class="shrink-0">
-          <div class="pill pill-success">
+    {# LEFT — current resume with Replace dropdown #}
+    <section class="card-quiet" x-data="{ showReplace: false }">
+      {% if current %}
+        <div class="text-label">Current resume</div>
+        <h2 class="text-title mt-1 truncate">{{ current.filename }}</h2>
+        <div class="mt-2 flex items-center gap-2 flex-wrap">
+          <div class="pill pill-success inline-flex items-center gap-1.5">
             <span class="pill-dot live"></span>Active
           </div>
+          <span class="text-sm text-body-muted">
+            {{ current.parsed.stats.word_count }} words · ~{{ current.parsed.stats.page_estimate }}p · {{ current.parsed.stats.bullet_count }} bullets
+          </span>
         </div>
-      </div>
-      <div class="flex items-center gap-2 mt-4 pt-3 border-t border-base-300/70">
-        <a href="/profile/resume/{{ current.id }}/download"
-           class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium">
-          Download original
-        </a>
-      </div>
-    </section>
-    {% else %}
-    {# Placeholder when no resume yet — keeps the grid symmetrical #}
-    <section class="card-quiet flex items-center justify-center text-center">
-      <div class="text-body-muted text-sm">
-        No resume yet — upload one on the right to get started.
-      </div>
-    </section>
-    {% endif %}
+        <div class="text-xs text-body-muted mt-2">
+          Uploaded {{ current.uploaded_at | humanize }}
+        </div>
 
-    {# Upload new — right column #}
-    <section class="card-quiet">
-      <div class="text-label mb-3">
-        {% if current %}Upload new version{% else %}Upload your resume{% endif %}
-      </div>
-      <form hx-post="/profile/resume/upload"
-            hx-encoding="multipart/form-data"
-            hx-target="#upload-status"
-            hx-swap="innerHTML"
-            hx-indicator="#upload-spin">
-        <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-          <input type="file" name="file" accept=".docx,.pdf" required
-                 class="file-input file-input-bordered file-input-sm w-full sm:flex-1">
-          <button type="submit" class="btn btn-primary btn-sm whitespace-nowrap">
-            <span id="upload-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
-            Upload
+        <div class="flex items-center gap-2 mt-5 pt-4 border-t border-base-300/70">
+          <a href="/profile/resume/{{ current.id }}/download"
+             class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
+            <i class="ph-thin ph-download-simple i-4"></i>Download
+          </a>
+          <button @click="showReplace = !showReplace"
+                  class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
+            <i class="ph-thin ph-arrows-clockwise i-4"></i>Replace
+            <i class="ph-thin i-3" :class="showReplace ? 'ph-caret-up' : 'ph-caret-down'"></i>
           </button>
         </div>
-        <div id="upload-status" class="mt-2 min-h-[1.25rem]"></div>
-        <div class="text-xs text-body-muted mt-2">
-          DOCX or PDF. Auto-sets as current after upload.
-        </div>
-      </form>
-    </section>
-  </div>
 
-  {# ── ATS report ── #}
-  {% if ats_report %}
-    <section class="card-quiet">
-      <div class="flex items-start justify-between gap-4 mb-5">
-        <div>
-          <div class="text-label">ATS score</div>
-          <div class="mt-1">
-            <span class="text-metric">{{ ats_report.score }}</span><span class="text-base-content/30 text-lg font-medium">/100</span>
+        {# Upload form — folded into the Replace dropdown. Hidden by default. #}
+        <div x-show="showReplace" x-cloak x-collapse class="mt-4 pt-4 border-t border-base-300/70">
+          <div class="text-label mb-2">Upload a new version</div>
+          <form hx-post="/profile/resume/upload"
+                hx-encoding="multipart/form-data"
+                hx-target="#upload-status"
+                hx-swap="innerHTML"
+                hx-indicator="#upload-spin">
+            <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+              <input type="file" name="file" accept=".docx,.pdf" required
+                     class="file-input file-input-bordered file-input-sm w-full sm:flex-1">
+              <button type="submit" class="btn btn-primary btn-sm whitespace-nowrap">
+                <span id="upload-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+                Upload
+              </button>
+            </div>
+            <div id="upload-status" class="mt-2 min-h-[1.25rem]"></div>
+            <div class="text-xs text-body-muted mt-2">
+              DOCX or PDF. Auto-sets as current on success.
+            </div>
+          </form>
+        </div>
+      {% else %}
+        {# No resume yet — this card IS the upload CTA #}
+        <div class="text-label">No resume yet</div>
+        <h2 class="text-title mt-1">Upload your resume to start</h2>
+        <p class="text-sm text-body-muted mt-2">DOCX or PDF. Stays on your Mac.</p>
+        <form hx-post="/profile/resume/upload"
+              hx-encoding="multipart/form-data"
+              hx-target="#upload-status"
+              hx-swap="innerHTML"
+              hx-indicator="#upload-spin"
+              class="mt-4">
+          <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+            <input type="file" name="file" accept=".docx,.pdf" required
+                   class="file-input file-input-bordered file-input-sm w-full sm:flex-1">
+            <button type="submit" class="btn btn-primary btn-sm whitespace-nowrap">
+              <span id="upload-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+              Upload
+            </button>
           </div>
-        </div>
-        <div>
-          {% if ats_report.score >= 80 %}
-            <div class="pill pill-success">
-              <span class="pill-dot live"></span>Good
-            </div>
-          {% elif ats_report.score >= 60 %}
-            <div class="pill pill-warn">
-              <span class="pill-dot warn"></span>Needs work
-            </div>
-          {% else %}
-            <div class="pill pill-danger">
-              <span class="pill-dot" style="background: hsl(0 60% 55%);"></span>Serious issues
-            </div>
-          {% endif %}
-        </div>
-      </div>
+          <div id="upload-status" class="mt-2 min-h-[1.25rem]"></div>
+        </form>
+      {% endif %}
+    </section>
 
+    {# RIGHT — ATS score, the hero number #}
+    {% if ats_report %}
       {% set criticals = ats_report.issues | selectattr("severity", "equalto", "critical") | list %}
       {% set warnings = ats_report.issues | selectattr("severity", "equalto", "warning") | list %}
       {% set infos = ats_report.issues | selectattr("severity", "equalto", "info") | list %}
+    <section class="card-quiet">
+      <div class="text-label">ATS score</div>
 
-      {% if criticals %}
-        <div class="mb-4">
-          <div class="text-label mb-2 inline-flex items-center gap-1" style="color: hsl(358 60% 45%);"><i class="ph-thin ph-warning-octagon i-4"></i>{{ criticals|length }} critical issue{{ '' if criticals|length == 1 else 's' }}</div>
-          <div class="space-y-2">
-            {% for issue in criticals %}
-            <div class="rounded-lg p-3 text-sm" style="background: hsl(0 60% 96%); border: 1px solid hsl(0 50% 88%);">
-              <div class="font-medium">{{ issue.message }}</div>
-              <div class="text-body-muted text-xs mt-1">Fix: {{ issue.fix }}</div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-      {% endif %}
-
-      {% if warnings %}
-        <div class="mb-4">
-          <div class="text-label mb-2 inline-flex items-center gap-1" style="color: hsl(28 75% 32%);"><i class="ph-thin ph-warning i-4"></i>{{ warnings|length }} warning{{ '' if warnings|length == 1 else 's' }}</div>
-          <div class="space-y-2">
-            {% for issue in warnings %}
-            <div class="rounded-lg p-3 text-sm" style="background: hsl(35 85% 96%); border: 1px solid hsl(35 70% 82%);">
-              <div class="font-medium">{{ issue.message }}</div>
-              <div class="text-body-muted text-xs mt-1">Fix: {{ issue.fix }}</div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-      {% endif %}
-
-      {% if infos %}
-        <details class="mb-4">
-          <summary class="text-label cursor-pointer select-none">{{ infos|length }} nice-to-have</summary>
-          <div class="space-y-2 mt-3">
-            {% for issue in infos %}
-            <div class="rounded-lg p-3 text-sm border border-base-300">
-              <div>{{ issue.message }}</div>
-              <div class="text-body-muted text-xs mt-1">Fix: {{ issue.fix }}</div>
-            </div>
-            {% endfor %}
-          </div>
-        </details>
-      {% endif %}
-
-      {% if ats_report.passed %}
-        <details>
-          <summary class="text-label cursor-pointer select-none inline-flex items-center gap-1"><i class="ph-thin ph-check-circle i-4" style="color: oklch(var(--su));"></i>{{ ats_report.passed|length }} check{{ '' if ats_report.passed|length == 1 else 's' }} passed</summary>
-          <ul class="mt-3 space-y-1 text-sm text-body-muted">
-            {% for check in ats_report.passed %}
-            <li>• {{ check }}</li>
-            {% endfor %}
-          </ul>
-        </details>
-      {% endif %}
-    </section>
-  {% endif %}
-
-  {# ── Older resumes ── #}
-  {% if older_resumes %}
-    <section>
-      <div class="text-label mb-3">Older versions ({{ older_resumes|length }})</div>
-      <div class="space-y-2">
-        {% for r in older_resumes %}
-        <div class="card-quiet py-3 flex items-center justify-between gap-3"
-             x-data="{ confirming: false }">
-          <div class="min-w-0 flex-1">
-            <div class="font-medium truncate">{{ r.filename }}</div>
-            <div class="text-xs text-body-muted mt-0.5">
-              {{ r.source_format or '?' }} · uploaded {{ r.uploaded_at | humanize }}
-            </div>
-          </div>
-          <div class="shrink-0 flex items-center gap-2">
-            <a href="/profile/resume/{{ r.id }}/download"
-               class="text-xs text-base-content/50 hover:text-base-content transition-colors px-2 py-1">
-              Download
-            </a>
-            <button hx-post="/profile/resume/{{ r.id }}/switch"
-                    hx-swap="none"
-                    class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium">
-              Use this
-            </button>
-            <button x-show="!confirming" @click="confirming = true"
-                    class="text-xs text-base-content/40 hover:text-error transition-colors px-2 py-1">
-              Delete
-            </button>
-            <div x-show="confirming" x-cloak class="inline-flex items-center gap-2">
-              <button hx-post="/profile/resume/{{ r.id }}/delete"
-                      hx-swap="none"
-                      class="btn btn-xs"
-                      style="background: hsl(0 60% 95%); color: hsl(358 60% 45%); border-color: hsl(0 50% 82%);">
-                Yes
-              </button>
-              <button @click="confirming = false" class="text-xs text-base-content/60 hover:text-base-content">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-    </section>
-  {% endif %}
-
-  {# ── API key (editable + masked) + local quota tracker ── #}
-  <section class="card-quiet" x-data="{ showEditor: false, showKey: false }">
-    <div class="flex items-start justify-between gap-4 mb-3">
-      <div>
-        <div class="text-label">Gemini API key</div>
-        {% if api_key_present %}
-          <div class="flex items-center gap-2 mt-1">
-            <span class="font-mono text-sm" x-text="showKey ? '(full key hidden — reveal via env)' : '{{ api_key_masked }}'"></span>
-            <div class="pill pill-success">
-              <span class="pill-dot live"></span>Connected
-            </div>
-          </div>
+      <div class="flex items-baseline gap-2 mt-3">
+        {# Verdict-tinted color on the big number itself so the score
+           reads emotionally at a glance, not just numerically. #}
+        {% if ats_report.score >= 80 %}
+          {% set _score_color = 'oklch(var(--su))' %}{% set _pill = 'pill-success' %}{% set _label = 'Good' %}
+        {% elif ats_report.score >= 60 %}
+          {% set _score_color = 'oklch(var(--wa) / 0.85)' %}{% set _pill = 'pill-warn' %}{% set _label = 'Needs work' %}
         {% else %}
-          <div class="mt-1">
-            <div class="pill pill-warn">
-              <span class="pill-dot warn"></span>Not set
-            </div>
-            <div class="text-xs text-body-muted mt-1">
-              Get a free key at <a href="https://aistudio.google.com" target="_blank" class="link cursor-pointer">aistudio.google.com</a>.
-            </div>
-          </div>
+          {% set _score_color = 'oklch(var(--er))' %}{% set _pill = 'pill-danger' %}{% set _label = 'Serious issues' %}
         {% endif %}
+        <span style="font-size: 3.75rem; line-height: 1; font-weight: 700; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; color: {{ _score_color }};">{{ ats_report.score }}</span>
+        <span class="text-xl font-medium text-base-content/30">/ 100</span>
+        <div class="pill {{ _pill }} ml-3 self-center">{{ _label }}</div>
       </div>
-      <div class="shrink-0 flex gap-2">
-        <button @click="showEditor = !showEditor"
-                class="text-sm text-base-content/60 hover:text-base-content cursor-pointer">
-          <span x-text="showEditor ? 'Cancel' : (({{ 'true' if api_key_present else 'false' }}) ? 'Change key' : 'Set key')"></span>
-        </button>
-      </div>
-    </div>
 
-    <div x-show="showEditor" x-cloak x-collapse>
-      <form hx-post="/profile/api-key" class="flex flex-col sm:flex-row gap-2 items-stretch">
-        <input type="password" name="api_key"
-               placeholder="Paste your Gemini API key…"
-               class="input input-bordered input-sm flex-1"
-               autocomplete="off" required>
-        <button type="submit" class="btn btn-primary btn-sm cursor-pointer">Save</button>
-        {% if api_key_present %}
-        <button type="button"
-                hx-post="/profile/api-key/clear"
-                hx-confirm="Remove the saved API key? AI scoring won't work until you set a new one."
-                class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content cursor-pointer">
-          Clear
-        </button>
-        {% endif %}
-      </form>
-      <div class="text-xs text-body-muted mt-2">
-        Saved to <code class="text-xs bg-base-200 px-1 rounded">jobot-app/.env</code>. Takes effect immediately — no restart.
+      {# Compact issue tallies, then details expander #}
+      <div class="text-sm text-body-muted mt-4 flex items-center gap-3 flex-wrap">
+        {% if criticals %}<span class="inline-flex items-center gap-1"><i class="ph-thin ph-warning-octagon i-4" style="color: oklch(var(--er));"></i>{{ criticals|length }} critical</span>{% endif %}
+        {% if warnings %}<span class="inline-flex items-center gap-1"><i class="ph-thin ph-warning i-4" style="color: oklch(var(--wa) / 0.85);"></i>{{ warnings|length }} warning{{ 's' if warnings|length > 1 }}</span>{% endif %}
+        {% if infos %}<span class="inline-flex items-center gap-1"><i class="ph-thin ph-lightbulb i-4"></i>{{ infos|length }} nice-to-have</span>{% endif %}
+        <span class="inline-flex items-center gap-1"><i class="ph-thin ph-check-circle i-4" style="color: oklch(var(--su));"></i>{{ ats_report.passed|length }} passed</span>
       </div>
-    </div>
 
-    {# ── Quota usage today ── #}
-    {% if api_key_present %}
-    <div class="mt-4 pt-4 border-t border-base-300">
-      <div class="flex items-baseline justify-between mb-2">
-        <div class="text-label">Usage today (UTC)</div>
-        <div class="text-xs text-base-content/40">tracked locally — reset on restart</div>
-      </div>
-      <div class="space-y-1.5">
-        {% for row in quota_rows %}
-        <div class="flex items-center gap-3 text-sm">
-          <div class="flex-1 font-mono text-xs truncate">{{ row.model }}</div>
-          <div class="flex-1 h-2 rounded-full overflow-hidden" style="background: oklch(var(--b3) / 0.5);">
-            {% set pct = (row.used / row.limit * 100) if row.limit else 0 %}
-            {% set pct_clamped = pct if pct <= 100 else 100 %}
-            {% if row.exhausted or pct >= 100 %}
-              {% set color = 'hsl(0 60% 55%)' %}
-            {% elif pct >= 75 %}
-              {% set color = 'hsl(28 75% 55%)' %}
-            {% else %}
-              {% set color = 'oklch(var(--p))' %}
-            {% endif %}
-            <div class="h-full" style="width: {{ pct_clamped }}%; background: {{ color }};"></div>
-          </div>
-          <div class="tabular-nums text-xs w-24 text-right">
-            <span class="font-semibold">{{ row.used }}</span>
-            <span class="text-base-content/40"> / {{ row.limit }}</span>
-            {% if row.exhausted %}<i class="ph-thin ph-prohibit i-4 ml-1" style="color: oklch(var(--er));" title="Quota exhausted for today"></i>{% endif %}
-          </div>
+      {% if criticals or warnings or infos or ats_report.passed %}
+      <details class="mt-4">
+        <summary class="text-sm text-primary cursor-pointer hover:underline inline-flex items-center gap-1 select-none">
+          <i class="ph-thin ph-caret-down i-3"></i>See all issues
+        </summary>
+        <div class="mt-4 space-y-4">
+          {% if criticals %}
+            <div>
+              <div class="text-label mb-2" style="color: oklch(var(--er));">Critical</div>
+              <div class="space-y-2">
+                {% for issue in criticals %}
+                <div class="rounded-lg p-3 text-sm" style="background: oklch(var(--er) / 0.06); border: 1px solid oklch(var(--er) / 0.25);">
+                  <div class="font-medium">{{ issue.message }}</div>
+                  <div class="text-body-muted text-xs mt-1">Fix: {{ issue.fix }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+          {% if warnings %}
+            <div>
+              <div class="text-label mb-2" style="color: oklch(var(--wa) / 0.85);">Warnings</div>
+              <div class="space-y-2">
+                {% for issue in warnings %}
+                <div class="rounded-lg p-3 text-sm" style="background: oklch(var(--wa) / 0.08); border: 1px solid oklch(var(--wa) / 0.30);">
+                  <div class="font-medium">{{ issue.message }}</div>
+                  <div class="text-body-muted text-xs mt-1">Fix: {{ issue.fix }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+          {% if infos %}
+            <details>
+              <summary class="text-label cursor-pointer select-none">{{ infos|length }} nice-to-have</summary>
+              <div class="space-y-2 mt-3">
+                {% for issue in infos %}
+                <div class="rounded-lg p-3 text-sm border border-base-300">
+                  <div>{{ issue.message }}</div>
+                  <div class="text-body-muted text-xs mt-1">Fix: {{ issue.fix }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
+          {% if ats_report.passed %}
+            <details>
+              <summary class="text-label cursor-pointer select-none inline-flex items-center gap-1">
+                <i class="ph-thin ph-check-circle i-4" style="color: oklch(var(--su));"></i>{{ ats_report.passed|length }} checks passed
+              </summary>
+              <ul class="mt-3 space-y-1 text-sm text-body-muted">
+                {% for check in ats_report.passed %}<li>• {{ check }}</li>{% endfor %}
+              </ul>
+            </details>
+          {% endif %}
         </div>
-        {% endfor %}
+      </details>
+      {% endif %}
+    </section>
+    {% else %}
+    <section class="card-quiet flex items-center justify-center text-center">
+      <div>
+        <div class="text-label">ATS score</div>
+        <div class="text-body-muted text-sm mt-2">Upload a resume to see your ATS score.</div>
       </div>
-      <div class="text-xs text-body-muted mt-2">
-        Google's API doesn't expose a quota-check endpoint. These numbers count successful requests since the server started.
-      </div>
-    </div>
+    </section>
     {% endif %}
-  </section>
+  </div>
 
-  {# ── App updates — pulls latest release from GitHub, downloads pending zip ── #}
-  <section class="card-quiet">
+  {# ─── SUGGESTED QUERIES — inline strip, no card ─── #}
+  <div class="pl-1 pt-2">
     <div class="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-      <div>
-        <div class="text-label inline-flex items-center gap-1">
-          <i class="ph-thin ph-cloud-arrow-down i-4"></i>App updates
-        </div>
-        <p class="text-sm text-body-muted mt-1">
-          Currently running <strong>v{{ jobot_version }}</strong>. Check GitHub for a newer release
-          and download it — installing runs via <code>Update Jobot.command</code>.
-        </p>
-      </div>
-    </div>
-    <div id="update-status"
-         hx-get="/profile/updates/check"
-         hx-trigger="load"
-         hx-swap="innerHTML">
-      <div class="text-sm text-body-muted inline-flex items-center gap-2">
-        <span class="loading loading-spinner loading-xs"></span>
-        Checking for updates…
-      </div>
-    </div>
-  </section>
-
-  {# ── Browser notifications (opt-in) ── #}
-  <section class="card-quiet" x-data>
-    <div class="text-label mb-2">Browser notifications</div>
-    <p class="text-sm text-body-muted mb-3">
-      Get a system notification when long tasks (bulk runs, tailoring) finish and you're on another tab.
-      Tab title + in-app toast always work — this is the OS-level layer.
-    </p>
-
-    <template x-if="$store.notif.permission === 'unsupported'">
-      <div class="pill">Not supported in this browser</div>
-    </template>
-
-    <template x-if="$store.notif.permission === 'denied'">
-      <div>
-        <div class="pill pill-danger">
-          Blocked
-        </div>
-        <div class="text-xs text-body-muted mt-2">
-          You (or your browser) blocked notifications for this site. Re-enable via the lock icon in the address bar.
-        </div>
-      </div>
-    </template>
-
-    <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && $store.notif.enabled">
-      <div class="flex items-center gap-3">
-        <div class="pill pill-success">
-          <span class="pill-dot live"></span>Enabled
-        </div>
-        <button @click="$store.notif.disable(); $store.toast.show('Notifications disabled')"
-                class="text-sm text-base-content/60 hover:text-base-content cursor-pointer">
-          Turn off
-        </button>
-      </div>
-    </template>
-
-    <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && !$store.notif.enabled">
-      <button @click="$store.notif.enable().then(p => $store.toast.show(p === 'granted' ? 'Notifications enabled' : 'Permission denied', p === 'granted' ? 'success' : 'info'))"
-              class="btn btn-primary btn-sm cursor-pointer">
-        Enable notifications
-      </button>
-    </template>
-  </section>
-
-  {# ── AI-suggested queries — cached for 7 days per resume ── #}
-  <section class="card-quiet">
-    <div class="flex items-baseline justify-between mb-2 flex-wrap gap-2">
-      <div>
-        <div class="text-label inline-flex items-center gap-1"><i class="ph-thin ph-lightbulb i-4" style="color: oklch(var(--a));"></i>Suggested queries</div>
-        <p class="text-xs text-body-muted mt-1">
-          Based on your resume — 5 titles you might not have thought to search. Cached for 7 days.
-        </p>
+      <div class="text-label inline-flex items-center gap-1">
+        <i class="ph-thin ph-lightbulb i-4" style="color: oklch(var(--a));"></i>Suggested queries
+        <span class="text-body-muted font-normal ml-2">— 5 titles from your resume you might not have tried</span>
       </div>
       <button hx-get="/profile/suggest-queries"
               hx-target="#suggested-queries"
               hx-swap="innerHTML"
               hx-indicator="#sug-spin"
-              class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer">
-        <span id="sug-spin" class="htmx-indicator loading loading-spinner loading-sm"></span>
-        <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i> Show suggestions
+              class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1">
+        <span id="sug-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+        <i class="ph-thin ph-sparkle i-3" style="color: oklch(var(--a));"></i>Show suggestions
       </button>
     </div>
-    <div id="suggested-queries" class="mt-3">
+    <div id="suggested-queries">
       <div class="text-sm text-body-muted italic">
         Click Show suggestions — uses cached results if generated in the last 7 days.
       </div>
     </div>
-  </section>
+  </div>
 
-  {# ── Saved searches (DB-backed CRUD) ── #}
+  {# ─── SAVED SEARCHES — full-width workflow card ─── #}
   <section class="card-quiet" x-data="{ showAdd: false }">
     <div class="flex items-start justify-between mb-3">
       <div>
@@ -412,8 +239,8 @@
     {# Add form — hidden until user clicks + Add #}
     <form x-show="showAdd" x-cloak x-collapse
           hx-post="/profile/saved-search"
-          class="rounded-lg border border-primary/30 p-3 mb-3 space-y-3"
-          style="background: oklch(var(--p) / 0.03);">
+          class="rounded-lg border p-3 mb-3 space-y-3"
+          style="background: oklch(var(--p) / 0.04); border-color: oklch(var(--p) / 0.25);">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="text-label block mb-1">Nickname for this search</label>
@@ -462,7 +289,6 @@
       {% for s in saved_searches %}
       <div class="border border-base-300 rounded-lg p-3"
            x-data="{ editing: false, confirming: false }">
-        {# Read state #}
         <div x-show="!editing" class="flex items-center justify-between gap-3">
           <div class="min-w-0 flex-1">
             <div class="font-medium text-sm truncate">{{ s.name }}</div>
@@ -475,29 +301,19 @@
           </div>
           <div class="shrink-0 flex items-center gap-2">
             <button @click="editing = true"
-                    class="text-xs text-base-content/50 hover:text-base-content cursor-pointer px-2 py-1">
-              Edit
-            </button>
+                    class="text-xs text-base-content/50 hover:text-base-content cursor-pointer px-2 py-1">Edit</button>
             <button x-show="!confirming" @click="confirming = true"
-                    class="text-xs text-base-content/40 hover:text-error cursor-pointer px-2 py-1">
-              Delete
-            </button>
+                    class="text-xs text-base-content/40 hover:text-error cursor-pointer px-2 py-1">Delete</button>
             <div x-show="confirming" x-cloak class="inline-flex items-center gap-2">
               <button hx-post="/profile/saved-search/{{ s.id }}/delete"
                       hx-swap="none"
-                      class="btn btn-xs cursor-pointer"
-                      style="background: hsl(0 60% 95%); color: hsl(358 60% 45%); border-color: hsl(0 50% 82%);">
-                Yes
-              </button>
+                      class="btn btn-xs pill-danger cursor-pointer">Yes</button>
               <button @click="confirming = false"
-                      class="text-xs text-base-content/60 hover:text-base-content cursor-pointer">
-                Cancel
-              </button>
+                      class="text-xs text-base-content/60 hover:text-base-content cursor-pointer">Cancel</button>
             </div>
           </div>
         </div>
 
-        {# Edit state — same labeled layout as the Add form #}
         <form x-show="editing" x-cloak
               hx-post="/profile/saved-search/{{ s.id }}/edit"
               class="space-y-3">
@@ -543,9 +359,7 @@
           <div class="flex gap-2 items-center">
             <button type="submit" class="btn btn-primary btn-sm cursor-pointer">Save changes</button>
             <button type="button" @click="editing = false"
-                    class="text-xs text-base-content/60 hover:text-base-content cursor-pointer">
-              Cancel
-            </button>
+                    class="text-xs text-body-muted hover:text-base-content cursor-pointer">Cancel</button>
           </div>
         </form>
       </div>
@@ -557,6 +371,186 @@
     </div>
     {% endif %}
   </section>
+
+  {# ─── BOTTOM — collapsibles for lineage + settings + updates ─── #}
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+
+    {# Older versions — file lineage #}
+    <details class="card-quiet" style="padding: 1rem 1.25rem;">
+      <summary class="cursor-pointer text-label inline-flex items-center gap-2 select-none">
+        <i class="ph-thin ph-clock-counter-clockwise i-4"></i>
+        Older versions{% if older_resumes %} ({{ older_resumes|length }}){% endif %}
+      </summary>
+      {% if older_resumes %}
+      <div class="mt-3 space-y-2">
+        {% for r in older_resumes %}
+        <div class="border border-base-300 rounded-lg p-3 flex items-center justify-between gap-3"
+             x-data="{ confirming: false }">
+          <div class="min-w-0 flex-1">
+            <div class="font-medium text-sm truncate">{{ r.filename }}</div>
+            <div class="text-xs text-body-muted mt-0.5">
+              {{ r.source_format or '?' }} · {{ r.uploaded_at | humanize }}
+            </div>
+          </div>
+          <div class="shrink-0 flex items-center gap-1">
+            <a href="/profile/resume/{{ r.id }}/download"
+               class="text-xs text-body-muted hover:text-base-content px-2 py-1">Download</a>
+            <button hx-post="/profile/resume/{{ r.id }}/switch"
+                    hx-swap="none"
+                    class="text-xs text-primary hover:underline px-2 py-1 cursor-pointer">Use this</button>
+            <button x-show="!confirming" @click="confirming = true"
+                    class="text-xs text-body-muted hover:text-error px-2 py-1 cursor-pointer">Delete</button>
+            <div x-show="confirming" x-cloak class="inline-flex items-center gap-1">
+              <button hx-post="/profile/resume/{{ r.id }}/delete"
+                      hx-swap="none"
+                      class="btn btn-xs pill-danger cursor-pointer">Yes</button>
+              <button @click="confirming = false"
+                      class="text-xs text-body-muted hover:text-base-content cursor-pointer">Cancel</button>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="mt-3 text-sm text-body-muted italic">No older versions yet.</div>
+      {% endif %}
+    </details>
+
+    {# Settings — API key + quota + notifications, all folded #}
+    <details class="card-quiet" style="padding: 1rem 1.25rem;"
+             x-data="{ showEditor: false }">
+      <summary class="cursor-pointer text-label inline-flex items-center gap-2 select-none">
+        <i class="ph-thin ph-gear i-4"></i>Settings
+      </summary>
+
+      <div class="mt-4 space-y-5">
+        {# API key row #}
+        <div>
+          <div class="flex items-start justify-between gap-3 mb-2">
+            <div class="text-label">Gemini API key</div>
+            <button @click="showEditor = !showEditor"
+                    class="text-xs text-primary hover:underline cursor-pointer">
+              <span x-text="showEditor ? 'Cancel' : (({{ 'true' if api_key_present else 'false' }}) ? 'Change' : 'Set')"></span>
+            </button>
+          </div>
+          {% if api_key_present %}
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-sm">{{ api_key_masked }}</span>
+              <div class="pill pill-success">
+                <span class="pill-dot live"></span>Connected
+              </div>
+            </div>
+          {% else %}
+            <div class="pill pill-warn inline-flex items-center gap-1.5">
+              <span class="pill-dot warn"></span>Not set
+            </div>
+            <div class="text-xs text-body-muted mt-1">
+              Get a free key at <a href="https://aistudio.google.com" target="_blank" class="link">aistudio.google.com</a>.
+            </div>
+          {% endif %}
+          <div x-show="showEditor" x-cloak x-collapse class="mt-3">
+            <form hx-post="/profile/api-key" class="flex flex-col sm:flex-row gap-2">
+              <input type="password" name="api_key"
+                     placeholder="Paste your Gemini API key…"
+                     class="input input-bordered input-sm flex-1"
+                     autocomplete="off" required>
+              <button type="submit" class="btn btn-primary btn-sm cursor-pointer">Save</button>
+              {% if api_key_present %}
+              <button type="button"
+                      hx-post="/profile/api-key/clear"
+                      hx-confirm="Remove the saved API key? AI scoring won't work until you set a new one."
+                      class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content cursor-pointer">Clear</button>
+              {% endif %}
+            </form>
+          </div>
+        </div>
+
+        {# Quota rows — only when key present #}
+        {% if api_key_present %}
+        <div class="pt-4 border-t border-base-300">
+          <div class="flex items-baseline justify-between mb-2">
+            <div class="text-label">Usage today (UTC)</div>
+            <div class="text-xs text-body-muted">resets on restart</div>
+          </div>
+          <div class="space-y-1.5">
+            {% for row in quota_rows %}
+            <div class="flex items-center gap-3 text-sm">
+              <div class="flex-1 font-mono text-xs truncate">{{ row.model }}</div>
+              <div class="flex-1 h-2 rounded-full overflow-hidden" style="background: oklch(var(--b3) / 0.5);">
+                {% set pct = (row.used / row.limit * 100) if row.limit else 0 %}
+                {% set pct_clamped = pct if pct <= 100 else 100 %}
+                {% if row.exhausted or pct >= 100 %}
+                  {% set color = 'oklch(var(--er))' %}
+                {% elif pct >= 75 %}
+                  {% set color = 'oklch(var(--wa) / 0.85)' %}
+                {% else %}
+                  {% set color = 'oklch(var(--p))' %}
+                {% endif %}
+                <div class="h-full" style="width: {{ pct_clamped }}%; background: {{ color }};"></div>
+              </div>
+              <div class="tabular-nums text-xs w-20 text-right">
+                <span class="font-semibold">{{ row.used }}</span>
+                <span class="text-base-content/40"> / {{ row.limit }}</span>
+                {% if row.exhausted %}<i class="ph-thin ph-prohibit i-3 ml-0.5" style="color: oklch(var(--er));" title="Quota exhausted for today"></i>{% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# Browser notifications toggle #}
+        <div class="pt-4 border-t border-base-300" x-data>
+          <div class="text-label mb-2">Browser notifications</div>
+          <p class="text-xs text-body-muted mb-2">
+            Get a system alert when long tasks finish and you're on another tab.
+          </p>
+          <template x-if="$store.notif.permission === 'unsupported'">
+            <div class="pill pill-neutral">Not supported</div>
+          </template>
+          <template x-if="$store.notif.permission === 'denied'">
+            <div>
+              <div class="pill pill-danger">Blocked</div>
+              <div class="text-xs text-body-muted mt-1">Re-enable via the lock icon in the address bar.</div>
+            </div>
+          </template>
+          <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && $store.notif.enabled">
+            <div class="flex items-center gap-3">
+              <div class="pill pill-success"><span class="pill-dot live"></span>Enabled</div>
+              <button @click="$store.notif.disable(); $store.toast.show('Notifications disabled')"
+                      class="text-xs text-body-muted hover:text-base-content cursor-pointer">Turn off</button>
+            </div>
+          </template>
+          <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && !$store.notif.enabled">
+            <button @click="$store.notif.enable().then(p => $store.toast.show(p === 'granted' ? 'Notifications enabled' : 'Permission denied', p === 'granted' ? 'success' : 'info'))"
+                    class="btn btn-primary btn-sm cursor-pointer">Enable</button>
+          </template>
+        </div>
+      </div>
+    </details>
+
+    {# App updates — auto-checks on load #}
+    <details class="card-quiet" style="padding: 1rem 1.25rem;">
+      <summary class="cursor-pointer text-label inline-flex items-center gap-2 select-none">
+        <i class="ph-thin ph-cloud-arrow-down i-4"></i>App updates
+        <span class="text-body-muted font-normal text-xs">v{{ jobot_version }}</span>
+      </summary>
+      <div class="mt-3">
+        <p class="text-xs text-body-muted mb-3">
+          Installing runs via <code>Update Jobot.command</code>.
+        </p>
+        <div id="update-status"
+             hx-get="/profile/updates/check"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+          <div class="text-sm text-body-muted inline-flex items-center gap-2">
+            <span class="loading loading-spinner loading-xs"></span>
+            Checking for updates…
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
 
 </div>
 
