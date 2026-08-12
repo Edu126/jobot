@@ -830,6 +830,51 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Modal (light, non-blocking) — used for the ATS report and any
+   other secondary detail view triggered from a page. Different from
+   the full-screen overlay (which blocks all interaction) because a
+   modal expects the user to read + close, not wait for work to finish.
+   ───────────────────────────────────────────────────────────── */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  background: oklch(var(--b2) / 0.72);
+}
+.modal-panel {
+  background: oklch(var(--b1));
+  border: 1px solid oklch(var(--b3));
+  border-radius: var(--rounded-box);
+  max-width: 720px;
+  width: 100%;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px -24px oklch(var(--bc) / 0.28);
+  overflow: hidden;
+}
+.modal-panel__header {
+  padding: 1.15rem 1.5rem;
+  border-bottom: 1px solid oklch(var(--b3));
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+.modal-panel__body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ─────────────────────────────────────────────────────────────
    Full-screen overlay loader
    Blocks interaction during long ops. Backdrop-blurred so context is
    preserved but nothing is clickable. Center: a 3×3 grid of squares
