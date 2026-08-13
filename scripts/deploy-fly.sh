@@ -3,15 +3,16 @@
 # deploy-fly.sh — one-shot Fly.io deploy for Jobot v0.5-dev (testing).
 #
 # Usage:
-#   bash scripts/deploy-fly.sh
+#   bash scripts/deploy-fly.sh                # deploy the app in fly.toml
+#   bash scripts/deploy-fly.sh melissa        # deploy 'jobbotv2-melissa'  (separate app+volume+URL)
+#   bash scripts/deploy-fly.sh hermana        # deploy 'jobbotv2-hermana'
+#   APP=my-custom bash scripts/deploy-fly.sh  # override app name completely
+#   KEY=<gemini_key> bash scripts/deploy-fly.sh melissa   # set THAT user's key at deploy time
 #
-# What it does (in order):
-#   1. Preflight — check `fly` CLI is installed and you're logged in
-#   2. First-run — if no fly.toml is registered yet, do `fly launch --no-deploy`
-#   3. Create the SQLite volume (idempotent — skips if it already exists)
-#   4. Push GOOGLE_API_KEY from local .env into Fly secrets
-#   5. Deploy the image
-#   6. Print the URL
+# One-user-per-app is our poor-man's multi-tenancy while proper auth
+# (magic-link + user-scoped DB) is on the roadmap. Each app gets its
+# own machine + volume + URL — full data isolation, zero shared state,
+# stays free on Fly's 3-app allowance.
 #
 # See docs/FLY_DEPLOY.md for the human walkthrough.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -57,49 +58,75 @@ if [ ! -f ".env" ]; then
   fail "No .env at repo root. Create one from .env.example and add GOOGLE_API_KEY."
 fi
 
-GOOGLE_API_KEY="$(grep -E '^GOOGLE_API_KEY=' .env | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')"
-if [ -z "$GOOGLE_API_KEY" ]; then
-  fail "GOOGLE_API_KEY is empty in .env — fill it in first."
+# API key priority: env var override → .env file. First lets you deploy
+# a per-user app with THEIR key without touching your own .env.
+if [ -n "${KEY:-}" ]; then
+  GOOGLE_API_KEY="$KEY"
+  ok "Using API key from KEY env var (${#GOOGLE_API_KEY} chars)"
+else
+  GOOGLE_API_KEY="$(grep -E '^GOOGLE_API_KEY=' .env | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')"
+  if [ -z "$GOOGLE_API_KEY" ]; then
+    fail "GOOGLE_API_KEY is empty in .env — fill it in first, or pass KEY=<key> when running."
+  fi
+  ok "Found GOOGLE_API_KEY in .env (${#GOOGLE_API_KEY} chars)"
 fi
-ok "Found GOOGLE_API_KEY in .env (${#GOOGLE_API_KEY} chars)"
 
-# ── 2. First-run: register the app if fly.toml's app name isn't claimed yet ─
-APP_NAME="$(grep -E '^app\s*=' fly.toml | head -1 | cut -d'"' -f2)"
-if [ -z "$APP_NAME" ]; then
-  fail "Couldn't read app name from fly.toml"
+# ── 2. Resolve app name ─────────────────────────────────────────────────────
+# Priority: APP env var → CLI arg → fly.toml. When CLI arg is a short suffix
+# (e.g. "melissa"), the base app name from fly.toml gets suffixed:
+#   'jobbotv2' + 'melissa' → 'jobbotv2-melissa'
+# When APP is set directly, that's the full name (no suffixing).
+BASE_APP="$(grep -E '^app[[:space:]]*=' fly.toml | head -1 \
+  | sed -E "s/.*=[[:space:]]*['\"]([^'\"]+)['\"].*/\1/")"
+if [ -z "$BASE_APP" ] || [ "$BASE_APP" = "$(grep -E '^app[[:space:]]*=' fly.toml | head -1)" ]; then
+  fail "Couldn't parse app name from fly.toml"
+fi
+
+if [ -n "${APP:-}" ]; then
+  APP_NAME="$APP"
+elif [ -n "${1:-}" ]; then
+  APP_NAME="${BASE_APP}-${1}"
+else
+  APP_NAME="$BASE_APP"
+fi
+
+# Fly requires lowercase letters, digits, dashes only.
+if ! echo "$APP_NAME" | grep -qE '^[a-z0-9-]+$'; then
+  fail "App name '$APP_NAME' must be lowercase letters, digits, and dashes only."
 fi
 info "App name: ${BOLD}${APP_NAME}${RESET}"
 
+# ── 3. Register app if not present ──────────────────────────────────────────
 if ! fly status --app "$APP_NAME" >/dev/null 2>&1; then
   warn "App '${APP_NAME}' not registered on your Fly account yet."
-  info "Running: fly launch --copy-config --no-deploy --name ${APP_NAME}"
-  echo "${DIM}(If the name is taken, Fly will prompt you for a different one — "
-  echo "then update the \`app = \"...\"\` line in fly.toml to match.)${RESET}"
-  fly launch --copy-config --no-deploy --name "$APP_NAME" --region iad || \
-    fail "fly launch failed. If the name was taken, edit fly.toml and re-run."
+  info "Running: fly apps create ${APP_NAME}"
+  fly apps create "$APP_NAME" || \
+    fail "fly apps create failed. If the name was taken globally, pick another with APP=<name>."
   ok "App registered."
 else
   ok "App '${APP_NAME}' already registered."
 fi
 
-# ── 3. Volume (idempotent) ──────────────────────────────────────────────────
+# ── 4. Volume (idempotent) ──────────────────────────────────────────────────
 if fly volumes list --app "$APP_NAME" 2>/dev/null | grep -q "jobot_data"; then
   ok "Volume 'jobot_data' already exists — skipping create."
 else
-  info "Creating 1GB volume 'jobot_data' in iad…"
-  fly volumes create jobot_data --size 1 --region iad --app "$APP_NAME" --yes
+  info "Creating 1GB volume 'jobot_data' in yyz…"
+  fly volumes create jobot_data --size 1 --region yyz --app "$APP_NAME" --yes
   ok "Volume created."
 fi
 
-# ── 4. Secrets ──────────────────────────────────────────────────────────────
+# ── 5. Secrets ──────────────────────────────────────────────────────────────
 info "Setting GOOGLE_API_KEY secret…"
 fly secrets set "GOOGLE_API_KEY=${GOOGLE_API_KEY}" --app "$APP_NAME" --stage
 ok "Secret staged (will apply on next deploy)."
 
-# ── 5. Deploy ───────────────────────────────────────────────────────────────
+# ── 6. Deploy ───────────────────────────────────────────────────────────────
 echo ""
 info "Building + deploying (this takes 2-4 min the first time)…"
-fly deploy --app "$APP_NAME"
+# --config fly.toml + --app override lets us reuse the same config file for
+# multiple apps. Fly uses the app name from --app, not from fly.toml.
+fly deploy --config fly.toml --app "$APP_NAME"
 
 # ── 6. Print URL ────────────────────────────────────────────────────────────
 echo ""

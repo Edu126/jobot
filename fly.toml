@@ -1,56 +1,38 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Jobot — Fly.io app config (single-user testing deploy).
+# fly.toml app configuration file generated for jobbotv2 on 2026-08-13T08:56:31-04:00
 #
-# Rename `app` below to whatever you set during `fly launch` — Fly app names
-# are globally unique, so `jobot-testing` may already be taken; try a suffix
-# like `jobot-testing-emc` if so.
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# Free-tier posture:
-#   - min_machines_running = 0  → scale-to-zero when idle (first request after
-#     idle takes ~2-5s to cold-start, which is fine for testing)
-#   - 1 shared CPU, 512MB RAM   → well within the 3× free VM allowance
-#   - 1GB volume                → SQLite for one user won't fill this
-# ─────────────────────────────────────────────────────────────────────────────
 
-app = "jobot-testing"
-primary_region = "iad"   # US East (Ashburn) — closest free region to Ottawa
+app = 'jobbotv2'
+primary_region = 'yyz'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PYTHONUNBUFFERED = "1"
-  # GOOGLE_API_KEY is a secret — set via `fly secrets set` (see deploy-fly.sh).
+  PYTHONUNBUFFERED = '1'
 
-# ── Persistent volume for the SQLite DB ─────────────────────────────────────
-# Create the volume BEFORE first deploy:
-#   fly volumes create jobot_data --size 1 --region iad
-# The deploy script does this idempotently.
-[mounts]
-  source = "jobot_data"
-  destination = "/app/data"
+[[mounts]]
+  source = 'jobot_data'
+  destination = '/app/data'
 
-# ── HTTP service ────────────────────────────────────────────────────────────
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = "stop"       # scale-to-zero when idle
-  auto_start_machines = true        # wake on incoming request
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
   min_machines_running = 0
-  processes = ["app"]
+  processes = ['app']
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "15s"
-    method = "GET"
-    path = "/healthz"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '15s'
+    method = 'GET'
+    path = '/healthz'
 
-# ── VM sizing (free tier: shared-cpu-1x with 256MB is free; 512MB costs
-#    a few cents/month above the free allowance but avoids OOM under load
-#    from Gemini responses + pandas). Bump to 1024MB if you see restarts.
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
-  cpu_kind = "shared"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
   cpus = 1
+  memory_mb = 512
