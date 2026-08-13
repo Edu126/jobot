@@ -115,10 +115,19 @@
 
   {# Bottom actions #}
   <div class="mt-4 pt-3 border-t border-base-300/70 flex items-center gap-2 flex-wrap">
+    {% if app.job_url_direct and app.job_url_direct != app.job_url %}
+    <a href="{{ app.job_url_direct }}" target="_blank" rel="noopener"
+       class="btn btn-sm btn-primary inline-flex items-center gap-1.5"
+       title="Direct link to the company's career page">
+      Apply on {{ app.job_company }} <i class="ph-thin ph-arrow-square-out i-4"></i>
+    </a>
+    {% endif %}
     {% if app.job_url %}
     <a href="{{ app.job_url }}" target="_blank" rel="noopener"
        class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
-      Open posting <i class="ph-thin ph-arrow-square-out i-4"></i>
+      {% if app.job_url_direct and app.job_url_direct != app.job_url %}View on {{ app.job_site or 'board' }}
+      {% else %}Open posting{% endif %}
+      <i class="ph-thin ph-arrow-square-out i-4"></i>
     </a>
     {% endif %}
     {% if not is_closed %}

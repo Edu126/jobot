@@ -400,6 +400,60 @@ def observations(days: int = 30) -> list[dict]:
     return obs
 
 
+def this_week_hero_stats() -> dict:
+    """The 3 numbers + 1 context line that anchor the Journey hero.
+
+    Returns:
+        {
+          "jobs_viewed": int,
+          "tailored":    int,     # distinct tailor generations
+          "applied":     int,     # status transitions to applied this week
+          "streak_days": int,     # consecutive days ending today with events
+          "most_active_dow": str, # day name over the last 30d ("" if not enough data)
+          "period_label": "This week",
+        }
+    """
+    counts = counts_by_type_last_week()
+
+    # "applied" for the week from event log — status-changed events to `applied`
+    since = (datetime.utcnow() - timedelta(days=7)).isoformat(timespec="seconds") + "Z"
+    with db.connect() as conn:
+        applied_row = conn.execute(
+            """SELECT COUNT(*) AS n FROM events
+               WHERE ts_utc >= ? AND type = ?
+                 AND json_extract(payload_json, '$.to_status') = 'applied'""",
+            (since, APP_STATUS_CHANGED),
+        ).fetchone()
+
+        # Day-of-week popularity over the last 30d — enough sample to be meaningful
+        since_30 = (datetime.utcnow() - timedelta(days=30)).isoformat(timespec="seconds") + "Z"
+        dow_rows = conn.execute(
+            "SELECT ts_utc FROM events WHERE ts_utc >= ?",
+            (since_30,),
+        ).fetchall()
+
+    dow_buckets = [0] * 7
+    for r in dow_rows:
+        ts = _parse_ts(r["ts_utc"])
+        if ts:
+            dow_buckets[ts.weekday()] += 1
+
+    most_active = ""
+    if sum(dow_buckets) >= 10:
+        best = dow_buckets.index(max(dow_buckets))
+        most_active = ["Monday", "Tuesday", "Wednesday", "Thursday",
+                       "Friday", "Saturday", "Sunday"][best]
+
+    return {
+        "jobs_viewed": counts.get(JOB_DETAIL_VIEWED, 0),
+        "tailored": counts.get(TAILOR_GENERATED, 0),
+        "applied": int(applied_row["n"]) if applied_row else 0,
+        "streak_days": _current_streak_days(),
+        "most_active_dow": most_active,
+        "period_label": "This week",
+    }
+
+
 def _current_streak_days() -> int:
     """Consecutive days ending today (UTC) with at least one event."""
     with db.connect() as conn:

@@ -118,10 +118,19 @@
          would be redundant clutter. On mobile it stays for direct access. #}
       <div class="lg:hidden flex items-center gap-2 mt-4 pt-3 border-t border-base-300/70"
            @click.stop>
+        {% if job.job_url_direct and job.job_url_direct != job.job_url %}
+        <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
+           class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
+           title="Direct link to the company's career page">
+          Apply on {{ job.company }} <i class="ph-thin ph-arrow-square-out i-4"></i>
+        </a>
+        {% endif %}
         {% if job.job_url %}
         <a href="{{ job.job_url }}" target="_blank" rel="noopener"
            class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
-          Open posting <i class="ph-thin ph-arrow-square-out i-4"></i>
+          {% if job.job_url_direct and job.job_url_direct != job.job_url %}View on {{ job.site or 'board' }}
+          {% else %}Open posting{% endif %}
+          <i class="ph-thin ph-arrow-square-out i-4"></i>
         </a>
         {% endif %}
         <button class="btn btn-sm btn-primary cursor-pointer"

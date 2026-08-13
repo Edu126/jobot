@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     site               TEXT,
     date_posted        TEXT,
     job_url            TEXT,
+    job_url_direct     TEXT,          -- v6: direct company career URL (skips the board)
     description        TEXT,
     is_remote          INTEGER NOT NULL DEFAULT 0,
     min_salary         REAL,
@@ -63,6 +64,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     first_seen         TEXT NOT NULL,
     last_seen          TEXT NOT NULL
 );
+-- v6: add job_url_direct if the column doesn't exist (idempotent for existing DBs)
+-- SQLite doesn't support IF NOT EXISTS on ADD COLUMN, so init_db() handles this
+-- separately after CREATE TABLE runs.
 
 CREATE TABLE IF NOT EXISTS applications (
     id                       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,6 +170,12 @@ def connect(path: Path = DB_PATH) -> sqlite3.Connection:
 def init_db(path: Path = DB_PATH) -> None:
     with connect(path) as conn:
         conn.executescript(_SCHEMA_SQL)
+        # v6 migration: add job_url_direct if missing on an existing DB.
+        # SQLite lacks `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so we
+        # sniff pragma first.
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "job_url_direct" not in cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN job_url_direct TEXT")
         conn.execute(
             "INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
             (str(SCHEMA_VERSION),),
@@ -294,9 +304,11 @@ def upsert_job(job: dict, path: Path = DB_PATH) -> None:
             "SELECT id FROM jobs WHERE id = ?", (job["id"],)
         ).fetchone()
         if existing:
+            # Update job_url_direct too — if the second scrape finally
+            # revealed it (jobspy sometimes returns it on retry).
             conn.execute(
                 """UPDATE jobs SET title=?, company=?, location=?, description=?,
-                   detected_language=?, french_required=?, last_seen=?
+                   detected_language=?, french_required=?, job_url_direct=?, last_seen=?
                    WHERE id=?""",
                 (
                     job.get("title", ""),
@@ -305,6 +317,7 @@ def upsert_job(job: dict, path: Path = DB_PATH) -> None:
                     job.get("description", ""),
                     job.get("detected_language", ""),
                     1 if job.get("french_required") else 0,
+                    job.get("job_url_direct") or None,
                     now,
                     job["id"],
                 ),
@@ -313,9 +326,9 @@ def upsert_job(job: dict, path: Path = DB_PATH) -> None:
             conn.execute(
                 """INSERT INTO jobs (
                     id, title, company, location, site, date_posted, job_url,
-                    description, is_remote, min_salary, max_salary,
+                    job_url_direct, description, is_remote, min_salary, max_salary,
                     detected_language, french_required, first_seen, last_seen
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     job["id"],
                     job.get("title", ""),
@@ -324,6 +337,7 @@ def upsert_job(job: dict, path: Path = DB_PATH) -> None:
                     job.get("site", ""),
                     job.get("date_posted", ""),
                     job.get("job_url", ""),
+                    job.get("job_url_direct") or None,
                     job.get("description", ""),
                     1 if job.get("is_remote") else 0,
                     job.get("min_salary"),
@@ -481,6 +495,7 @@ def list_applications(
     sql = f"""
         SELECT a.*, j.title AS job_title, j.company AS job_company,
                j.location AS job_location, j.job_url AS job_url,
+               j.job_url_direct AS job_url_direct,
                j.site AS job_site, j.description AS job_description
         FROM applications a
         JOIN jobs j ON j.id = a.job_id

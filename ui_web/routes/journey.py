@@ -39,29 +39,15 @@ async def journey_page(
     days = _RANGES[selected_range]
     total = events.total_events()
 
-    # Aggregations — all cheap on a single-user SQLite
-    counts = events.counts_by_type_last_week() if selected_range == "7d" else _counts_over(days)
-    daily = events.daily_activity(days=min(days, 60))
+    # Aggregations — all cheap on a single-user SQLite. Trimmed after
+    # the redesign: the timeline + daily sparkline came out, so those
+    # helpers no longer feed the page (kept in events.py for future use).
+    hero = events.this_week_hero_stats()
     week_heatmap = events.week_hour_heatmap(days=days)
     funnel = events.funnel_last_month()
-    active_days = events.days_with_activity(days=days)
     median_seconds = events.median_time_to_download_seconds(days=days)
     obs = events.observations(days=days)
-    timeline = events.recent_activity(limit=30)
 
-    # Pre-computed hero numbers for the metric grid
-    key_metrics = {
-        "sessions": counts.get(events.PAGE_VIEW, 0),
-        "searches_broad": counts.get(events.SEARCH_BROAD, 0),
-        "searches_url": counts.get(events.SEARCH_URL_IMPORT, 0),
-        "jobs_viewed": counts.get(events.JOB_DETAIL_VIEWED, 0),
-        "tailors_generated": counts.get(events.TAILOR_GENERATED, 0),
-        "resumes_downloaded": counts.get(events.TAILOR_RESUME_DOWNLOAD, 0),
-        "cover_letters_downloaded": counts.get(events.TAILOR_CL_DOWNLOAD, 0),
-        "status_changes": counts.get(events.APP_STATUS_CHANGED, 0),
-    }
-
-    # Max cell of the heatmap for scaling. Guard against empty log.
     heatmap_max = max((max(row) for row in week_heatmap), default=1) or 1
 
     return templates.TemplateResponse(
@@ -71,15 +57,12 @@ async def journey_page(
             "active_tab": "journey",
             "selected_range": selected_range,
             "total_events": total,
-            "active_days": active_days,
-            "key_metrics": key_metrics,
-            "daily": daily,
+            "hero": hero,
             "week_heatmap": week_heatmap,
             "heatmap_max": heatmap_max,
             "funnel": funnel,
             "median_seconds_to_download": median_seconds,
             "observations": obs,
-            "timeline": timeline,
         },
     )
 

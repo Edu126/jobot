@@ -31,7 +31,12 @@ class JobSearchParams:
     query: str
     location: str = "Ottawa, Ontario, Canada"
     distance: int = 50           # km radius
-    sites: list[str] = field(default_factory=lambda: ["indeed", "linkedin"])
+    # v0.5: added 'google' — jobspy already builds a google_search_term (see
+    # scrape_jobs call below) so we just need to include the site. Google
+    # often surfaces roles that Indeed/LinkedIn miss (small firm career pages
+    # indexed by Google for Jobs). Cross-source duplicates are collapsed via
+    # a normalized (company|title|location) key in _dedup_across_sources().
+    sites: list[str] = field(default_factory=lambda: ["indeed", "linkedin", "google"])
     hours_old: int = 168         # 1 week
     results_wanted: int = 30
     is_remote: Optional[bool] = None
@@ -53,13 +58,17 @@ class Job:
     location: str
     site: str
     date_posted: str
-    job_url: str
+    job_url: str                        # link on the source board (LinkedIn, Indeed, etc.)
     description: str
     is_remote: bool
     min_salary: Optional[float]
     max_salary: Optional[float]
-    detected_language: str        # 'en' | 'fr' | 'mixed' | 'unknown'
+    detected_language: str              # 'en' | 'fr' | 'mixed' | 'unknown'
     french_required: bool
+    # Direct link to the company's own career page for this posting, when the
+    # board exposes it. Skipping the board's "Apply" wall saves the user 1-2
+    # clicks per application. None when the board doesn't provide it.
+    job_url_direct: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -99,7 +108,74 @@ def search_jobs(params: JobSearchParams) -> list[Job]:
         except Exception:
             # one bad row shouldn't kill the whole result set
             continue
-    return jobs
+    return _dedup_across_sources(jobs)
+
+
+def _dedup_across_sources(jobs: list[Job]) -> list[Job]:
+    """Collapse duplicates across sources. jobspy IDs are per-source, so a
+    LinkedIn listing and its Google-for-Jobs mirror don't dedupe by id.
+    Falls back to a normalized (company|title|location) key. First seen wins
+    — we prefer the earlier source in the search order (indeed, linkedin,
+    google) because LinkedIn/Indeed have richer descriptions than Google's
+    scraped snippets. When we drop a dup, we opportunistically fill the
+    winner's job_url_direct from the loser if the winner lacked one."""
+    seen: dict[str, int] = {}   # key → index into `out`
+    out: list[Job] = []
+    for j in jobs:
+        norm_company = _norm_key(j.company, is_company=True)
+        norm_title = _norm_key(j.title)
+        norm_loc = _norm_key(j.location.split(",")[0] if j.location else "")
+        # Also fall back to id-based dedup so the same source's exact repeat
+        # (unlikely but possible) still collapses.
+        keys = [
+            f"id::{j.id}",
+            f"ctl::{norm_company}|{norm_title}|{norm_loc}",
+        ]
+        matched_idx: Optional[int] = None
+        for k in keys:
+            if k in seen:
+                matched_idx = seen[k]
+                break
+        if matched_idx is None:
+            for k in keys:
+                seen[k] = len(out)
+            out.append(j)
+        else:
+            winner = out[matched_idx]
+            # Opportunistically upgrade the winner with data the loser has
+            if not winner.job_url_direct and j.job_url_direct:
+                winner.job_url_direct = j.job_url_direct
+            if not winner.description and j.description:
+                winner.description = j.description
+    return out
+
+
+# Common corporate suffixes that create false negatives when comparing
+# company names across sources ('Acme' vs 'Acme Inc' vs 'Acme, LLC').
+# Applied only to the company field.
+_CORP_SUFFIX_RE = re.compile(
+    r"\s+(inc|incorporated|ltd|limited|llc|llp|plc|pllc|corp|corporation|"
+    r"co|company|gmbh|group|holdings|international|intl|sa|nv)\.?$",
+    re.IGNORECASE,
+)
+
+
+def _norm_key(s: str, *, is_company: bool = False) -> str:
+    """Lowercase + strip + collapse whitespace + drop punctuation so
+    'BIM Coordinator' and 'BIM  coordinator!' hash to the same string.
+    When `is_company=True`, also strip corporate suffixes so 'Acme',
+    'Acme Inc', and 'Acme, LLC' all collapse to the same key."""
+    if not s:
+        return ""
+    s = str(s).lower()
+    if is_company:
+        # Strip iteratively so 'Acme Corp Inc' → 'acme'
+        prev = None
+        while prev != s:
+            prev = s
+            s = _CORP_SUFFIX_RE.sub("", s).strip().rstrip(",.")
+    s = re.sub(r"[^\w\s]", "", s)
+    return re.sub(r"\s+", " ", s).strip()
 
 
 # ---------- normalization ----------
@@ -110,14 +186,25 @@ def _row_to_job(row) -> Job:
     detected = _detect_language(f"{title}\n{description}")
     french_required = _french_required(description)
 
+    # Keep board URL and direct URL SEPARATE — the user needs both.
+    # `job_url` is the LinkedIn/Indeed post; `job_url_direct` (when
+    # present) is the company's own career page where you actually apply.
+    # Skipping the board saves the user 1-2 clicks per application.
+    board_url = _coerce_str(row.get("job_url"))
+    direct_url = _coerce_str(row.get("job_url_direct")) or None
+    # If we only have one URL total, put it in job_url so the UI has a
+    # single button to fall back on.
+    if not board_url and direct_url:
+        board_url, direct_url = direct_url, None
     return Job(
-        id=str(row.get("id") or f"{row.get('site')}-{hash(row.get('job_url') or title)}"),
+        id=str(row.get("id") or f"{row.get('site')}-{hash(board_url or direct_url or title)}"),
         title=title or "(no title)",
         company=_coerce_str(row.get("company")) or "(unknown company)",
         location=_coerce_str(row.get("location")),
         site=_coerce_str(row.get("site")),
         date_posted=_coerce_date(row.get("date_posted")),
-        job_url=_coerce_str(row.get("job_url") or row.get("job_url_direct")),
+        job_url=board_url,
+        job_url_direct=direct_url,
         description=description,
         is_remote=bool(row.get("is_remote")) if row.get("is_remote") is not None else False,
         min_salary=_coerce_float(row.get("min_amount")),

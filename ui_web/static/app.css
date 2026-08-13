@@ -680,6 +680,72 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Journey hero — 3 big numbers with warm gradient bg. Numbers use
+   the display face so the tab has an anchor when you land on it.
+   ───────────────────────────────────────────────────────────── */
+.hero-num {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: oklch(var(--bc));
+  font-variant-numeric: tabular-nums;
+}
+.hero-label {
+  font-size: 0.8125rem;
+  color: oklch(var(--bc) / 0.55);
+  font-weight: 500;
+  margin-top: 0.4rem;
+  letter-spacing: 0.005em;
+}
+
+/* Funnel — vertical bars per stage, each narrower than the last so the
+   shape reads as an actual funnel. Height driven by the --h CSS var
+   set inline per stage from the template. */
+.funnel-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+.funnel-bar {
+  width: 100%;
+  height: 110px;
+  border-radius: 0.5rem;
+  background: linear-gradient(180deg, var(--c) 0%, var(--c) 100%);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* clip-path creates the tapered funnel shape — each cell wider at top
+     than at bottom by an amount proportional to its position (set via
+     --h percent from template — represents the ratio to the prior stage). */
+  clip-path: polygon(0 0, 100% 0, calc(50% + var(--h) / 2) 100%, calc(50% - var(--h) / 2) 100%);
+  transition: background 0.2s ease;
+}
+.funnel-count {
+  color: white;
+  font-size: 1.375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  text-shadow: 0 1px 2px oklch(0% 0 0 / 0.15);
+}
+.funnel-label {
+  font-size: 0.8125rem;
+  color: oklch(var(--bc) / 0.75);
+  font-weight: 500;
+  text-align: center;
+}
+.funnel-carry {
+  font-size: 0.7rem;
+  color: oklch(var(--bc) / 0.4);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* ─────────────────────────────────────────────────────────────
    Score hero — mirrors the results-page card visual language:
    left = big score badge (same colors as .score-badge); right =
    verdict pill + meta line + italic insight text. Reads at a glance
