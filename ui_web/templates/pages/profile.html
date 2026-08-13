@@ -21,7 +21,7 @@
 {# Root x-data — modal state + section toggles. Kept at page level so
    the modal can be positioned as a sibling of the card that opened it. #}
 <div class="space-y-6"
-     x-data="{ atsModal: false, showReplace: false, showOlder: false, settingsTab: 'api', insightsLoaded: false }"
+     x-data="{ atsModal: false, showReplace: false, showOlder: false, settingsTab: 'api' }"
      @keydown.escape.window="atsModal = false">
 
   {# ─── HERO ROW — resume + inline score  |  settings hub ─── #}
@@ -184,11 +184,6 @@
                 :class="settingsTab === 'notifications' ? 'seg-tab seg-tab--active' : 'seg-tab'">
           <i class="ph-thin ph-bell i-4"></i>Notifications
         </button>
-        <button type="button"
-                @click="settingsTab = 'insights'; if (!insightsLoaded) { htmx.ajax('GET', '/profile/insights', {target: '#insights-panel', swap: 'innerHTML'}); insightsLoaded = true }"
-                :class="settingsTab === 'insights' ? 'seg-tab seg-tab--active' : 'seg-tab'">
-          <i class="ph-thin ph-chart-line i-4"></i>Insights
-        </button>
       </div>
 
       {# ─── Tab: API key + usage quota ─── #}
@@ -289,16 +284,6 @@
           <div class="text-sm text-body-muted inline-flex items-center gap-2">
             <span class="loading loading-spinner loading-xs"></span>
             Checking for updates…
-          </div>
-        </div>
-      </div>
-
-      {# ─── Tab: Insights (analytics) ─── #}
-      <div x-show="settingsTab === 'insights'" x-cloak>
-        <div id="insights-panel">
-          <div class="text-sm text-body-muted inline-flex items-center gap-2">
-            <span class="loading loading-spinner loading-xs"></span>
-            Loading your activity…
           </div>
         </div>
       </div>

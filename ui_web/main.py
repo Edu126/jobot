@@ -36,7 +36,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from core import db  # noqa: E402
 
 from .deps import templates  # noqa: E402
-from .routes import applications, jobs, profile  # noqa: E402
+from .routes import applications, jobs, journey, profile  # noqa: E402
 
 
 @asynccontextmanager
@@ -88,4 +88,5 @@ async def ping_partial(request: Request):
 
 app.include_router(jobs.router)
 app.include_router(applications.router)
+app.include_router(journey.router)
 app.include_router(profile.router)

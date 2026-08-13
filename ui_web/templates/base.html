@@ -299,6 +299,7 @@
       <nav class="hidden sm:flex items-center gap-8">
         <a href="/jobs" class="nav-tab {% if active_tab == 'jobs' %}active{% endif %}">Jobs</a>
         <a href="/applications" class="nav-tab {% if active_tab == 'applications' %}active{% endif %}">Applications</a>
+        <a href="/journey" class="nav-tab {% if active_tab == 'journey' %}active{% endif %}">Journey</a>
         <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">Profile</a>
       </nav>
 
@@ -326,6 +327,7 @@
         {% for label, href, key in [
           ('Jobs', '/jobs', 'jobs'),
           ('Applications', '/applications', 'applications'),
+          ('Journey', '/journey', 'journey'),
           ('Profile', '/profile', 'profile'),
         ] %}
         <a href="{{ href }}"

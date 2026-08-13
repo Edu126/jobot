@@ -242,6 +242,188 @@ def median_time_to_download_seconds(days: int = 30) -> Optional[float]:
     return deltas_s[mid] if n % 2 else (deltas_s[mid - 1] + deltas_s[mid]) / 2
 
 
+def week_hour_heatmap(days: int = 14) -> list[list[int]]:
+    """7×24 grid of event counts. Row 0 = Monday, row 6 = Sunday.
+    Col 0 = 00:00 UTC, col 23 = 23:00 UTC. Fills sparsely from the log.
+    Used by the Journey page's proper calendar-style heatmap (vs the
+    old single 24-bar version)."""
+    since = (datetime.utcnow() - timedelta(days=days)).isoformat(timespec="seconds") + "Z"
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT ts_utc FROM events WHERE ts_utc >= ?",
+            (since,),
+        ).fetchall()
+    grid = [[0] * 24 for _ in range(7)]
+    for r in rows:
+        ts = _parse_ts(r["ts_utc"])
+        if not ts:
+            continue
+        # Python weekday: Monday=0, Sunday=6 — matches what we want
+        grid[ts.weekday()][ts.hour] += 1
+    return grid
+
+
+def recent_activity(limit: int = 25) -> list[dict]:
+    """Latest events for the timeline widget on Journey. Returns richly-
+    labeled rows so the template can render icon + text without cross-referencing."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT ts_utc, type, payload_json FROM events ORDER BY ts_utc DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        payload = _safe_json(r["payload_json"])
+        out.append({
+            "ts_utc": r["ts_utc"],
+            "type": r["type"],
+            "payload": payload,
+            "label": _humanize_event(r["type"], payload),
+            "icon": _icon_for(r["type"]),
+        })
+    return out
+
+
+def _humanize_event(type_: str, payload: dict) -> str:
+    """Convert (event_type, payload) into a one-line human sentence for the
+    activity timeline. Keeps the timeline scannable — no raw event codes."""
+    if type_ == SEARCH_BROAD:
+        queries = payload.get("queries") or []
+        n = payload.get("result_count", 0)
+        if queries:
+            return f"Ran search: {', '.join(queries[:2])}{'…' if len(queries) > 2 else ''} — {n} results"
+        return f"Ran a broad search — {n} results"
+    if type_ == SEARCH_URL_IMPORT:
+        src = payload.get("source", "link")
+        manual = " (pasted)" if payload.get("used_manual") else ""
+        return f"Imported a job from {src}{manual}"
+    if type_ == JOB_DETAIL_VIEWED:
+        v = payload.get("verdict") or "no-score"
+        s = payload.get("score")
+        return f"Viewed a job — {v}{f' · {s}' if s else ''}"
+    if type_ == JOB_SAVED:
+        return f"Saved a job as {payload.get('status', 'interested')}"
+    if type_ == JOB_UNSAVED:
+        return "Removed a saved job"
+    if type_ == TAILOR_GENERATED:
+        level = payload.get("level", "tailored")
+        delta = payload.get("delta")
+        if delta is not None:
+            sign = "+" if delta >= 0 else ""
+            return f"Generated a {level} tailor — score {sign}{delta}"
+        return f"Generated a {level} tailor"
+    if type_ == TAILOR_RESUME_DOWNLOAD:
+        return "Downloaded tailored resume"
+    if type_ == TAILOR_CL_DOWNLOAD:
+        return "Downloaded cover letter"
+    if type_ == APP_STATUS_CHANGED:
+        fr = payload.get("from_status", "?")
+        to = payload.get("to_status", "?")
+        return f"Moved an application: {fr} → {to}"
+    if type_ == RESUME_UPLOADED:
+        return f"Uploaded a resume: {payload.get('filename', 'resume')}"
+    if type_ == PAGE_VIEW:
+        return f"Opened {payload.get('path', 'a page')}"
+    return type_.replace(".", " · ").replace("_", " ")
+
+
+def _icon_for(type_: str) -> str:
+    """Phosphor icon name (no ph-thin prefix) for the timeline row."""
+    return {
+        SEARCH_BROAD: "ph-magnifying-glass",
+        SEARCH_URL_IMPORT: "ph-link",
+        JOB_DETAIL_VIEWED: "ph-eye",
+        JOB_SAVED: "ph-heart",
+        JOB_UNSAVED: "ph-heart-break",
+        TAILOR_GENERATED: "ph-sparkle",
+        TAILOR_RESUME_DOWNLOAD: "ph-download-simple",
+        TAILOR_CL_DOWNLOAD: "ph-download-simple",
+        APP_STATUS_CHANGED: "ph-arrow-right",
+        RESUME_UPLOADED: "ph-upload-simple",
+        PAGE_VIEW: "ph-browser",
+    }.get(type_, "ph-circle")
+
+
+def observations(days: int = 30) -> list[dict]:
+    """Auto-generated one-line observations from the log. Non-judgmental,
+    factual. Returns [] when there isn't enough data to say anything useful.
+    Each observation has {tone, text} — tone maps to a color on the UI."""
+    if total_events() < 5:
+        return []
+
+    obs: list[dict] = []
+    counts = counts_by_type_last_week()
+
+    # Most active day-of-week over the window
+    since = (datetime.utcnow() - timedelta(days=days)).isoformat(timespec="seconds") + "Z"
+    with db.connect() as conn:
+        dow_rows = conn.execute(
+            "SELECT ts_utc FROM events WHERE ts_utc >= ?",
+            (since,),
+        ).fetchall()
+    if dow_rows:
+        dow_buckets = [0] * 7
+        for r in dow_rows:
+            ts = _parse_ts(r["ts_utc"])
+            if ts:
+                dow_buckets[ts.weekday()] += 1
+        if max(dow_buckets) > 0 and sum(dow_buckets) >= 10:
+            best_dow = dow_buckets.index(max(dow_buckets))
+            day_name = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][best_dow]
+            obs.append({"tone": "info", "text": f"You're most active on {day_name}s."})
+
+    # Tailoring cadence
+    tailors_wk = counts.get(TAILOR_GENERATED, 0)
+    if tailors_wk >= 5:
+        obs.append({"tone": "success", "text": f"Solid week — {tailors_wk} resumes tailored."})
+    elif tailors_wk == 0 and counts.get(JOB_DETAIL_VIEWED, 0) > 0:
+        obs.append({"tone": "warn", "text": "You've been browsing but haven't tailored anything yet — try one this week."})
+
+    # Streak: how many days-in-a-row ending today
+    streak = _current_streak_days()
+    if streak >= 3:
+        obs.append({"tone": "success", "text": f"{streak}-day streak. Keep the momentum."})
+
+    # Median time-to-download context
+    m = median_time_to_download_seconds(days=days)
+    if m is not None:
+        if m < 300:
+            obs.append({"tone": "success", "text": "You're fast — typically under 5 minutes from opening a job to a tailored resume."})
+        elif m > 1800:
+            obs.append({"tone": "info", "text": "You take time on each application — median 30+ min from open to download."})
+
+    # Funnel drop-off
+    f = funnel_last_month()
+    if f["saved"] > 10 and f["applied"] < f["saved"] * 0.3:
+        obs.append({"tone": "warn", "text": f"You've saved {f['saved']} jobs but only applied to {f['applied']}. Anything blocking?"})
+
+    return obs
+
+
+def _current_streak_days() -> int:
+    """Consecutive days ending today (UTC) with at least one event."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT substr(ts_utc, 1, 10) AS day FROM events ORDER BY day DESC LIMIT 60"
+        ).fetchall()
+    if not rows:
+        return 0
+    from datetime import date as _date
+    today = _date.today()
+    streak = 0
+    for i, r in enumerate(rows):
+        expected = today - timedelta(days=i)
+        try:
+            actual = _date.fromisoformat(r["day"])
+        except ValueError:
+            break
+        if actual == expected:
+            streak += 1
+        else:
+            break
+    return streak
+
+
 def clear_all() -> int:
     """Wipe the events table. Returns rows deleted. Used by the 'Clear all
     events' button on Insights."""

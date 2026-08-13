@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}Journey — Jobot{% endblock %}
+{% block container_class %}max-w-7xl{% endblock %}
+
+{% block content %}
+
+{# ══════════════════════════════════════════════════════════════════
+   JOURNEY — the "how am I doing?" tab. Full-width dashboard.
+   Layout: 60/40 split on lg+, single column below.
+     LEFT  (60%)  hero metrics grid · funnel · activity timeline
+     RIGHT (40%)  week × hour heatmap · median time · observations
+   Filter pills top-right: 7d / 30d / all
+   ══════════════════════════════════════════════════════════════════ #}
+
+<div class="flex items-start justify-between gap-4 mb-10 flex-wrap">
+  <div>
+    <h1 class="text-display">Journey</h1>
+    <p class="text-body-muted text-lg mt-2">Your job-hunt so far.</p>
+  </div>
+
+  {# Range filter — links so it's shareable + refresh-safe. Not a fancy pill
+     control because the entire page re-renders anyway; a plain form-less nav
+     is the honest UI. #}
+  <div class="seg-tabs mt-2" role="group" aria-label="Time range">
+    {% for k, label in [('7d','7 days'),('30d','30 days'),('all','All time')] %}
+    <a href="/journey?range={{ k }}"
+       class="{% if selected_range == k %}seg-tab seg-tab--active{% else %}seg-tab{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if total_events == 0 %}
+  {# Empty state — friendly, single card, no dashboard chrome #}
+  <div class="card-quiet text-center py-16 max-w-2xl mx-auto">
+    <div class="inline-flex items-center gap-2 text-title mb-3">
+      <i class="ph-thin ph-compass i-6" style="color: oklch(var(--a));"></i>
+      Your journey starts here
+    </div>
+    <p class="text-body-muted mb-1">
+      As you search, tailor, and track applications, this page fills in
+      with your rhythm — searches per week, funnel progression, time-of-day
+      patterns, observations.
+    </p>
+    <p class="text-sm text-body-muted italic mt-4">
+      Come back after a few sessions.
+    </p>
+  </div>
+{% else %}
+
+<div class="grid grid-cols-1 lg:grid-cols-[60fr_40fr] gap-6">
+
+  {# ═════════════════ LEFT COLUMN ═════════════════ #}
+  <div class="space-y-6">
+
+    {# Hero metrics grid — 4 across on lg #}
+    <section class="card-quiet">
+      <div class="text-label mb-4">Activity</div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div>
+          <div class="text-xs text-body-muted uppercase tracking-wide">Sessions</div>
+          <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.sessions }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-body-muted uppercase tracking-wide">Jobs viewed</div>
+          <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.jobs_viewed }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-body-muted uppercase tracking-wide">Tailors</div>
+          <div class="text-metric-sm mt-1 tabular-nums" style="color: oklch(var(--a));">{{ key_metrics.tailors_generated }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-body-muted uppercase tracking-wide">Downloads</div>
+          <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.resumes_downloaded }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-body-muted uppercase tracking-wide">Broad searches</div>
+          <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.searches_broad }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-body-muted uppercase tracking-wide">URL imports</div>
+          <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.searches_url }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-body-muted uppercase tracking-wide">Cover letters</div>
+          <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.cover_letters_downloaded }}</div>
+        </div>
+        <div>
+          <div class="text-xs text-body-muted uppercase tracking-wide">Status moves</div>
+          <div class="text-metric-sm mt-1 tabular-nums">{{ key_metrics.status_changes }}</div>
+        </div>
+      </div>
+    </section>
+
+    {# Funnel — 30-day rolling, verdict-tinted bars #}
+    <section class="card-quiet">
+      <div class="flex items-baseline justify-between mb-4">
+        <div class="text-label">Funnel — last 30 days</div>
+        <div class="text-xs text-body-muted">distinct jobs at each step</div>
+      </div>
+      {% set _steps = [
+        ('Viewed', funnel.viewed, 'oklch(var(--bc) / 0.55)'),
+        ('Saved', funnel.saved, 'oklch(var(--p))'),
+        ('Applied', funnel.applied, 'oklch(var(--in))'),
+        ('Interviewing', funnel.interviewing, 'oklch(var(--a))'),
+        ('Offer', funnel.offer, 'oklch(var(--su))'),
+      ] %}
+      {% set _max = funnel.viewed if funnel.viewed > 0 else 1 %}
+      <div class="space-y-2">
+        {% for label, n, color in _steps %}
+        <div class="flex items-center gap-3 text-sm">
+          <div class="w-28 text-body-muted">{{ label }}</div>
+          <div class="flex-1 h-8 rounded-md overflow-hidden relative" style="background: oklch(var(--b3) / 0.4);">
+            <div class="h-full rounded-md transition-all"
+                 style="width: {{ ((n / _max * 100) | round(1)) if _max else 0 }}%; background: {{ color }};"></div>
+            <span class="absolute inset-0 flex items-center px-3 text-xs font-semibold text-base-content">{{ n }}</span>
+          </div>
+          {% if loop.index0 > 0 and _steps[loop.index0 - 1][1] > 0 %}
+          <div class="w-16 text-xs text-body-muted text-right tabular-nums">
+            {{ (n / _steps[loop.index0 - 1][1] * 100) | round | int }}%
+          </div>
+          {% else %}
+          <div class="w-16"></div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="text-xs text-body-muted mt-3">
+        Percentages show carry-over from the previous stage. Applications count includes everyone who reached applied or moved past.
+      </div>
+    </section>
+
+    {# Activity timeline — recent events, most recent first #}
+    <section class="card-quiet">
+      <div class="text-label mb-4">Recent activity</div>
+      {% if timeline %}
+      <div class="space-y-2 max-h-[32rem] overflow-y-auto pr-2">
+        {% for e in timeline %}
+        <div class="flex items-start gap-3 py-1.5 border-b border-base-300/40 last:border-0">
+          <i class="ph-thin {{ e.icon }} i-4 mt-0.5 shrink-0" style="color: oklch(var(--bc) / 0.5);"></i>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm text-base-content/85 truncate">{{ e.label }}</div>
+            <div class="text-xs text-body-muted">{{ e.ts_utc | humanize }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="text-sm text-body-muted italic">No activity yet in this window.</div>
+      {% endif %}
+    </section>
+  </div>
+
+  {# ═════════════════ RIGHT COLUMN ═════════════════ #}
+  <div class="space-y-6">
+
+    {# Observations — auto-generated, colored by tone #}
+    {% if observations %}
+    <section>
+      <div class="text-label mb-3 inline-flex items-center gap-1">
+        <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i>Observations
+      </div>
+      <div class="space-y-2">
+        {% for o in observations %}
+          {% if o.tone == 'success' %}
+            {% set _bg = 'oklch(var(--su) / 0.08)' %}{% set _bd = 'oklch(var(--su) / 0.32)' %}
+          {% elif o.tone == 'warn' %}
+            {% set _bg = 'oklch(var(--wa) / 0.10)' %}{% set _bd = 'oklch(var(--wa) / 0.38)' %}
+          {% else %}
+            {% set _bg = 'oklch(var(--in) / 0.08)' %}{% set _bd = 'oklch(var(--in) / 0.30)' %}
+          {% endif %}
+        <div class="rounded-lg p-3 text-sm"
+             style="background: {{ _bg }}; border: 1px solid {{ _bd }};">
+          {{ o.text }}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {# Median time to download — feature card, verdict-tinted number #}
+    {% if median_seconds_to_download is not none %}
+    <section class="card-quiet">
+      <div class="text-label">Time to tailored resume</div>
+      <div class="mt-2 flex items-baseline gap-2">
+        {% set mins = (median_seconds_to_download / 60) | round(1) %}
+        <span style="font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; color: oklch(var(--p)); font-variant-numeric: tabular-nums;">
+          {% if median_seconds_to_download < 60 %}{{ median_seconds_to_download | int }}s
+          {% else %}{{ mins }}<span class="text-base font-medium text-base-content/40 ml-1">min</span>{% endif %}
+        </span>
+      </div>
+      <div class="text-xs text-body-muted mt-2">
+        Median from opening a job to downloading its tailored resume.
+      </div>
+    </section>
+    {% endif %}
+
+    {# 7 × 24 heatmap — proper calendar grid #}
+    <section class="card-quiet">
+      <div class="text-label mb-4">When you're active</div>
+      <div class="text-xs text-body-muted mb-3">
+        Rows are days of the week (Mon-Sun), columns are hours (UTC).
+      </div>
+      <div class="overflow-x-auto -mx-2 px-2">
+        <table class="border-separate w-full" style="border-spacing: 2px;">
+          <thead>
+            <tr>
+              <td></td>
+              {% for h in range(0, 24, 3) %}
+              <td colspan="3" class="text-[10px] text-body-muted font-mono text-left align-bottom pb-1">
+                {{ '%02d' | format(h) }}
+              </td>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in week_heatmap %}
+              {% set dow_name = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][loop.index0] %}
+            <tr>
+              <td class="text-[10px] text-body-muted font-mono pr-2 align-middle">{{ dow_name }}</td>
+              {% for count in row %}
+              {% set intensity = (count / heatmap_max) if heatmap_max else 0 %}
+              <td class="rounded-[2px]"
+                  style="width: 3.2%; height: 20px; background: {% if count %}oklch(var(--p) / {{ 0.15 + intensity * 0.75 }}){% else %}oklch(var(--b3) / 0.4){% endif %};"
+                  title="{{ dow_name }} {{ '%02d' | format(loop.index0) }}:00 — {{ count }} event{{ 's' if count != 1 }}"></td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="text-xs text-body-muted mt-3">
+        Darker = more activity. Empty cells = no activity that hour.
+      </div>
+    </section>
+
+    {# Days active + streak sparkline #}
+    {% if daily %}
+    <section class="card-quiet">
+      <div class="flex items-baseline justify-between mb-3">
+        <div class="text-label">Daily activity</div>
+        <div class="text-xs text-body-muted"><strong>{{ active_days }}</strong> active day{{ 's' if active_days != 1 }}</div>
+      </div>
+      <div class="flex items-end gap-1 h-16">
+        {% set _daily_max = daily | map(attribute='count') | max %}
+        {% for d in daily %}
+        <div class="flex-1 rounded-t transition-all"
+             style="height: {{ (d.count / _daily_max * 100) if _daily_max else 0 }}%; min-height: 3px; background: oklch(var(--a) / 0.65);"
+             title="{{ d.day }} — {{ d.count }} event{{ 's' if d.count != 1 }}"></div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+
+{# Footer bar — event count + clear all + privacy reminder #}
+<div class="flex items-center justify-between mt-8 pt-4 border-t border-base-300 flex-wrap gap-3">
+  <div class="text-xs text-body-muted">
+    <strong>{{ total_events }}</strong> event{{ 's' if total_events != 1 }} tracked total. All data stays on this Mac — never sent anywhere.
+  </div>
+  <div class="flex items-center gap-3">
+    <div id="journey-clear-status"></div>
+    <button hx-post="/journey/clear"
+            hx-confirm="Wipe all activity data? This can't be undone."
+            hx-target="#journey-clear-status"
+            hx-swap="innerHTML"
+            class="text-xs text-body-muted hover:text-error cursor-pointer inline-flex items-center gap-1">
+      <i class="ph-thin ph-trash i-3"></i>Clear all events
+    </button>
+  </div>
+</div>
+
+{% endif %}
+
+{% endblock %}
