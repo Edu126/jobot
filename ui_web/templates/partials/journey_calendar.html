@@ -1,0 +1,74 @@
+{# Monthly calendar block — extracted so it can be swapped in-place via
+   HTMX when the user changes month. Root element keeps the id used as
+   the hx-target on the nav arrows. #}
+<div id="journey-calendar">
+  <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+    <div class="text-label">Days you showed up</div>
+    <div class="flex items-center gap-1">
+      <button hx-get="/journey/calendar?year={{ calendar.prev.year }}&month={{ calendar.prev.month }}"
+              hx-target="#journey-calendar"
+              hx-swap="outerHTML"
+              class="btn btn-xs btn-ghost text-body-muted hover:text-base-content"
+              title="Previous month" aria-label="Previous month">
+        <i class="ph-thin ph-caret-left i-4"></i>
+      </button>
+      <span class="text-sm font-medium min-w-[7rem] text-center tabular-nums">
+        {{ calendar.month_name }} {{ calendar.year }}
+      </span>
+      <button hx-get="/journey/calendar?year={{ calendar.next.year }}&month={{ calendar.next.month }}"
+              hx-target="#journey-calendar"
+              hx-swap="outerHTML"
+              class="btn btn-xs btn-ghost text-body-muted hover:text-base-content"
+              title="Next month" aria-label="Next month">
+        <i class="ph-thin ph-caret-right i-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <table class="calendar-grid">
+    <thead>
+      <tr>
+        {% for dow in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+        <th class="calendar-dow">{{ dow }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for week in calendar.weeks %}
+      <tr>
+        {% for cell in week %}
+          {% if cell is none %}
+          <td class="calendar-cell calendar-cell--blank"></td>
+          {% else %}
+            {% set intensity = (cell.count / calendar.max_count) if calendar.max_count else 0 %}
+            {% if cell.count == 0 %}
+              {% set _bg = 'oklch(var(--b3) / 0.35)' %}
+            {% else %}
+              {% set _bg = 'oklch(var(--p) / ' ~ (0.2 + intensity * 0.7) ~ ')' %}
+            {% endif %}
+          <td class="calendar-cell"
+              style="background: {{ _bg }};"
+              title="{{ cell.iso }} — {{ cell.count }} thing{{ 's' if cell.count != 1 }}">
+            <span class="calendar-daynum {% if cell.count > 0 %}calendar-daynum--active{% endif %}">
+              {{ cell.day }}
+            </span>
+          </td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="text-xs text-body-muted mt-3 flex items-center justify-between">
+    <span>{{ calendar.total }} thing{{ 's' if calendar.total != 1 }} this month</span>
+    <span class="inline-flex items-center gap-1.5">
+      Less
+      <span class="calendar-legend-dot" style="background: oklch(var(--b3) / 0.35);"></span>
+      <span class="calendar-legend-dot" style="background: oklch(var(--p) / 0.3);"></span>
+      <span class="calendar-legend-dot" style="background: oklch(var(--p) / 0.55);"></span>
+      <span class="calendar-legend-dot" style="background: oklch(var(--p) / 0.9);"></span>
+      More
+    </span>
+  </div>
+</div>

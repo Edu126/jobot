@@ -48,6 +48,11 @@ RESUME_UPLOADED        = "resume.uploaded"
 ATS_REPORT_VIEWED      = "ats.report_viewed"
 # Errors / friction
 ERROR                  = "error"
+# Scraper blocked / rate-limited by a specific job board (IP block, 429,
+# Cloudflare challenge, etc). Instrumented so we notice patterns before
+# they degrade the search UX — e.g. LinkedIn blocking us 3 days in a row
+# means it's time to think about a proxy or headless approach.
+SEARCH_BLOCKED         = "search.blocked"
 
 
 def track(event_type: str, **payload: Any) -> None:

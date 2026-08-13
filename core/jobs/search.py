@@ -80,7 +80,9 @@ def search_jobs(params: JobSearchParams) -> list[Job]:
     """Scrape jobs and return a list of cleaned Job dicts.
 
     Raises RuntimeError on hard failure; returns [] if the scrape succeeds
-    but finds nothing.
+    but finds nothing. On any failure we emit a search.blocked event so the
+    Journey tab (or a future ops dashboard) can spot patterns — e.g.
+    LinkedIn blocking us 3 days in a row = time for a mitigation.
     """
     try:
         df = scrape_jobs(
@@ -96,6 +98,10 @@ def search_jobs(params: JobSearchParams) -> list[Job]:
             linkedin_fetch_description=params.linkedin_fetch_description,
         )
     except Exception as exc:
+        # Try to attribute the block to a specific site so we know WHO
+        # rate-limited us. jobspy's exceptions often mention the source
+        # in their str form ("linkedin: ...", "indeed: ..." etc).
+        _emit_blocked_event(params, str(exc))
         raise RuntimeError(f"jobspy scrape failed: {exc}") from exc
 
     if df is None or len(df) == 0:
@@ -179,6 +185,39 @@ def _norm_key(s: str, *, is_company: bool = False) -> str:
 
 
 # ---------- normalization ----------
+
+def _emit_blocked_event(params: JobSearchParams, err_msg: str) -> None:
+    """Log a search.blocked event so the Journey view surfaces scraper
+    friction. Attribution is best-effort — we look for site names in the
+    error message. Import is local so search.py stays importable if
+    events.py ever grows a hard dependency."""
+    try:
+        from core import events
+    except Exception:  # noqa: BLE001
+        return
+    lower = err_msg.lower()
+    site = "unknown"
+    for candidate in ("linkedin", "indeed", "google", "glassdoor", "zip"):
+        if candidate in lower:
+            site = candidate
+            break
+    # Rough block-category heuristic — help future filtering without a
+    # human having to parse raw errors.
+    reason = "other"
+    if "429" in err_msg or "rate" in lower or "throttle" in lower:
+        reason = "rate_limit"
+    elif "403" in err_msg or "forbidden" in lower or "cloudflare" in lower:
+        reason = "blocked"
+    elif "timeout" in lower or "timed out" in lower:
+        reason = "timeout"
+    events.track(
+        events.SEARCH_BLOCKED,
+        site=site,
+        reason=reason,
+        query=params.query,
+        error=err_msg[:240],
+    )
+
 
 def _row_to_job(row) -> Job:
     description = _coerce_str(row.get("description"))

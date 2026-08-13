@@ -35,11 +35,11 @@
 <div class="space-y-6">
 
   {# ═════ HERO — "This week" ═════ #}
-  <section class="rounded-xl px-6 py-6"
+  <section class="rounded-xl px-6 py-5"
            style="background: linear-gradient(135deg, oklch(var(--b1)) 0%, oklch(var(--a) / 0.05) 60%, oklch(var(--p) / 0.05) 100%);
                   border: 1px solid oklch(var(--b3));
                   box-shadow: 0 1px 2px oklch(var(--p) / 0.04);">
-    <div class="flex items-baseline justify-between mb-5">
+    <div class="flex items-baseline justify-between mb-4">
       <div class="text-label inline-flex items-center gap-1.5">
         <i class="ph-thin ph-calendar-blank i-4" style="color: oklch(var(--a));"></i>This week
       </div>
@@ -62,7 +62,7 @@
     </div>
 
     {% if hero.streak_days or hero.most_active_dow %}
-    <div class="mt-6 pt-4 border-t border-base-300/60 text-sm text-body-muted flex items-center gap-4 flex-wrap">
+    <div class="mt-4 pt-3 border-t border-base-300/60 text-sm text-body-muted flex items-center gap-4 flex-wrap">
       {% if hero.streak_days >= 2 %}
       <span class="inline-flex items-center gap-1.5">
         <i class="ph-fill ph-flame i-4" style="color: oklch(var(--a));"></i>
@@ -165,73 +165,9 @@
       </section>
       {% endif %}
 
-      {# ═════ MONTHLY CALENDAR — replaces the by-hour heatmap ═════ #}
+      {# ═════ MONTHLY CALENDAR — swapped inline via HTMX on month nav ═════ #}
       <section class="card-quiet">
-        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <div class="text-label">Days you showed up</div>
-          <div class="flex items-center gap-1">
-            <a href="/journey?year={{ calendar.prev.year }}&month={{ calendar.prev.month }}"
-               class="btn btn-xs btn-ghost text-body-muted hover:text-base-content"
-               title="Previous month" aria-label="Previous month">
-              <i class="ph-thin ph-caret-left i-4"></i>
-            </a>
-            <span class="text-sm font-medium min-w-[7rem] text-center tabular-nums">
-              {{ calendar.month_name }} {{ calendar.year }}
-            </span>
-            <a href="/journey?year={{ calendar.next.year }}&month={{ calendar.next.month }}"
-               class="btn btn-xs btn-ghost text-body-muted hover:text-base-content"
-               title="Next month" aria-label="Next month">
-              <i class="ph-thin ph-caret-right i-4"></i>
-            </a>
-          </div>
-        </div>
-
-        <table class="calendar-grid">
-          <thead>
-            <tr>
-              {% for dow in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
-              <th class="calendar-dow">{{ dow }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for week in calendar.weeks %}
-            <tr>
-              {% for cell in week %}
-                {% if cell is none %}
-                <td class="calendar-cell calendar-cell--blank"></td>
-                {% else %}
-                  {% set intensity = (cell.count / calendar.max_count) if calendar.max_count else 0 %}
-                  {% if cell.count == 0 %}
-                    {% set _bg = 'oklch(var(--b3) / 0.35)' %}
-                  {% else %}
-                    {% set _bg = 'oklch(var(--p) / ' ~ (0.2 + intensity * 0.7) ~ ')' %}
-                  {% endif %}
-                <td class="calendar-cell"
-                    style="background: {{ _bg }};"
-                    title="{{ cell.iso }} — {{ cell.count }} thing{{ 's' if cell.count != 1 }}">
-                  <span class="calendar-daynum {% if cell.count > 0 %}calendar-daynum--active{% endif %}">
-                    {{ cell.day }}
-                  </span>
-                </td>
-                {% endif %}
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-
-        <div class="text-xs text-body-muted mt-3 flex items-center justify-between">
-          <span>{{ calendar.total }} thing{{ 's' if calendar.total != 1 }} this month</span>
-          <span class="inline-flex items-center gap-1.5">
-            Less
-            <span class="calendar-legend-dot" style="background: oklch(var(--b3) / 0.35);"></span>
-            <span class="calendar-legend-dot" style="background: oklch(var(--p) / 0.3);"></span>
-            <span class="calendar-legend-dot" style="background: oklch(var(--p) / 0.55);"></span>
-            <span class="calendar-legend-dot" style="background: oklch(var(--p) / 0.9);"></span>
-            More
-          </span>
-        </div>
+        {% include "partials/journey_calendar.html" %}
       </section>
     </div>
   </div>

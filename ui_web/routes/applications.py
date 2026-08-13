@@ -45,7 +45,13 @@ STATUS_META = {
 async def applications_page(request: Request):
     apps = db.list_applications()
     counts = db.application_status_counts()
-    total = sum(counts.values())
+    # Total excludes closed statuses so "10 active" doesn't count a
+    # withdrawn/rejected job you're no longer chasing.
+    total_all = sum(counts.values())
+    total_active = sum(
+        v for k, v in counts.items()
+        if k not in ("rejected", "withdrawn")
+    )
 
     by_status: dict[str, list[dict]] = {s: [] for s in STATUS_ORDER}
     for a in apps:
@@ -57,7 +63,9 @@ async def applications_page(request: Request):
         {
             "active_tab": "applications",
             "counts": counts,
-            "total": total,
+            "total_active": total_active,
+            "total_all": total_all,
+            "total": total_active,   # backwards-compat for old {{ total }} refs
             "by_status": by_status,
             "status_order": STATUS_ORDER,
             "status_meta": STATUS_META,

@@ -56,6 +56,25 @@ async def journey_page(
     )
 
 
+@router.get("/journey/calendar")
+async def journey_calendar_partial(
+    request: Request,
+    year: int = Query(0),
+    month: int = Query(0, ge=0, le=12),
+):
+    """HTMX partial for the monthly calendar block. Swapped in-place when the
+    user clicks the ← / → month nav so the rest of the Journey page doesn't
+    re-render (was doing a full page reload — instant vs a beat)."""
+    now = datetime.utcnow()
+    if not year or not (1 <= month <= 12):
+        year, month = now.year, now.month
+    return templates.TemplateResponse(
+        request,
+        "partials/journey_calendar.html",
+        {"calendar": events.monthly_calendar(year, month)},
+    )
+
+
 @router.post("/journey/clear")
 async def journey_clear(request: Request):
     """Wipe the events log. Fired from the Journey page footer."""

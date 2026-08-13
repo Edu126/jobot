@@ -217,19 +217,42 @@ async def jobs_landing(request: Request):
     if resume:
         top_matches, cache_count = _list_top_matches(min_score=65, limit=20)
 
-    # Dedupe saved searches by query (case-insensitive) + cap for quick-fill chips
-    # so the landing doesn't get flooded with 20 chips if the user added many.
+    # Quick-fill chips = a MIX of the user's own saved searches (max 2)
+    # plus AI-suggested queries from their resume (up to 4 more). Deduped
+    # against each other case-insensitively so the AI never suggests
+    # something the user already saved. The 'kind' field drives the sparkle
+    # icon in the template — visual cue that a chip came from Gemini.
     all_saved = db.list_saved_searches()
-    seen: set[str] = set()
-    saved_chips: list[dict] = []
+    seen_q: set[str] = set()
+    quick_fill: list[dict] = []
     for s in all_saved:
         key = (s.get("query") or "").strip().lower()
-        if not key or key in seen:
+        if not key or key in seen_q:
             continue
-        seen.add(key)
-        saved_chips.append(s)
-        if len(saved_chips) >= 5:
+        seen_q.add(key)
+        quick_fill.append({
+            "kind": "saved",
+            "label": s.get("name") or s.get("query"),
+            "query": s.get("query"),
+        })
+        if len(quick_fill) >= 2:
             break
+
+    # AI suggestions live in the suggested_queries table (cached ~7 days
+    # per resume). Skip regen here — if the cache is empty we just show
+    # fewer chips; the /profile/updates/suggest-queries endpoint (still
+    # kept for the "Shuffle" button below) is the only place we spend LLM
+    # quota on this.
+    if resume:
+        cached_suggestions = db.get_cached_suggestions(int(resume["id"]))
+        for q in (cached_suggestions or {}).get("queries", []):
+            key = str(q).strip().lower()
+            if not key or key in seen_q:
+                continue
+            seen_q.add(key)
+            quick_fill.append({"kind": "ai", "label": q, "query": q})
+            if len(quick_fill) >= 6:
+                break
 
     return templates.TemplateResponse(
         request,
@@ -237,7 +260,7 @@ async def jobs_landing(request: Request):
         {
             "active_tab": "jobs",
             "saved_searches": all_saved,           # kept for backwards refs
-            "saved_chips": saved_chips,             # deduped, capped 5, for quick-fill row
+            "quick_fill": quick_fill,               # mix: saved + AI, ≤6 items
             "recent": recent,
             "has_resume": bool(resume),
             "has_api_key": has_key,

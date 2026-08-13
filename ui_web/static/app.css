@@ -684,7 +684,8 @@ body {
    the display face so the tab has an anchor when you land on it.
    ───────────────────────────────────────────────────────────── */
 .hero-num {
-  font-size: 3rem;
+  /* -10% per feedback: card was taking too much vertical estate */
+  font-size: 2.5rem;
   font-weight: 700;
   letter-spacing: -0.035em;
   line-height: 1;
@@ -695,7 +696,7 @@ body {
   font-size: 0.8125rem;
   color: oklch(var(--bc) / 0.55);
   font-weight: 500;
-  margin-top: 0.4rem;
+  margin-top: 0.35rem;
   letter-spacing: 0.005em;
 }
 
