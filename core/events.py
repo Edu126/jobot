@@ -454,6 +454,84 @@ def this_week_hero_stats() -> dict:
     }
 
 
+def monthly_calendar(year: int, month: int) -> dict:
+    """GitHub-contributions-style grid for a specific calendar month (UTC).
+
+    Returns:
+        {
+          "year": int,
+          "month": int,               # 1-12
+          "month_name": "August",
+          "weeks": [[cell, ...], ...],  # 5-6 weeks, 7 cells each (Mon-Sun)
+          "max_count": int,           # for intensity scaling
+          "total": int,               # events that month
+          "prev": {"year": Y, "month": M},
+          "next": {"year": Y, "month": M},
+        }
+    Each cell is either None (day belongs to prev/next month, blank) or
+    { "day": int, "count": int, "iso": "YYYY-MM-DD" }.
+    """
+    import calendar
+    if not (1 <= month <= 12):
+        month = datetime.utcnow().month
+        year = datetime.utcnow().year
+
+    # Month boundaries
+    from datetime import date as _date
+    first_day = _date(year, month, 1)
+    _, last_day_num = calendar.monthrange(year, month)
+    last_day = _date(year, month, last_day_num)
+
+    # Fetch this month's events
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT substr(ts_utc, 1, 10) AS day, COUNT(*) AS n "
+            "FROM events WHERE substr(ts_utc, 1, 10) BETWEEN ? AND ? "
+            "GROUP BY day",
+            (first_day.isoformat(), last_day.isoformat()),
+        ).fetchall()
+    per_day = {r["day"]: int(r["n"]) for r in rows}
+
+    # Build the week grid — Monday-first calendar layout (matches Wealthsimple
+    # / Notion convention). Leading + trailing blank cells for days that spill
+    # into adjacent months.
+    cal = calendar.Calendar(firstweekday=0)   # Monday = 0
+    weeks = []
+    for week in cal.monthdatescalendar(year, month):
+        row = []
+        for d in week:
+            if d.month != month:
+                row.append(None)
+            else:
+                iso = d.isoformat()
+                row.append({
+                    "day": d.day,
+                    "count": per_day.get(iso, 0),
+                    "iso": iso,
+                })
+        weeks.append(row)
+
+    max_count = max((c["count"] for w in weeks for c in w if c), default=0)
+    total = sum(per_day.values())
+
+    # Prev/next month for the nav arrows
+    prev_month = 12 if month == 1 else month - 1
+    prev_year = year - 1 if month == 1 else year
+    next_month = 1 if month == 12 else month + 1
+    next_year = year + 1 if month == 12 else year
+
+    return {
+        "year": year,
+        "month": month,
+        "month_name": calendar.month_name[month],
+        "weeks": weeks,
+        "max_count": max_count,
+        "total": total,
+        "prev": {"year": prev_year, "month": prev_month},
+        "next": {"year": next_year, "month": next_month},
+    }
+
+
 def _current_streak_days() -> int:
     """Consecutive days ending today (UTC) with at least one event."""
     with db.connect() as conn:

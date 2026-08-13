@@ -1,13 +1,15 @@
 """Journey tab — the "how am I doing?" view.
 
-Full-page dashboard aggregating the local events log into visualizations
-that make Mehran's job-hunt rhythm legible: hero metrics, funnel,
-7×24 heatmap, activity timeline, auto-generated observations.
-
-Route lives at the top level (not under /profile) because it deserves
-first-class navigation next to Jobs / Applications / Profile.
+v3 layout (feedback-driven, plain-English mode):
+  - No top-level time filter — each section has its own natural time frame
+    baked into its title. Hero = this week, Funnel = this month, Calendar =
+    a specific month (nav arrows).
+  - Aggregations stay cheap (single-user SQLite reads); no caching layer
+    needed for the ranges the app actually uses.
 """
 from __future__ import annotations
+
+from datetime import datetime
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
@@ -20,49 +22,36 @@ from ..deps import templates
 router = APIRouter(tags=["journey"])
 
 
-# Filter windows exposed in the header pill row. Kept small on purpose —
-# more slices dilute the dashboard's punch.
-_RANGES = {
-    "7d":  7,
-    "30d": 30,
-    "all": 365 * 5,   # effectively "all" for a single-user local app
-}
-
-
 @router.get("/journey")
 async def journey_page(
     request: Request,
-    range: str = Query("30d", pattern="^(7d|30d|all)$", alias="range"),
+    year: int = Query(0),
+    month: int = Query(0, ge=0, le=12),
 ):
-    # Renamed to avoid shadowing Jinja's built-in `range()` inside the template.
-    selected_range = range
-    days = _RANGES[selected_range]
+    # Default calendar month = current month (UTC). Users navigate with the
+    # ← / → arrows which pass ?year=YYYY&month=MM.
+    now = datetime.utcnow()
+    if not year or not (1 <= month <= 12):
+        year, month = now.year, now.month
+
     total = events.total_events()
-
-    # Aggregations — all cheap on a single-user SQLite. Trimmed after
-    # the redesign: the timeline + daily sparkline came out, so those
-    # helpers no longer feed the page (kept in events.py for future use).
     hero = events.this_week_hero_stats()
-    week_heatmap = events.week_hour_heatmap(days=days)
     funnel = events.funnel_last_month()
-    median_seconds = events.median_time_to_download_seconds(days=days)
-    obs = events.observations(days=days)
-
-    heatmap_max = max((max(row) for row in week_heatmap), default=1) or 1
+    median_seconds = events.median_time_to_download_seconds(days=30)
+    obs = events.observations(days=30)
+    calendar_grid = events.monthly_calendar(year, month)
 
     return templates.TemplateResponse(
         request,
         "pages/journey.html",
         {
             "active_tab": "journey",
-            "selected_range": selected_range,
             "total_events": total,
             "hero": hero,
-            "week_heatmap": week_heatmap,
-            "heatmap_max": heatmap_max,
             "funnel": funnel,
             "median_seconds_to_download": median_seconds,
             "observations": obs,
+            "calendar": calendar_grid,
         },
     )
 
@@ -73,21 +62,6 @@ async def journey_clear(request: Request):
     n = events.clear_all()
     return HTMLResponse(
         f'<div class="pill pill-success inline-flex items-center gap-1.5">'
-        f'<i class="ph-thin ph-trash i-3"></i>Cleared {n} events</div>',
+        f'<i class="ph-thin ph-trash i-3"></i>Cleared {n} things</div>',
         status_code=200,
     )
-
-
-# ── Internals ──
-
-def _counts_over(days: int) -> dict[str, int]:
-    """counts_by_type but over an arbitrary window (not just last week)."""
-    from datetime import datetime, timedelta
-    from core import db
-    since = (datetime.utcnow() - timedelta(days=days)).isoformat(timespec="seconds") + "Z"
-    with db.connect() as conn:
-        rows = conn.execute(
-            "SELECT type, COUNT(*) AS n FROM events WHERE ts_utc >= ? GROUP BY type",
-            (since,),
-        ).fetchall()
-    return {r["type"]: int(r["n"]) for r in rows}

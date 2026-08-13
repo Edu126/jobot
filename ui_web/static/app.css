@@ -699,50 +699,94 @@ body {
   letter-spacing: 0.005em;
 }
 
-/* Funnel — vertical bars per stage, each narrower than the last so the
-   shape reads as an actual funnel. Height driven by the --h CSS var
-   set inline per stage from the template. */
+/* Funnel v3 — same-height flat rectangles per stage. All green, intensity
+   grows left→right (from muted to saturated) so visual weight tracks the
+   value of each stage. Numbers win the eye; shape is boring on purpose. */
 .funnel-cell {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
+  align-items: stretch;
+  gap: 0.55rem;
 }
-.funnel-bar {
-  width: 100%;
-  height: 110px;
+.funnel-bar-flat {
+  height: 96px;
   border-radius: 0.5rem;
-  background: linear-gradient(180deg, var(--c) 0%, var(--c) 100%);
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* clip-path creates the tapered funnel shape — each cell wider at top
-     than at bottom by an amount proportional to its position (set via
-     --h percent from template — represents the ratio to the prior stage). */
-  clip-path: polygon(0 0, 100% 0, calc(50% + var(--h) / 2) 100%, calc(50% - var(--h) / 2) 100%);
-  transition: background 0.2s ease;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.funnel-bar-flat:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
 }
 .funnel-count {
   color: white;
-  font-size: 1.375rem;
+  font-size: 1.625rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-  text-shadow: 0 1px 2px oklch(0% 0 0 / 0.15);
+  text-shadow: 0 1px 2px oklch(0% 0 0 / 0.18);
 }
 .funnel-label {
-  font-size: 0.8125rem;
-  color: oklch(var(--bc) / 0.75);
+  font-size: 0.875rem;
+  color: oklch(var(--bc) / 0.8);
   font-weight: 500;
   text-align: center;
 }
 .funnel-carry {
-  font-size: 0.7rem;
-  color: oklch(var(--bc) / 0.4);
+  font-size: 0.72rem;
+  color: oklch(var(--bc) / 0.45);
   font-variant-numeric: tabular-nums;
   text-align: center;
-  letter-spacing: 0.02em;
+}
+
+/* Monthly calendar — GitHub-contributions-style grid, one cell per day.
+   Fixed width columns so the grid stays uniform. Day number in the corner,
+   background intensity carries the activity signal. */
+.calendar-grid {
+  width: 100%;
+  border-spacing: 4px;
+  border-collapse: separate;
+}
+.calendar-dow {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+  color: oklch(var(--bc) / 0.45);
+  padding-bottom: 0.35rem;
+  text-align: left;
+}
+.calendar-cell {
+  width: calc(100% / 7);
+  height: 42px;
+  border-radius: 6px;
+  vertical-align: top;
+  padding: 4px 6px;
+  transition: transform 0.12s ease;
+}
+.calendar-cell:hover {
+  transform: scale(1.03);
+}
+.calendar-cell--blank {
+  background: transparent !important;
+}
+.calendar-daynum {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: oklch(var(--bc) / 0.55);
+  font-variant-numeric: tabular-nums;
+}
+.calendar-daynum--active {
+  color: oklch(100% 0 0 / 0.95);
+  font-weight: 600;
+}
+.calendar-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
 }
 
 /* ─────────────────────────────────────────────────────────────
