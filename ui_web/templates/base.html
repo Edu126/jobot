@@ -295,10 +295,12 @@
         <span class="text-xs text-base-content/40 font-medium">v2</span>
       </a>
 
-      {# Desktop nav — hidden below sm #}
+      {# Desktop nav — hidden below sm.
+         Applications tab folded into Journey (Option 1 merge): the funnel
+         has a Kanban mode that IS the applications board. /applications
+         still redirects to /journey#apps so old bookmarks don't break. #}
       <nav class="hidden sm:flex items-center gap-8">
         <a href="/jobs" class="nav-tab {% if active_tab == 'jobs' %}active{% endif %}">Jobs</a>
-        <a href="/applications" class="nav-tab {% if active_tab == 'applications' %}active{% endif %}">Applications</a>
         <a href="/journey" class="nav-tab {% if active_tab == 'journey' %}active{% endif %}">Journey</a>
         <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">Profile</a>
       </nav>
@@ -326,7 +328,6 @@
       <nav class="flex flex-col px-4 py-3 gap-1">
         {% for label, href, key in [
           ('Jobs', '/jobs', 'jobs'),
-          ('Applications', '/applications', 'applications'),
           ('Journey', '/journey', 'journey'),
           ('Profile', '/profile', 'profile'),
         ] %}

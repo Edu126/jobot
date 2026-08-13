@@ -1,0 +1,62 @@
+# Anything not needed inside the container image.
+# Mirrors the spirit of scripts/package-release.sh's zip exclusions.
+
+# ── Python / venv ──
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ── Secrets & user data (secrets flow via `fly secrets`, DB via volume) ──
+.env
+.env.*
+!.env.example
+data/
+
+# ── VCS / editor / OS junk ──
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# ── Build/release artifacts ──
+dist/
+build/
+*.egg-info/
+*.egg
+
+# ── Legacy / archived code not shipped ──
+_deprecated/
+
+# ── Internal docs & dev artifacts (not needed at runtime) ──
+PROJECT.md
+.claude/
+screenshots/
+*.screenshot.png
+docs/
+
+# ── Test / coverage output ──
+.pytest_cache/
+.coverage
+htmlcov/
+smoke_e2e.py
+smoke_semantic_score.py
+
+# ── Fly.io CLI cache (never bake into image) ──
+.fly/
+
+# ── macOS-installer scaffolding (irrelevant in Linux container) ──
+Install Jobot.command
+Start Jobot.command
+Update Jobot.command
+Share URL.command
+READ FIRST — macOS security prompt.txt
+README-for-boyfriend.txt

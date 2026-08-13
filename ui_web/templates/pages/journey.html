@@ -4,191 +4,331 @@
 
 {% block content %}
 
-{# Journey v3 — plain English, no global filter, each section owns its time frame.
-     Hero      = "This week"
-     Funnel    = "This month"          (green gradient bars, no taper)
-     Calendar  = specific month w/ nav (replaces the hour-of-day heatmap)
-     Observations + Typical time      (unchanged tone) #}
+{# Journey — merged Applications tab (Option 1 layout).
+   3 anchored sections + sticky left progress rail that tracks scroll:
+     #week      This week hero
+     #apps      Applications — Funnel with Stats/Kanban toggle
+     #insights  What we noticed · Time · Days you showed up
+   IntersectionObserver in Alpine flips the active dot as sections cross
+   into the viewport. User controls all scrolling — click a dot to jump,
+   otherwise nothing moves on its own. #}
 
-<div class="mb-8">
-  <h1 class="text-display">Journey</h1>
-  <p class="text-body-muted text-lg mt-2">Your job-hunt so far.</p>
-</div>
+<div x-data="journeyRail()"
+     x-init="init()"
+     class="journey-layout">
 
-{% if total_events == 0 %}
-  <div class="card-quiet text-center py-16 max-w-2xl mx-auto">
-    <div class="inline-flex items-center gap-2 text-title mb-3">
-      <i class="ph-thin ph-compass i-6" style="color: oklch(var(--a));"></i>
-      Your journey starts here
+  {# ═════ LEFT RAIL — sticky progress with 3 labels + connecting line ═════ #}
+  <aside class="journey-rail" aria-label="Section navigation">
+    <div class="journey-rail__inner">
+      <a href="#week" @click="active = 'week'"
+         :class="active === 'week' ? 'journey-rail__step journey-rail__step--active' : 'journey-rail__step'">
+        <span class="journey-rail__dot"></span>
+        <span class="journey-rail__label">Your week</span>
+      </a>
+      <a href="#apps" @click="active = 'apps'"
+         :class="active === 'apps' ? 'journey-rail__step journey-rail__step--active' : 'journey-rail__step'">
+        <span class="journey-rail__dot"></span>
+        <span class="journey-rail__label">Applications</span>
+      </a>
+      <a href="#insights" @click="active = 'insights'"
+         :class="active === 'insights' ? 'journey-rail__step journey-rail__step--active' : 'journey-rail__step'">
+        <span class="journey-rail__dot"></span>
+        <span class="journey-rail__label">Insights</span>
+      </a>
     </div>
-    <p class="text-body-muted mb-1">
-      As you search, tailor, and track applications, this page fills in with
-      your rhythm — the numbers that matter, when you tend to work, and what
-      the data starts telling us.
-    </p>
-    <p class="text-sm text-body-muted italic mt-4">
-      Come back after a few sessions.
-    </p>
-  </div>
-{% else %}
+  </aside>
 
-<div class="space-y-6">
+  {# ═════ RIGHT CONTENT ═════ #}
+  <div class="journey-content">
 
-  {# ═════ HERO — "This week" ═════ #}
-  <section class="rounded-xl px-6 py-5"
+    <div class="mb-8">
+      <h1 class="text-display">Journey</h1>
+      <p class="text-body-muted text-lg mt-2">Your job-hunt so far.</p>
+    </div>
+
+    {% if total_events == 0 %}
+      <div class="card-quiet text-center py-16 max-w-2xl">
+        <div class="inline-flex items-center gap-2 text-title mb-3">
+          <i class="ph-thin ph-compass i-6" style="color: oklch(var(--a));"></i>
+          Your journey starts here
+        </div>
+        <p class="text-body-muted mb-1">
+          As you search, tailor, and track applications, this page fills in
+          with your rhythm — the numbers that matter, when you tend to work,
+          and what the data starts telling us.
+        </p>
+        <p class="text-sm text-body-muted italic mt-4">
+          Come back after a few sessions.
+        </p>
+      </div>
+    {% else %}
+
+    {# ─── #week — This week hero ─── #}
+    <section id="week" class="journey-section">
+      <div class="rounded-xl px-6 py-5"
            style="background: linear-gradient(135deg, oklch(var(--b1)) 0%, oklch(var(--a) / 0.05) 60%, oklch(var(--p) / 0.05) 100%);
                   border: 1px solid oklch(var(--b3));
                   box-shadow: 0 1px 2px oklch(var(--p) / 0.04);">
-    <div class="flex items-baseline justify-between mb-4">
-      <div class="text-label inline-flex items-center gap-1.5">
-        <i class="ph-thin ph-calendar-blank i-4" style="color: oklch(var(--a));"></i>This week
-      </div>
-      <div class="text-xs text-body-muted">the last 7 days</div>
-    </div>
-
-    <div class="grid grid-cols-3 gap-6 sm:gap-10">
-      <div>
-        <div class="hero-num">{{ hero.jobs_viewed }}</div>
-        <div class="hero-label">Jobs viewed</div>
-      </div>
-      <div>
-        <div class="hero-num" style="color: oklch(var(--a));">{{ hero.tailored }}</div>
-        <div class="hero-label">Tailored resumes</div>
-      </div>
-      <div>
-        <div class="hero-num" style="color: oklch(var(--p));">{{ hero.applied }}</div>
-        <div class="hero-label">Applied</div>
-      </div>
-    </div>
-
-    {% if hero.streak_days or hero.most_active_dow %}
-    <div class="mt-4 pt-3 border-t border-base-300/60 text-sm text-body-muted flex items-center gap-4 flex-wrap">
-      {% if hero.streak_days >= 2 %}
-      <span class="inline-flex items-center gap-1.5">
-        <i class="ph-fill ph-flame i-4" style="color: oklch(var(--a));"></i>
-        <strong class="text-base-content/85">{{ hero.streak_days }}-day streak</strong>
-      </span>
-      {% endif %}
-      {% if hero.most_active_dow %}
-      <span class="inline-flex items-center gap-1.5">
-        <i class="ph-thin ph-calendar-check i-4"></i>
-        You show up most on <strong class="text-base-content/85">{{ hero.most_active_dow }}s</strong>
-      </span>
-      {% endif %}
-    </div>
-    {% endif %}
-  </section>
-
-  {# ═════ FUNNEL — "This month", green gradient, all bars same shape ═════
-     Same-height rectangles so shape is boring and the NUMBERS win the eye.
-     Color grows in intensity left→right so the visual weight signals
-     "each stage is more valuable" (viewing < saving < applying < interview < offer). #}
-  {% set _steps = [
-    ('Viewed', funnel.viewed),
-    ('Saved', funnel.saved),
-    ('Applied', funnel.applied),
-    ('Interviewing', funnel.interviewing),
-    ('Offer', funnel.offer),
-  ] %}
-  <section class="card-quiet">
-    <div class="flex items-baseline justify-between mb-5 flex-wrap gap-2">
-      <div class="text-label">Funnel — this month</div>
-      <div class="text-xs text-body-muted">how many jobs made it to each step</div>
-    </div>
-
-    <div class="grid grid-cols-5 gap-3">
-      {% for label, n in _steps %}
-        {# Intensity grows 0.35 → 1.0 across the 5 stages. All green (--p). #}
-        {% set intensity = 0.35 + (loop.index0 / 4) * 0.65 %}
-      <div class="funnel-cell">
-        <div class="funnel-bar-flat" style="background: oklch(var(--p) / {{ intensity }});">
-          <span class="funnel-count">{{ n }}</span>
+        <div class="flex items-baseline justify-between mb-4">
+          <div class="text-label inline-flex items-center gap-1.5">
+            <i class="ph-thin ph-calendar-blank i-4" style="color: oklch(var(--a));"></i>This week
+          </div>
+          <div class="text-xs text-body-muted">the last 7 days</div>
         </div>
-        <div class="funnel-label">{{ label }}</div>
-        {% if loop.index0 > 0 and _steps[loop.index0 - 1][1] > 0 %}
-          {% set pct = (n / _steps[loop.index0 - 1][1] * 100) | round | int %}
-          <div class="funnel-carry">{{ pct }}% moved to next</div>
-        {% elif loop.index0 > 0 %}
-          <div class="funnel-carry text-base-content/25">—</div>
-        {% else %}
-          <div class="funnel-carry">&nbsp;</div>
+
+        <div class="grid grid-cols-3 gap-6 sm:gap-10">
+          <div>
+            <div class="hero-num">{{ hero.jobs_viewed }}</div>
+            <div class="hero-label">Jobs viewed</div>
+          </div>
+          <div>
+            <div class="hero-num" style="color: oklch(var(--a));">{{ hero.tailored }}</div>
+            <div class="hero-label">Tailored resumes</div>
+          </div>
+          <div>
+            <div class="hero-num" style="color: oklch(var(--p));">{{ hero.applied }}</div>
+            <div class="hero-label">Applied</div>
+          </div>
+        </div>
+
+        {% if hero.streak_days or hero.most_active_dow %}
+        <div class="mt-4 pt-3 border-t border-base-300/60 text-sm text-body-muted flex items-center gap-4 flex-wrap">
+          {% if hero.streak_days >= 2 %}
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-fill ph-flame i-4" style="color: oklch(var(--a));"></i>
+            <strong class="text-base-content/85">{{ hero.streak_days }}-day streak</strong>
+          </span>
+          {% endif %}
+          {% if hero.most_active_dow %}
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-thin ph-calendar-check i-4"></i>
+            You show up most on <strong class="text-base-content/85">{{ hero.most_active_dow }}s</strong>
+          </span>
+          {% endif %}
+        </div>
         {% endif %}
       </div>
-      {% endfor %}
-    </div>
-  </section>
-
-  {# ═════ BOTTOM ROW — Observations left | (Typical time + Calendar) right ═════ #}
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-    <section class="card-quiet">
-      <div class="text-label mb-4 inline-flex items-center gap-1.5">
-        <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i>What we noticed
-      </div>
-      {% if observations %}
-      <div class="space-y-3">
-        {% for o in observations %}
-          {% if o.tone == 'success' %}
-            {% set _bg = 'oklch(var(--su) / 0.08)' %}{% set _bd = 'oklch(var(--su) / 0.32)' %}
-          {% elif o.tone == 'warn' %}
-            {% set _bg = 'oklch(var(--wa) / 0.10)' %}{% set _bd = 'oklch(var(--wa) / 0.38)' %}
-          {% else %}
-            {% set _bg = 'oklch(var(--in) / 0.08)' %}{% set _bd = 'oklch(var(--in) / 0.30)' %}
-          {% endif %}
-        <div class="rounded-lg p-3 text-sm"
-             style="background: {{ _bg }}; border: 1px solid {{ _bd }};">
-          {{ o.text }}
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <div class="text-sm text-body-muted italic py-4 text-center">
-        Not enough activity yet to spot patterns. Keep at it and this fills in.
-      </div>
-      {% endif %}
     </section>
 
-    <div class="space-y-6">
-      {% if median_seconds_to_download is not none %}
-      <section class="card-quiet">
-        <div class="text-label">How long you usually take to prep a job</div>
-        <div class="mt-2 flex items-baseline gap-2">
-          {% set mins = (median_seconds_to_download / 60) | round(1) %}
-          <span style="font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; color: oklch(var(--p)); font-variant-numeric: tabular-nums;">
-            {% if median_seconds_to_download < 60 %}{{ median_seconds_to_download | int }}s
-            {% else %}{{ mins }}<span class="text-base font-medium text-base-content/40 ml-1">min</span>{% endif %}
-          </span>
+    {# ─── #apps — Funnel with Stats/Kanban toggle ─── #}
+    <section id="apps" class="journey-section mt-8"
+             x-data="{ mode: 'stats' }">
+      <div class="card-quiet">
+        <div class="flex items-baseline justify-between mb-5 flex-wrap gap-2">
+          <div>
+            <div class="text-label">Applications — this month</div>
+            <p class="text-xs text-body-muted mt-1" x-show="mode === 'stats'">how many jobs made it to each step</p>
+            <p class="text-xs text-body-muted mt-1" x-show="mode === 'kanban'" x-cloak>your active pipeline — click a card to tailor, use Move to shift status</p>
+          </div>
+          <div class="seg-tabs" role="group" aria-label="Funnel view mode">
+            <button type="button" @click="mode = 'stats'"
+                    :class="mode === 'stats' ? 'seg-tab seg-tab--active' : 'seg-tab'">
+              <i class="ph-thin ph-chart-bar i-4"></i>Stats
+            </button>
+            <button type="button" @click="mode = 'kanban'"
+                    :class="mode === 'kanban' ? 'seg-tab seg-tab--active' : 'seg-tab'">
+              <i class="ph-thin ph-kanban i-4"></i>Kanban
+            </button>
+          </div>
         </div>
-        <div class="text-xs text-body-muted mt-2">
-          From opening a job to downloading the tailored resume.
-        </div>
-      </section>
-      {% endif %}
 
-      {# ═════ MONTHLY CALENDAR — swapped inline via HTMX on month nav ═════ #}
-      <section class="card-quiet">
-        {% include "partials/journey_calendar.html" %}
-      </section>
+        {# ── Stats mode — the funnel bars we already had ── #}
+        <div x-show="mode === 'stats'">
+          {% set _steps = [
+            ('Viewed', funnel.viewed),
+            ('Saved', funnel.saved),
+            ('Applied', funnel.applied),
+            ('Interviewing', funnel.interviewing),
+            ('Offer', funnel.offer),
+          ] %}
+          <div class="grid grid-cols-5 gap-3">
+            {% for label, n in _steps %}
+              {% set intensity = 0.35 + (loop.index0 / 4) * 0.65 %}
+            <div class="funnel-cell">
+              <div class="funnel-bar-flat" style="background: oklch(var(--p) / {{ intensity }});">
+                <span class="funnel-count">{{ n }}</span>
+              </div>
+              <div class="funnel-label">{{ label }}</div>
+              {% if loop.index0 > 0 and _steps[loop.index0 - 1][1] > 0 %}
+                {% set pct = (n / _steps[loop.index0 - 1][1] * 100) | round | int %}
+                <div class="funnel-carry">{{ pct }}% moved to next</div>
+              {% elif loop.index0 > 0 %}
+                <div class="funnel-carry text-base-content/25">—</div>
+              {% else %}
+                <div class="funnel-carry">&nbsp;</div>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        {# ── Kanban mode — 4 active columns; closed stack collapsed below ── #}
+        <div x-show="mode === 'kanban'" x-cloak>
+          {% if apps_total == 0 %}
+          <div class="text-center py-12 text-body-muted">
+            <i class="ph-thin ph-kanban i-6 mb-2 block mx-auto" style="color: oklch(var(--bc) / 0.3);"></i>
+            <p class="text-sm">No applications yet.</p>
+            <p class="text-xs mt-1">Save a job from the <a href="/jobs" class="link">Jobs tab</a> and it lands here.</p>
+          </div>
+          {% else %}
+          <div class="grid grid-cols-4 gap-3">
+            {% for status in kanban_active %}
+              {% set col_apps = by_status.get(status, []) %}
+              {% set meta = status_meta[status] %}
+            <div class="kanban-column">
+              <div class="kanban-column__header">
+                <span class="inline-flex items-center gap-1.5">
+                  <i class="ph-thin {{ meta.icon }} i-4"></i>
+                  <span class="font-medium text-sm">{{ meta.label }}</span>
+                </span>
+                <span class="kanban-column__count">{{ col_apps | length }}</span>
+              </div>
+              <div class="kanban-column__body">
+                {% for app in col_apps %}
+                  {% include "partials/app_kanban_card.html" %}
+                {% else %}
+                  <div class="text-xs text-body-muted italic text-center py-4">nothing here yet</div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+
+          {% if closed_count > 0 %}
+          <details class="mt-4">
+            <summary class="text-xs text-body-muted cursor-pointer hover:text-base-content inline-flex items-center gap-1 select-none">
+              <i class="ph-thin ph-caret-down i-3"></i>Closed applications ({{ closed_count }})
+            </summary>
+            <div class="grid grid-cols-2 gap-3 mt-3">
+              {% for status in kanban_closed %}
+                {% set col_apps = by_status.get(status, []) %}
+                {% if col_apps %}
+                  {% set meta = status_meta[status] %}
+              <div class="kanban-column kanban-column--closed">
+                <div class="kanban-column__header">
+                  <span class="inline-flex items-center gap-1.5 text-base-content/60">
+                    <i class="ph-thin {{ meta.icon }} i-4"></i>
+                    <span class="font-medium text-sm">{{ meta.label }}</span>
+                  </span>
+                  <span class="kanban-column__count">{{ col_apps | length }}</span>
+                </div>
+                <div class="kanban-column__body">
+                  {% for app in col_apps %}
+                    {% include "partials/app_kanban_card.html" %}
+                  {% endfor %}
+                </div>
+              </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </details>
+          {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    {# ─── #insights — What we noticed · Time · Calendar ─── #}
+    <section id="insights" class="journey-section mt-8">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <section class="card-quiet">
+          <div class="text-label mb-4 inline-flex items-center gap-1.5">
+            <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i>What we noticed
+          </div>
+          {% if observations %}
+          <div class="space-y-3">
+            {% for o in observations %}
+              {% if o.tone == 'success' %}
+                {% set _bg = 'oklch(var(--su) / 0.08)' %}{% set _bd = 'oklch(var(--su) / 0.32)' %}
+              {% elif o.tone == 'warn' %}
+                {% set _bg = 'oklch(var(--wa) / 0.10)' %}{% set _bd = 'oklch(var(--wa) / 0.38)' %}
+              {% else %}
+                {% set _bg = 'oklch(var(--in) / 0.08)' %}{% set _bd = 'oklch(var(--in) / 0.30)' %}
+              {% endif %}
+            <div class="rounded-lg p-3 text-sm"
+                 style="background: {{ _bg }}; border: 1px solid {{ _bd }};">
+              {{ o.text }}
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-sm text-body-muted italic py-4 text-center">
+            Not enough activity yet to spot patterns. Keep at it and this fills in.
+          </div>
+          {% endif %}
+        </section>
+
+        <div class="space-y-6">
+          {% if median_seconds_to_download is not none %}
+          <section class="card-quiet">
+            <div class="text-label">How long you usually take to prep a job</div>
+            <div class="mt-2 flex items-baseline gap-2">
+              {% set mins = (median_seconds_to_download / 60) | round(1) %}
+              <span style="font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; color: oklch(var(--p)); font-variant-numeric: tabular-nums;">
+                {% if median_seconds_to_download < 60 %}{{ median_seconds_to_download | int }}s
+                {% else %}{{ mins }}<span class="text-base font-medium text-base-content/40 ml-1">min</span>{% endif %}
+              </span>
+            </div>
+            <div class="text-xs text-body-muted mt-2">
+              From opening a job to downloading the tailored resume.
+            </div>
+          </section>
+          {% endif %}
+
+          <section class="card-quiet">
+            {% include "partials/journey_calendar.html" %}
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <div class="flex items-center justify-between mt-8 pt-4 border-t border-base-300 flex-wrap gap-3">
+      <div class="text-xs text-body-muted">
+        Everything on this page stays on this Mac — never sent anywhere.
+      </div>
+      <div class="flex items-center gap-3">
+        <div id="journey-clear-status"></div>
+        <button hx-post="/journey/clear"
+                hx-confirm="Wipe everything on this page? This can't be undone."
+                hx-target="#journey-clear-status"
+                hx-swap="innerHTML"
+                class="text-xs text-body-muted hover:text-error cursor-pointer inline-flex items-center gap-1">
+          <i class="ph-thin ph-trash i-3"></i>Clear all
+        </button>
+      </div>
     </div>
+
+    {% endif %}
   </div>
 </div>
 
-<div class="flex items-center justify-between mt-8 pt-4 border-t border-base-300 flex-wrap gap-3">
-  <div class="text-xs text-body-muted">
-    Everything on this page stays on this Mac — never sent anywhere.
-  </div>
-  <div class="flex items-center gap-3">
-    <div id="journey-clear-status"></div>
-    <button hx-post="/journey/clear"
-            hx-confirm="Wipe everything on this page? This can't be undone."
-            hx-target="#journey-clear-status"
-            hx-swap="innerHTML"
-            class="text-xs text-body-muted hover:text-error cursor-pointer inline-flex items-center gap-1">
-      <i class="ph-thin ph-trash i-3"></i>Clear all
-    </button>
-  </div>
-</div>
-
-{% endif %}
+<script>
+  // Journey rail: IntersectionObserver flips the active dot as sections
+  // cross into the viewport's middle band. User controls scroll — nothing
+  // auto-moves. Click a rail dot = smooth-scroll to that section
+  // (browser default via #anchor + scroll-behavior on html).
+  function journeyRail() {
+    return {
+      active: 'week',
+      init() {
+        const sections = document.querySelectorAll('.journey-section');
+        if (!('IntersectionObserver' in window) || !sections.length) return;
+        const io = new IntersectionObserver((entries) => {
+          // Pick the entry closest to the top-third of the viewport.
+          const visible = entries
+            .filter(e => e.isIntersecting)
+            .sort((a, b) => Math.abs(a.boundingClientRect.top - 120) -
+                            Math.abs(b.boundingClientRect.top - 120));
+          if (visible.length) this.active = visible[0].target.id;
+        }, {
+          rootMargin: '-15% 0px -55% 0px',   // trigger when a section is in the top ~30% band
+          threshold: 0,
+        });
+        sections.forEach(s => io.observe(s));
+      },
+    };
+  }
+</script>
 
 {% endblock %}

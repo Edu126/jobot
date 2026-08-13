@@ -41,7 +41,15 @@ STATUS_META = {
 }
 
 
-@router.get("/applications")
+@router.get("/applications", include_in_schema=False)
+async def applications_redirect():
+    """Applications merged into Journey (Option 1). Old bookmarks redirect
+    to the anchored Apps section on Journey."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/journey#apps", status_code=307)
+
+
+@router.get("/applications/full")
 async def applications_page(request: Request):
     apps = db.list_applications()
     counts = db.application_status_counts()

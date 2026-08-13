@@ -51,3 +51,6 @@ screenshots/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# ── Fly.io CLI cache ──
+.fly/

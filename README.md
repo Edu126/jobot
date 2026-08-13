@@ -46,6 +46,17 @@ cp .env.example .env  # then add your GOOGLE_API_KEY
 
 Server boots at `http://127.0.0.1:8000`.
 
+## Deploy to Fly.io
+
+For remote single-user testing on Fly.io's free tier:
+
+```bash
+brew install flyctl && fly auth signup   # one-time setup
+bash scripts/deploy-fly.sh               # first + every subsequent deploy
+```
+
+Full walkthrough (volumes, secrets, logs, DB access, IP-block caveats): [`docs/FLY_DEPLOY.md`](docs/FLY_DEPLOY.md).
+
 ## License
 
 MIT

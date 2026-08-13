@@ -14,12 +14,20 @@ from datetime import datetime
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
-from core import events
+from core import db, events
+from ..routes.applications import STATUS_META, STATUS_ORDER
 
 from ..deps import templates
 
 
 router = APIRouter(tags=["journey"])
+
+
+# Kanban shows the active pipeline. Terminal statuses (rejected/withdrawn)
+# stay accessible but collapsed at the bottom so they don't dominate the
+# board. "Interested" is our schema's name for "Saved" in the funnel.
+KANBAN_ACTIVE = ["interested", "applied", "interviewing", "offer"]
+KANBAN_CLOSED = ["rejected", "withdrawn"]
 
 
 @router.get("/journey")
@@ -41,6 +49,14 @@ async def journey_page(
     obs = events.observations(days=30)
     calendar_grid = events.monthly_calendar(year, month)
 
+    # Applications data for the kanban mode of the funnel section.
+    # Grouped by status so the template can iterate columns.
+    apps = db.list_applications()
+    by_status: dict[str, list[dict]] = {s: [] for s in STATUS_ORDER}
+    for a in apps:
+        by_status.setdefault(a["status"], []).append(a)
+    closed_count = sum(len(by_status.get(s, [])) for s in KANBAN_CLOSED)
+
     return templates.TemplateResponse(
         request,
         "pages/journey.html",
@@ -52,6 +68,13 @@ async def journey_page(
             "median_seconds_to_download": median_seconds,
             "observations": obs,
             "calendar": calendar_grid,
+            # Kanban context
+            "kanban_active": KANBAN_ACTIVE,
+            "kanban_closed": KANBAN_CLOSED,
+            "by_status": by_status,
+            "status_meta": STATUS_META,
+            "closed_count": closed_count,
+            "apps_total": len(apps),
         },
     )
 

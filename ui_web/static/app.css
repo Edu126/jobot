@@ -700,6 +700,122 @@ body {
   letter-spacing: 0.005em;
 }
 
+/* Journey layout — sticky left rail + main content column. The rail is
+   fixed-width (~150px) so section titles always fit without wrapping;
+   content takes the rest of max-w-7xl. Uses scroll-margin so anchor
+   clicks land below the sticky global nav. */
+html { scroll-behavior: smooth; }
+.journey-section { scroll-margin-top: 90px; }
+
+.journey-layout {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 2.5rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .journey-layout { grid-template-columns: 1fr; gap: 1rem; }
+  .journey-rail { position: static !important; padding-top: 0 !important; }
+  .journey-rail__inner { flex-direction: row !important; gap: 1rem !important; }
+  .journey-rail__inner::before { display: none !important; }
+}
+.journey-rail {
+  position: sticky;
+  top: 5rem;
+  padding-top: 0.5rem;
+}
+.journey-rail__inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2.75rem;
+}
+/* Connecting vertical line — sits behind the dots, subtle */
+.journey-rail__inner::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: oklch(var(--b3));
+}
+.journey-rail__step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: oklch(var(--bc) / 0.45);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.18s ease;
+  cursor: pointer;
+}
+.journey-rail__step:hover {
+  color: oklch(var(--bc) / 0.85);
+}
+.journey-rail__dot {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: oklch(var(--b1));
+  border: 2px solid oklch(var(--b3));
+  flex-shrink: 0;
+  transition: all 0.22s ease;
+  z-index: 1;
+}
+.journey-rail__step--active {
+  color: oklch(var(--bc));
+  font-weight: 600;
+}
+.journey-rail__step--active .journey-rail__dot {
+  background: oklch(var(--a));
+  border-color: oklch(var(--a));
+  box-shadow: 0 0 0 4px oklch(var(--a) / 0.15);
+}
+
+/* Kanban columns — light bg with header stripe, cards stack vertically. */
+.kanban-column {
+  background: oklch(var(--b2) / 0.6);
+  border: 1px solid oklch(var(--b3));
+  border-radius: 0.625rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+.kanban-column__header {
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid oklch(var(--b3));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.kanban-column__count {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: oklch(var(--bc) / 0.55);
+  background: oklch(var(--b1));
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid oklch(var(--b3));
+  font-variant-numeric: tabular-nums;
+}
+.kanban-column__body {
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+.kanban-column--closed {
+  opacity: 0.75;
+}
+.kanban-column--closed .kanban-column__header {
+  background: oklch(var(--b3) / 0.35);
+}
+
 /* Funnel v3 — same-height flat rectangles per stage. All green, intensity
    grows left→right (from muted to saturated) so visual weight tracks the
    value of each stage. Numbers win the eye; shape is boring on purpose. */

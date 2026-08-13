@@ -1,0 +1,72 @@
+{# Compact application card for kanban columns. Denser than the full
+   app_card.html because columns are narrow. Shows just: title, company,
+   location, tailoring level (if set), and one action row. Whole card is
+   clickable → opens the tailor drawer.
+
+   Requires: `app` (row from db.list_applications), `status_meta`. #}
+<article class="border border-base-300 rounded-lg p-3 bg-base-100 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group"
+         x-data="{ menuOpen: false }"
+         hx-get="/jobs/tailor/{{ app.job_id }}"
+         hx-target="#tailor-drawer-body"
+         hx-swap="innerHTML"
+         @click="$store.tailor.openFor('{{ app.job_id }}')"
+         title="Click to open the tailor drawer">
+  <h4 class="text-sm font-semibold leading-snug line-clamp-2 mb-1">
+    {{ app.job_title }}
+  </h4>
+  <div class="text-xs text-body-muted truncate">
+    <span class="font-medium text-base-content/75">{{ app.job_company }}</span>
+    {% if app.job_location %}
+    <span class="text-base-content/30 mx-1">·</span>{{ app.job_location.split(',')[0] }}
+    {% endif %}
+  </div>
+
+  {% if app.tailoring_level %}
+  <div class="mt-2 text-[10px] text-body-muted uppercase tracking-wide">
+    <i class="ph-thin ph-sparkle" style="color: oklch(var(--a));"></i>
+    Tailored: {{ app.tailoring_level | title }}
+  </div>
+  {% endif %}
+
+  {# Move-to menu — stops propagation so the card click isn't triggered #}
+  <div class="mt-2 pt-2 border-t border-base-300/60 flex items-center gap-2"
+       @click.stop>
+    {% if app.job_url_direct and app.job_url_direct != app.job_url %}
+    <a href="{{ app.job_url_direct }}" target="_blank" rel="noopener"
+       class="text-[11px] text-primary hover:underline inline-flex items-center gap-0.5"
+       title="Apply on {{ app.job_company }}'s site">
+      Apply <i class="ph-thin ph-arrow-square-out" style="font-size: 10px;"></i>
+    </a>
+    {% elif app.job_url %}
+    <a href="{{ app.job_url }}" target="_blank" rel="noopener"
+       class="text-[11px] text-primary hover:underline inline-flex items-center gap-0.5"
+       title="Open on {{ app.job_site or 'the board' }}">
+      Open <i class="ph-thin ph-arrow-square-out" style="font-size: 10px;"></i>
+    </a>
+    {% endif %}
+    <div class="relative ml-auto">
+      <button type="button"
+              @click="menuOpen = !menuOpen"
+              class="text-[11px] text-body-muted hover:text-base-content inline-flex items-center gap-0.5">
+        Move <i class="ph-thin ph-caret-down" style="font-size: 10px;"></i>
+      </button>
+      <div x-show="menuOpen" x-cloak
+           @click.outside="menuOpen = false"
+           class="absolute right-0 top-full mt-1 z-10 min-w-[140px] bg-base-100 border border-base-300 rounded-lg shadow-lg py-1">
+        {% for target in kanban_active + kanban_closed %}
+          {% if target != app.status %}
+          <button type="button"
+                  hx-post="/applications/{{ app.id }}/status"
+                  hx-vals='{"status": "{{ target }}"}'
+                  hx-swap="none"
+                  hx-on::after-request="location.reload()"
+                  class="w-full text-left px-3 py-1.5 text-xs hover:bg-base-200 flex items-center gap-2">
+            <i class="ph-thin {{ status_meta[target].icon }} i-3"></i>
+            {{ status_meta[target].label }}
+          </button>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</article>
