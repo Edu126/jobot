@@ -700,6 +700,58 @@ body {
   letter-spacing: 0.005em;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Typeahead (custom dropdown) — replaces the native <datalist> so
+   we control the styling and kill the browser dropdown-arrow that
+   used to appear next to the input. LinkedIn-clean: floating panel
+   below the input, max 5 items, keyboard/mouse hover states.
+   ───────────────────────────────────────────────────────────── */
+.typeahead-wrap {
+  position: relative;
+}
+.typeahead-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: oklch(var(--b1));
+  border: 1px solid oklch(var(--b3));
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px -8px oklch(var(--bc) / 0.18),
+              0 2px 4px -2px oklch(var(--bc) / 0.08);
+  overflow: hidden;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.typeahead-dropdown:empty {
+  display: none;
+}
+.typeahead-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+}
+.typeahead-item {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.875rem;
+  color: oklch(var(--bc) / 0.85);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: background 0.1s ease;
+}
+.typeahead-item:hover,
+.typeahead-item:focus {
+  background: oklch(var(--p) / 0.06);
+  color: oklch(var(--bc));
+  outline: none;
+}
+/* Kill Safari's caps/native list arrow on inputs that used to have list= */
+.typeahead-input::-webkit-calendar-picker-indicator { display: none !important; }
+
 /* Journey layout — sticky left rail + main content column. The rail is
    fixed-width (~150px) so section titles always fit without wrapping;
    content takes the rest of max-w-7xl. Uses scroll-margin so anchor

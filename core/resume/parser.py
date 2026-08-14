@@ -147,6 +147,88 @@ def _count_docx_images(doc: Document) -> int:
     return count
 
 
+# Bullet characters that signal the START of a new line — never merge INTO
+# a previous line if the next starts with one of these.
+_BULLET_CHARS = ("•", "·", "●", "○", "◆", "◇", "■", "□", "▪", "▫", "★", "☆", "-", "*", "–", "—")
+
+# Common resume section headers — line starting with any of these is a
+# block boundary, don't merge into the previous line.
+_SECTION_HEADER_HINTS = (
+    "profile", "summary", "objective", "experience", "work experience",
+    "employment", "education", "skills", "technical skills", "projects",
+    "certifications", "certificates", "licenses", "volunteer",
+    "volunteering", "awards", "publications", "languages", "interests",
+    "hobbies", "references", "additional information", "achievements",
+)
+
+
+def _looks_like_new_block(line: str) -> bool:
+    """True when a line clearly starts its own block — bullet, section
+    header, or a role/company line with a year in it. Used by the reflow
+    heuristic to KNOW not to merge into whatever came before."""
+    s = line.strip()
+    if not s:
+        return True
+    if s[0] in _BULLET_CHARS:
+        return True
+    lower = s.lower()
+    for hint in _SECTION_HEADER_HINTS:
+        if lower == hint or lower.startswith(hint + " ") or lower.startswith(hint + ":"):
+            return True
+    # "Company Name | Role | May 2024 – Present" style header
+    if re.search(r"\d{4}", s[:80]) and ("|" in s[:80] or "—" in s[:80] or "–" in s[:80]):
+        return True
+    return False
+
+
+def _reflow_pdf_text(raw: str) -> str:
+    """Reconstruct paragraphs from pypdf's layout-preserving output.
+
+    Two artifacts to fix:
+      1. Doubled/tripled spaces inside a line from PDF kerning.
+      2. Wrapped-column word-per-line: a paragraph that wrapped inside
+         the PDF becomes 8 lines of 1 word each. We JOIN consecutive
+         lines when the previous doesn't end with terminal punctuation
+         AND the next isn't the start of a new block (bullet, section,
+         dated role line).
+
+    Preserves paragraph breaks (blank lines) and block boundaries.
+    """
+    # 1. Collapse ≥2 spaces per line + strip trailing whitespace.
+    # ALSO drop lines that are only whitespace: pypdf inserts single-space
+    # "lines" between word-per-line output as layout padding. If we treat
+    # those as blank lines we get "paragraph breaks" between every word
+    # and never merge. Real paragraph breaks in a resume are extremely
+    # rare inside a section, so being greedy about merging is safe.
+    lines = [re.sub(r" {2,}", " ", ln.rstrip()) for ln in raw.splitlines()]
+    lines = [ln for ln in lines if ln.strip() != ""]  # drop artifacts
+
+    out: list[str] = []
+    for line in lines:
+        s = line.strip()
+        if not s:
+            # (unreachable now — we filtered above, kept for clarity)
+            if out and out[-1] != "":
+                out.append("")
+            continue
+
+        # If the previous line exists, has content, and doesn't end
+        # with terminal punctuation, AND this line isn't the start
+        # of a new block, MERGE with space.
+        if (out and out[-1]
+                and not out[-1].rstrip().endswith((".", "!", "?", ":", ";", "|"))
+                and not _looks_like_new_block(s)):
+            out[-1] = out[-1] + " " + s
+            continue
+
+        out.append(s)
+
+    # Collapse trailing blank + reduce triple-blanks (defense-in-depth).
+    while out and out[-1] == "":
+        out.pop()
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out))
+
+
 def _parse_pdf(data: bytes) -> dict[str, Any]:
     reader = PdfReader(io.BytesIO(data))
     pages = []
@@ -155,10 +237,20 @@ def _parse_pdf(data: bytes) -> dict[str, Any]:
             pages.append(page.extract_text() or "")
         except Exception:
             pages.append("")
+    joined = "\n".join(pages)
+
+    # pypdf's extract_text is layout-preserving: text runs positioned at
+    # different X-coords come out as separate "lines", so a wrapped
+    # paragraph in a narrow column becomes 1 word per line. It also
+    # inserts extra spaces where kerning is non-standard, giving us
+    # "Ottawa  ,  Ontario" instead of "Ottawa, Ontario". Reflow fixes
+    # both before we hand raw_text to the section splitter.
+    reflowed = _reflow_pdf_text(joined)
+
     # PDFs often render bullets as glyphs ('•', '·', '◦'); strip them so
     # downstream code sees clean lines.
     cleaned_lines = []
-    for line in "\n".join(pages).splitlines():
+    for line in reflowed.splitlines():
         cleaned_lines.append(_strip_leading_bullet(line.strip()))
     raw_text = "\n".join(line for line in cleaned_lines if line)
 

@@ -1,0 +1,21 @@
+{# Inner content only — the wrapper .typeahead-dropdown div lives in
+   pages/jobs.html and stays put (keeps its id + x-show binding across
+   swaps). We swap this fragment INTO it via hx-swap=innerHTML.
+
+   mousedown (not click) so the fill fires BEFORE the input's blur
+   hides the dropdown. Requires: items (list[str]), idx, kind. #}
+{% if items %}
+<ul class="typeahead-list">
+  {% for item in items %}
+  <li>
+    <button type="button"
+            class="typeahead-item"
+            tabindex="-1"
+            @mousedown.prevent="fillTypeahead('{{ kind }}', '{{ idx }}', $el.dataset.value)"
+            data-value="{{ item }}">
+      {{ item }}
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
