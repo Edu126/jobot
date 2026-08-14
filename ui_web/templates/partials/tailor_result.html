@@ -5,6 +5,37 @@
 
 <div class="space-y-6 pt-4 border-t border-base-300">
 
+  {# ── Auto-fallback banner (1A): shown when the tailored resume didn't
+     beat the original score, so we reverted the sections. Cover letter is
+     still tailored (below). Explains the reasoning + offers next actions. #}
+  {% if tailored.fallback_to_original %}
+  <div class="rounded-lg p-4 mb-4 flex items-start gap-3"
+       style="background: oklch(var(--in) / 0.06); border: 1px solid oklch(var(--in) / 0.30);">
+    <i class="ph-thin ph-shield-check i-5 mt-0.5 shrink-0" style="color: oklch(var(--in));"></i>
+    <div class="flex-1">
+      <div class="font-semibold text-sm">We kept your resume as-is</div>
+      <p class="text-sm text-body-muted mt-1 leading-relaxed">
+        Your original resume already scores well for this role — the {{ tailored.tailoring_level | title }} pass
+        didn't improve it, so we're skipping the rewrite. Your cover letter below
+        <em>is</em> tailored to this specific posting.
+      </p>
+      <div class="mt-3 flex items-center gap-3 flex-wrap">
+        {% if tailored.tailoring_level != 'aggressive' %}
+        <button type="button"
+                hx-post="/jobs/tailor/{{ job_id }}"
+                hx-vals='{"level": "aggressive"}'
+                hx-target="#tailor-result-{{ job_id }}"
+                hx-swap="innerHTML"
+                class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1">
+          <i class="ph-thin ph-sparkle i-4"></i>Try Aggressive instead
+        </button>
+        {% endif %}
+        <span class="text-xs text-body-muted">Downloads still work — you get the original DOCX + the tailored cover letter.</span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {# ── Score hero — mirrors the job-card visual language.
      LEFT: big score badge, verdict-tinted (same colors as .score-badge).
      RIGHT: verdict pill + meta line (delta, level, %) + italic insight.

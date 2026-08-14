@@ -185,8 +185,17 @@ def init_db(path: Path = DB_PATH) -> None:
 
 
 def _seed_saved_searches_if_empty(path: Path) -> None:
-    """First-run only: populate saved_searches with the 3 AEC defaults. User
-    can edit / delete / add more from the Profile tab afterwards."""
+    """No-op as of v0.5. Kept as a hook for legacy paths.
+
+    Previously seeded 3 AEC defaults for a single-user AEC assumption.
+    That noise pollutes multi-user deploys (Melissa in sales gets Mehran's
+    BIM queries as chips). Users now start with an empty saved list; chips
+    on Jobs are AI-generated from their resume via /jobs/quick-fill on first
+    visit. Their saved_searches table fills up organically as they save
+    searches they liked."""
+    return
+    # Legacy code below — unreachable, preserved so a future re-seed can
+    # cherry-pick from the pattern if needed.
     with tx(path) as conn:
         count = conn.execute("SELECT COUNT(*) AS n FROM saved_searches").fetchone()
         if int(count["n"]) > 0:

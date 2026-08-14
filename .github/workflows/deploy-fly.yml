@@ -1,0 +1,59 @@
+name: Deploy to Fly.io
+
+# Auto-deploy every push to main to all 3 per-user apps in parallel.
+# Also manually triggerable from the Actions tab (workflow_dispatch).
+#
+# Setup (one-time):
+#   1. Create an org-wide deploy token:
+#        fly tokens create org
+#   2. Copy the FlyV1... token, add it to GitHub Secrets:
+#        gh secret set FLY_API_TOKEN --body="<paste token here>"
+#      or via https://github.com/Edu126/jobot/settings/secrets/actions
+#   3. If you spin up a new per-user app (bash scripts/deploy-fly.sh alicia),
+#      add its name to the `app` matrix below.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'PROJECT.md'
+      - 'screenshots/**'
+      - '.claude/**'
+  workflow_dispatch:
+
+concurrency:
+  # Only run one deploy at a time per app-group; new commits cancel in-flight.
+  group: fly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      # If one app fails, keep deploying the others — one broken machine
+      # shouldn't block healthy ones from getting the update.
+      fail-fast: false
+      matrix:
+        app:
+          - jobbotv2
+          - jobbotv2-melissa
+          - jobbotv2-hermana
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy ${{ matrix.app }}
+        run: |
+          echo "Deploying to https://${{ matrix.app }}.fly.dev"
+          flyctl deploy \
+            --config fly.toml \
+            --app ${{ matrix.app }} \
+            --remote-only \
+            --wait-timeout 300
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

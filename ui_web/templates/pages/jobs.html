@@ -68,30 +68,23 @@
            fillFrom(text) { this.queries[0].value = text; },
          }">
 
-      {# Quick fill = 2 saved searches + up to 4 AI suggestions from your
-         resume. Sparkle icon marks the AI ones. Shuffle button asks Gemini
-         for a fresh set (cached ~7 days so it's rare). #}
-      {% if quick_fill %}
-      <div class="flex flex-wrap items-center gap-2 mb-3">
-        <span class="text-xs text-base-content/50">Quick fill:</span>
-        {% for c in quick_fill %}
-        <button type="button"
-                data-q="{{ c.query }}"
-                @click="fillFrom($el.dataset.q)"
-                class="chip {% if c.kind == 'ai' %}chip-accent{% else %}chip-neutral{% endif %} cursor-pointer hover:brightness-95 inline-flex items-center gap-1"
-                title="{% if c.kind == 'ai' %}AI suggestion from your resume{% else %}Your saved search{% endif %} — click to fill">
-          {% if c.kind == 'ai' %}<i class="ph-thin ph-sparkle i-3"></i>{% endif %}{{ c.label }}
-        </button>
-        {% endfor %}
-        <button type="button"
-                hx-post="/profile/suggest-queries?force=1"
-                hx-swap="none"
-                hx-on::after-request="location.reload()"
-                class="text-xs text-body-muted hover:text-base-content ml-auto cursor-pointer inline-flex items-center gap-1"
-                title="Get fresh AI suggestions from your resume">
-          <i class="ph-thin ph-shuffle i-3"></i>Shuffle
-        </button>
+      {# Quick fill — AI-only chips from the user's resume. Sparkle icon
+         is the visual marker. When the AI cache is empty on first Jobs
+         visit AND we have both a resume + API key, auto-fetch the
+         suggestions (hx-trigger=load) so the user sees relevant chips
+         without having to click Shuffle first. #}
+      {% if quick_fill_needs_fetch %}
+      <div class="flex items-center gap-2 mb-3" id="quick-fill-row"
+           hx-get="/jobs/quick-fill?force=1"
+           hx-trigger="load"
+           hx-swap="outerHTML">
+        <span class="text-xs text-body-muted inline-flex items-center gap-2">
+          <span class="loading loading-spinner loading-xs"></span>
+          Finding job titles that match your resume…
+        </span>
       </div>
+      {% else %}
+        {% include "partials/quick_fill_row.html" %}
       {% endif %}
 
       <form hx-post="/jobs/run/multi"

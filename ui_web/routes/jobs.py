@@ -204,6 +204,23 @@ def _extract_experience(description: str) -> Optional[str]:
 # Search picker (default landing)
 # ─────────────────────────────────────────────────────────────
 
+@router.get("/jobs/quick-fill")
+async def jobs_quick_fill(request: Request):
+    """Chip-row fragment. Called by the Jobs page on first visit when the
+    AI-suggestion cache is empty — HTMX auto-fetches this, we generate the
+    suggestions (spends ~1 LLM call), and swap the fragment in. Also the
+    endpoint the 'Shuffle' button hits when the user forces a regen."""
+    from .profile import _get_or_generate_suggestions
+    force = request.query_params.get("force", "0") == "1"
+    queries, error, age_days = _get_or_generate_suggestions(force=force)
+    quick_fill = [{"kind": "ai", "label": q, "query": q} for q in queries[:6]]
+    return templates.TemplateResponse(
+        request,
+        "partials/quick_fill_row.html",
+        {"quick_fill": quick_fill, "error": error},
+    )
+
+
 @router.get("/jobs")
 async def jobs_landing(request: Request):
     """Landing: Search block (custom + bulk + recent) at top, Top matches below.
@@ -217,32 +234,15 @@ async def jobs_landing(request: Request):
     if resume:
         top_matches, cache_count = _list_top_matches(min_score=65, limit=20)
 
-    # Quick-fill chips = a MIX of the user's own saved searches (max 2)
-    # plus AI-suggested queries from their resume (up to 4 more). Deduped
-    # against each other case-insensitively so the AI never suggests
-    # something the user already saved. The 'kind' field drives the sparkle
-    # icon in the template — visual cue that a chip came from Gemini.
-    all_saved = db.list_saved_searches()
+    # Quick-fill chips are AI-only now. Old behavior mixed saved searches
+    # (which shipped as AEC defaults) into every user's chips — noise for
+    # Melissa/hermana in different domains. Saved searches still exist in
+    # DB; they'll live in a typeahead/autocomplete on the search input in
+    # a future pass. If AI suggestions aren't cached yet, the template
+    # auto-fetches them on first Jobs visit (see quick_fill_needs_fetch).
+    all_saved = db.list_saved_searches()   # kept for future autocomplete
     seen_q: set[str] = set()
     quick_fill: list[dict] = []
-    for s in all_saved:
-        key = (s.get("query") or "").strip().lower()
-        if not key or key in seen_q:
-            continue
-        seen_q.add(key)
-        quick_fill.append({
-            "kind": "saved",
-            "label": s.get("name") or s.get("query"),
-            "query": s.get("query"),
-        })
-        if len(quick_fill) >= 2:
-            break
-
-    # AI suggestions live in the suggested_queries table (cached ~7 days
-    # per resume). Skip regen here — if the cache is empty we just show
-    # fewer chips; the /profile/updates/suggest-queries endpoint (still
-    # kept for the "Shuffle" button below) is the only place we spend LLM
-    # quota on this.
     if resume:
         cached_suggestions = db.get_cached_suggestions(int(resume["id"]))
         for q in (cached_suggestions or {}).get("queries", []):
@@ -254,13 +254,20 @@ async def jobs_landing(request: Request):
             if len(quick_fill) >= 6:
                 break
 
+    # Trigger a fresh generation on first visit when cache is empty AND
+    # user has both a resume + an API key (both needed to succeed).
+    quick_fill_needs_fetch = (
+        not quick_fill and bool(resume) and has_key
+    )
+
     return templates.TemplateResponse(
         request,
         "pages/jobs.html",
         {
             "active_tab": "jobs",
-            "saved_searches": all_saved,           # kept for backwards refs
-            "quick_fill": quick_fill,               # mix: saved + AI, ≤6 items
+            "saved_searches": all_saved,           # future: autocomplete source
+            "quick_fill": quick_fill,               # AI only, ≤6 items
+            "quick_fill_needs_fetch": quick_fill_needs_fetch,
             "recent": recent,
             "has_resume": bool(resume),
             "has_api_key": has_key,
@@ -1123,10 +1130,41 @@ async def jobs_tailor_generate(
         after = {"score": after_result.score, "verdict": after_result.verdict}
         if before_row:
             before = {"score": int(before_row["score"]), "verdict": before_row["verdict"]}
+            delta = after["score"] - before["score"]
+
+            # Auto-fallback (1A): if the tailoring didn't beat the original,
+            # revert the resume SECTIONS to the original (LLM-non-determinism
+            # or over-aggressive editing means occasional negative deltas that
+            # ship a worse resume). We KEEP the cover letter though — that's
+            # always specific-to-role value the original didn't have.
+            # The template surfaces this via `fallback_to_original`.
+            if delta <= 0:
+                original_sections = (resume.get("parsed") or {}).get("sections") or {}
+                # Stash the discarded LLM version in case we ever add a
+                # "Use tailored anyway" button — cheap and non-breaking.
+                tailored["_tailored_sections_rejected"] = tailored.get("sections") or {}
+                tailored["sections"] = original_sections
+                tailored["fallback_to_original"] = True
+                tailored["tailoring_notes"] = (
+                    "Your resume already scored well for this role — we kept "
+                    "it as-is. The cover letter below is still tailored to "
+                    "this specific posting."
+                )
+                # Overwrite the change summary so the meta line doesn't lie
+                # about a % change that no longer applies.
+                tailored["tailoring_change"] = {
+                    "overall_pct": 0,
+                    "per_section": [],
+                    "one_liner": "kept original resume",
+                }
+                # After == before now (we're using the original)
+                after = before
+                delta = 0
+
             tailored["tailoring_match"] = {
                 "before": before,
                 "after": after,
-                "delta": after["score"] - before["score"],
+                "delta": delta,
                 "verdict_jumped": before["verdict"] != after["verdict"],
             }
         else:
@@ -1156,6 +1194,7 @@ async def jobs_tailor_generate(
         delta=_match.get("delta"),
         verdict_jumped=bool(_match.get("verdict_jumped")),
         change_pct=(tailored.get("tailoring_change") or {}).get("overall_pct"),
+        fallback_to_original=bool(tailored.get("fallback_to_original")),
     )
 
     return templates.TemplateResponse(

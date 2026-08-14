@@ -1,6 +1,8 @@
-# Deploying Jobot to Fly.io (single-user testing)
+# Deploying Jobot to Fly.io (per-user testing)
 
-A short walkthrough for putting Jobot v0.5-dev on the public internet via Fly.io's free tier. This is for **remote single-user testing** — no auth, no multi-tenancy. Multi-user is on the roadmap (see Notion doc "Jobot — Multi-user Architecture").
+A short walkthrough for putting Jobot v0.5-dev on the public internet via Fly.io's free tier. Uses **one-app-per-user** as poor-man's multi-tenancy while proper auth (Notion doc "Jobot — Multi-user Architecture") is on the roadmap. Each user gets their own isolated app + volume + URL.
+
+> **TL;DR — auto-deploy on push**: after the one-time setup in [Auto-deploy](#auto-deploy-on-push-to-main), every `git push origin main` deploys all 3 per-user apps in parallel via GitHub Actions.
 
 ---
 
@@ -124,3 +126,55 @@ fly apps destroy jobot-testing
 fly volumes list                  # if the volume lingers
 fly volumes destroy <volume-id>
 ```
+
+---
+
+## Auto-deploy on push to main
+
+The workflow at `.github/workflows/deploy-fly.yml` deploys all per-user apps in parallel every time `main` gets a new commit (or when triggered manually from the Actions tab). Setup is one-time.
+
+### 1. Create an org-wide Fly deploy token
+
+```bash
+fly tokens create org
+```
+
+Copy the whole `FlyV1 fm2_...` string it prints. This token can deploy any app in your Fly org.
+
+### 2. Add the token as a GitHub secret
+
+```bash
+gh secret set FLY_API_TOKEN --body="FlyV1 fm2_...paste-your-token-here..."
+```
+
+Or via the browser: <https://github.com/Edu126/jobot/settings/secrets/actions> → **New repository secret** → name `FLY_API_TOKEN`, value = pasted token.
+
+### 3. Push to main → auto-deploy
+
+Every subsequent push runs `fly deploy` for all 3 apps in parallel. Watch it live at <https://github.com/Edu126/jobot/actions>.
+
+To trigger manually (e.g. after adding a new secret):
+
+```bash
+gh workflow run "Deploy to Fly.io"
+```
+
+### 4. Adding a new per-user app to the matrix
+
+When you `bash scripts/deploy-fly.sh alicia` and create a new app, add it to the workflow so auto-deploy covers it:
+
+```yaml
+# in .github/workflows/deploy-fly.yml
+matrix:
+  app:
+    - jobbotv2
+    - jobbotv2-melissa
+    - jobbotv2-hermana
+    - jobbotv2-alicia   # <-- add here
+```
+
+Commit + push. Next deploy includes the new app.
+
+### Skipping deploy for doc-only commits
+
+The workflow ignores changes to `*.md`, `docs/**`, `.gitignore`, `PROJECT.md`, `screenshots/**`, and `.claude/**` — so a README tweak doesn't burn CI minutes or a Fly rollout on all 3 apps.

@@ -1,0 +1,31 @@
+{# Quick-fill chips fragment. Rendered inline on Jobs landing when the AI
+   suggestion cache already has entries, OR swapped in via HTMX after the
+   auto-fetch / Shuffle button completes. #}
+<div class="flex flex-wrap items-center gap-2 mb-3" id="quick-fill-row">
+  {% if quick_fill %}
+  <span class="text-xs text-base-content/50">Quick fill:</span>
+  {% for c in quick_fill %}
+  <button type="button"
+          data-q="{{ c.query }}"
+          @click="fillFrom($el.dataset.q)"
+          class="chip chip-accent cursor-pointer hover:brightness-95 inline-flex items-center gap-1"
+          title="AI suggestion from your resume — click to fill">
+    <i class="ph-thin ph-sparkle i-3"></i>{{ c.label }}
+  </button>
+  {% endfor %}
+  <button type="button"
+          hx-get="/jobs/quick-fill?force=1"
+          hx-target="#quick-fill-row"
+          hx-swap="outerHTML"
+          hx-indicator="#shuffle-spin"
+          class="text-xs text-body-muted hover:text-base-content ml-auto cursor-pointer inline-flex items-center gap-1"
+          title="Get fresh AI suggestions from your resume">
+    <span id="shuffle-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+    <i class="ph-thin ph-shuffle i-3"></i>Shuffle
+  </button>
+  {% elif error %}
+  <div class="text-xs text-body-muted italic">{{ error }}</div>
+  {% else %}
+  <div class="text-xs text-body-muted italic">No suggestions yet — upload a resume to unlock these.</div>
+  {% endif %}
+</div>

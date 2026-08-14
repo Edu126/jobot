@@ -31,7 +31,12 @@ from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
 
 DEFAULT_BATCH_SIZE = 6
 MAX_JD_CHARS = 2500       # truncate very long JDs — key reqs are near the top
-MAX_RESUME_CHARS = 4000   # 2-page resume ≈ 3-4k chars
+# v0.5: bumped from 4000 → 12000 so certifications / additional-info / older
+# roles at the tail of long resumes are still in the window Gemini reads.
+# The pain this fixes: false-positive gaps like "driver license missing" when
+# the resume DID list it in a section that lived past the 4000-char cutoff.
+# Gemini's context is 1M+ tokens — 12k chars is a rounding error.
+MAX_RESUME_CHARS = 12000
 
 VERDICTS = ("strong_fit", "workable", "stretch", "poor_fit")
 
@@ -238,7 +243,14 @@ CRITICAL RULES:
 1. Score each job INDEPENDENTLY. Do NOT rank or compare jobs to each other. A batch of 6 could all be strong_fit, or all poor_fit — score on absolute merit vs the candidate.
 2. Base every judgment on THIS candidate's actual resume above, not generic advice.
 3. "matched" = concrete skills, tools, or experience present in BOTH the resume and the JD. Max 5. Prefer specific tools (Revit, Navisworks) over generic soft skills.
-4. "gaps" = requirements the JD asks for that are missing or weak in the resume. Max 5. Concrete tools/certs/domains only.
+4. "gaps" = requirements the JD asks for that are TRULY MISSING from the resume. Max 5. Concrete tools/certs/domains only.
+   BEFORE listing ANY gap, verify the resume does NOT mention it in any form — including abbreviations, synonyms, or sections like "Additional Information", "Certifications", "Licenses", tail bullet points.
+   Common false positives to AVOID:
+     - "Driver license" when the resume says "Valid Class G license" or "Ontario driver's licence"
+     - "AutoCAD" when the resume lists "Autodesk suite" or "AutoCAD 2024"
+     - "Bilingual" when the resume has "Fluent in French and English"
+     - "Bachelor's degree" when the resume shows "BASc, Civil Engineering, 2020"
+   If a JD requirement appears in ANY form in the resume — even abbreviated, in a footer section, or phrased differently — it is NOT a gap.
 5. "reasoning" = ONE sentence, direct, no fluff. Start with the verdict word. Reference specific evidence from the resume or JD.
 6. Use the EXACT job_id string from each <JOB> tag. Do not invent, shorten, or reformat.
 
