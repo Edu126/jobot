@@ -204,6 +204,126 @@ def _extract_experience(description: str) -> Optional[str]:
 # Search picker (default landing)
 # ─────────────────────────────────────────────────────────────
 
+@router.get("/api/geocode")
+async def api_geocode(request: Request):
+    """Location typeahead — proxies Photon (photon.komoot.io, free, no auth,
+    OSM-derived). Returns raw <option> tags so an HTMX-swapped <datalist>
+    picks them up as browser-native suggestions.
+
+    In-memory cache: 24h TTL per lowercased query so we don't hammer Photon
+    when the user retypes 'Ottawa' every session. Silent-fails to empty
+    <datalist> on any error — the input is still typable manually."""
+    import urllib.parse
+    import urllib.request
+    import json as _json
+    from datetime import datetime as _dt, timedelta as _td
+
+    q = (request.query_params.get("location") or "").strip()[:60]
+    if len(q) < 2:
+        return HTMLResponse("", status_code=200)
+
+    key = q.lower()
+    now = _dt.utcnow()
+    cache = state.geocode_cache
+    hit = cache.get(key)
+    if hit and hit["expires"] > now:
+        return HTMLResponse(hit["html"], status_code=200)
+
+    try:
+        url = (
+            "https://photon.komoot.io/api/"
+            f"?q={urllib.parse.quote(q)}&limit=6&layer=city"
+        )
+        req = urllib.request.Request(url, headers={"User-Agent": "jobot/0.5"})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return HTMLResponse("", status_code=200)
+
+    # Build unique "City, State, Country" display strings.
+    seen: set[str] = set()
+    options: list[str] = []
+    for feat in (data.get("features") or [])[:6]:
+        p = feat.get("properties") or {}
+        name = p.get("name") or ""
+        state_or_region = p.get("state") or ""
+        country = p.get("country") or ""
+        parts = [x for x in (name, state_or_region, country) if x]
+        display = ", ".join(parts)
+        if not display or display.lower() in seen:
+            continue
+        seen.add(display.lower())
+        # HTML-escape via replace since we're building tags by hand
+        safe = (display.replace("&", "&amp;").replace("<", "&lt;")
+                       .replace(">", "&gt;").replace('"', "&quot;"))
+        options.append(f'<option value="{safe}"></option>')
+
+    html = "".join(options)
+    cache[key] = {"html": html, "expires": now + _td(hours=24)}
+    return HTMLResponse(html, status_code=200)
+
+
+@router.get("/api/search-suggest")
+async def api_search_suggest(request: Request):
+    """Job-title typeahead — pulls from three local sources:
+      1. Recent search queries (from disk cache in data/jobs_cache/*.json)
+      2. Saved searches the user has explicitly stored
+      3. AI-generated suggestions cached per resume
+    Prefix-match (case-insensitive), dedupe, cap 8. Returns <option> tags
+    for a <datalist>. All sources are LOCAL — zero LLM calls."""
+    import json as _json
+
+    prefix = (request.query_params.get("queries") or "").strip().lower()[:60]
+    if len(prefix) < 1:
+        return HTMLResponse("", status_code=200)
+
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def _add(candidate: str) -> None:
+        c = (candidate or "").strip()
+        if not c or c.lower() in seen or not c.lower().startswith(prefix):
+            return
+        seen.add(c.lower())
+        safe = (c.replace("&", "&amp;").replace("<", "&lt;")
+                 .replace(">", "&gt;").replace('"', "&quot;"))
+        out.append(f'<option value="{safe}"></option>')
+
+    # Saved searches — user's own explicit picks (highest signal)
+    for s in db.list_saved_searches():
+        _add(s.get("query") or "")
+        if len(out) >= 8:
+            break
+
+    # Recent scraped queries from disk cache — what the user actually ran
+    if len(out) < 8:
+        for path in sorted(
+            jobs_cache.CACHE_DIR.glob("*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )[:30]:
+            try:
+                data = _json.loads(path.read_text(encoding="utf-8"))
+                params = data.get("params") or {}
+                _add(params.get("query", ""))
+                if len(out) >= 8:
+                    break
+            except Exception:
+                continue
+
+    # AI suggestions from the current resume (lowest signal, still useful)
+    if len(out) < 8:
+        resume = db.get_current_resume()
+        if resume:
+            cached = db.get_cached_suggestions(int(resume["id"]))
+            for q in (cached or {}).get("queries", []) or []:
+                _add(q)
+                if len(out) >= 8:
+                    break
+
+    return HTMLResponse("".join(out), status_code=200)
+
+
 @router.get("/jobs/quick-fill")
 async def jobs_quick_fill(request: Request):
     """Chip-row fragment. Called by the Jobs page on first visit when the

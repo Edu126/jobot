@@ -29,6 +29,12 @@ tailored_history: dict[str, list[dict[str, Any]]] = {}
 search_tasks: dict[str, dict[str, Any]] = {}
 
 
+# Geocode typeahead cache — {"ottawa": {"html": "<option..>...", "expires": dt}}.
+# Prevents hammering Photon on every keystroke. 24h TTL; cleared on server
+# restart (harmless — Photon just repopulates on the next call).
+geocode_cache: dict[str, dict[str, Any]] = {}
+
+
 def record_tailor(job_id: str, tailored: dict[str, Any]) -> int:
     """Append a new tailor run for this job. Returns the index of the new run."""
     entry = {

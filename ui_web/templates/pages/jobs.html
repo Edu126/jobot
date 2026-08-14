@@ -94,16 +94,34 @@
             @htmx:after-request="stop($event)">
         <template x-for="(q, idx) in queries" :key="idx">
           <div class="flex gap-2 items-stretch" :class="idx === 0 ? '' : 'mt-2'">
+            {# Typeahead: local sources (saved + recent + AI suggestions).
+               list= attribute + shared datalist below let the browser
+               render native suggestions with zero extra UI code. #}
             <input type="text" name="queries"
                    x-model="queries[idx].value"
                    :placeholder="idx === 0 ? 'Job title (e.g. Revit specialist)' : 'Another job title (e.g. BIM Modeler)'"
                    required
                    :disabled="running"
+                   list="query-suggest"
+                   hx-get="/api/search-suggest"
+                   hx-trigger="keyup changed delay:250ms"
+                   hx-target="#query-suggest"
+                   hx-swap="innerHTML"
+                   autocomplete="off"
                    class="input input-bordered flex-1">
             <template x-if="idx === 0">
+              {# Location typeahead: Photon-backed cities. Debounce 400ms —
+                 gentler than the local-only queries endpoint. #}
               <input type="text" name="location"
                      value="Ottawa, Ontario, Canada"
+                     placeholder="City, region, country"
                      :disabled="running"
+                     list="loc-suggest"
+                     hx-get="/api/geocode"
+                     hx-trigger="keyup changed delay:400ms"
+                     hx-target="#loc-suggest"
+                     hx-swap="innerHTML"
+                     autocomplete="off"
                      class="input input-bordered w-64">
             </template>
             <template x-if="idx > 0">
@@ -113,6 +131,12 @@
             </template>
           </div>
         </template>
+
+        {# Shared datalists — one <datalist> per typeahead source, shared by
+           all query rows via list= attribute. Browsers render these natively
+           as the user types. #}
+        <datalist id="query-suggest"></datalist>
+        <datalist id="loc-suggest"></datalist>
 
         <div class="flex items-center justify-between mt-4">
           <button type="button"
