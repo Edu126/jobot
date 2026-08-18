@@ -38,21 +38,22 @@
   <div class="card-quiet" x-data="{ mode: 'search' }">
 
     {# Tab strip — segmented control style: active tab is a solid pill so
-       the current mode reads instantly. Icons via Phosphor thin, no emojis. #}
+       the current mode reads instantly. Icons via Phosphor thin, no
+       emojis. Labels shortened on mobile so they fit one line each. #}
     <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
-      <div class="seg-tabs">
+      <div class="seg-tabs w-full md:w-auto grid grid-cols-2 md:flex">
         <button type="button" @click="mode = 'search'"
                 :class="mode === 'search' ? 'seg-tab seg-tab--active' : 'seg-tab'">
           <i class="ph-thin ph-magnifying-glass i-4"></i>
-          Broad search
+          <span>Broad<span class="hidden md:inline"> search</span></span>
         </button>
         <button type="button" @click="mode = 'targeted'"
                 :class="mode === 'targeted' ? 'seg-tab seg-tab--active' : 'seg-tab'">
           <i class="ph-thin ph-crosshair-simple i-4"></i>
-          Individual Job Review
+          <span>Individual<span class="hidden md:inline"> Job Review</span></span>
         </button>
       </div>
-      <span class="text-xs text-body-muted"
+      <span class="hidden md:inline text-xs text-body-muted"
             x-text="mode === 'search'
                     ? 'Cast a wide net — up to 3 titles at once'
                     : 'Paste a specific job link — deep-analyze one'"></span>
@@ -150,7 +151,9 @@
          suggestions (hx-trigger=load) so the user sees relevant chips
          without having to click Shuffle first. #}
       {% if quick_fill_needs_fetch %}
-      <div class="flex items-center gap-2 mb-3" id="quick-fill-row"
+      {# Hidden on mobile — quick-fill chips would dominate the phone
+         viewport; typeahead autocomplete covers the discovery flow. #}
+      <div class="hidden md:flex items-center gap-2 mb-3" id="quick-fill-row"
            hx-get="/jobs/quick-fill?force=1"
            hx-trigger="load"
            hx-swap="outerHTML">
@@ -165,19 +168,23 @@
 
       {# Filter htmx:before-request to ONLY the form's own submit — otherwise
          the typeahead requests on input children bubble up and trigger the
-         full-screen overlay on every keystroke ("page reload" feeling). #}
+         full-screen overlay on every keystroke ("page reload" feeling).
+
+         Layout: stacked vertically at all sizes. Previous side-by-side
+         job-title + location was clever on desktop but read as cramped on
+         mobile — one input per line is clearer, and the vertical rhythm
+         matches how users actually fill the form (title → title → add →
+         city → run). #}
       <form hx-post="/jobs/run/multi"
             hx-target="#search-feedback"
             hx-swap="innerHTML"
             @htmx:before-request="if ($event.target === $event.currentTarget) { start(); document.getElementById('search-feedback').innerHTML = '' }"
             @htmx:after-request="if ($event.target === $event.currentTarget) { stop($event) }">
+
+        {# Job title inputs stack vertically. `× remove` button sits inline
+           for rows after the first. Full-width typeahead per row. #}
         <template x-for="(q, idx) in queries" :key="idx">
           <div class="flex gap-2 items-stretch" :class="idx === 0 ? '' : 'mt-2'">
-            {# Typeahead — custom floating dropdown, LinkedIn-style. Each
-               input is wrapped in .typeahead-wrap so the absolute-positioned
-               dropdown anchors to it. HTMX populates the dropdown inline;
-               we swap the whole dropdown div (outerHTML) so the container
-               stays clean between requests. Debounce 300ms on the input. #}
             <div class="typeahead-wrap flex-1">
               <input type="text" name="queries"
                      x-model="queries[idx].value"
@@ -199,70 +206,77 @@
                    x-show="typeaheadFocus === `q-${idx}`" x-cloak
                    class="typeahead-dropdown"></div>
             </div>
-            <template x-if="idx === 0">
-              <div class="typeahead-wrap w-64">
-                <input type="text" name="location"
-                       x-model="locationValue"
-                       placeholder="City, region, country"
-                       :disabled="running"
-                       autocomplete="off"
-                       spellcheck="false"
-                       id="loc-input"
-                       hx-get="/api/geocode"
-                       hx-trigger="keyup changed delay:150ms, focus"
-                       hx-sync="this:replace"
-                       hx-target="#loc-drop-remote"
-                       hx-swap="innerHTML"
-                       @htmx:after-swap="dedupePhoton()"
-                       @focus="setTypeaheadFocus('loc')"
-                       @blur="clearTypeaheadFocus()"
-                       class="typeahead-input input input-bordered w-full">
-                {# Dual-container dropdown: Alpine renders instant local (CA) matches
-                   above, HTMX renders Photon results below. Divider only shows when
-                   both are non-empty. Dedupe happens client-side post-swap. #}
-                <div id="loc-drop"
-                     x-show="typeaheadFocus === 'loc' && (localLocMatches.length > 0 || remoteCount > 0)"
-                     x-cloak
-                     class="typeahead-dropdown">
-                  <ul x-show="localLocMatches.length > 0" class="typeahead-list">
-                    <template x-for="item in localLocMatches" :key="item">
-                      <li>
-                        <button type="button" class="typeahead-item" tabindex="-1"
-                                @mousedown.prevent="fillTypeahead('loc', 0, $el.dataset.value)"
-                                :data-value="item" x-text="item"></button>
-                      </li>
-                    </template>
-                  </ul>
-                  <div id="loc-drop-remote"></div>
-                </div>
-              </div>
-            </template>
             <template x-if="idx > 0">
               <button type="button" @click="removeQuery(idx)"
-                      class="btn btn-ghost text-base-content/40 hover:text-error"
+                      class="btn btn-ghost text-base-content/40 hover:text-error shrink-0"
                       title="Remove this query"><i class="ph-thin ph-x i-4"></i></button>
             </template>
           </div>
         </template>
 
-        <div class="flex items-center justify-between mt-4">
+        {# Add-another-job link — BEFORE the location field so the mental
+           model is "list all the roles I care about → then pick where →
+           then run." User-flagged reorder from an earlier layout that put
+           this after the location. #}
+        <div class="mt-3">
           <button type="button"
                   @click="addQuery()"
                   x-show="queries.length < 3 && !running"
-                  class="text-sm text-primary hover:underline cursor-pointer flex items-center gap-1">
+                  class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
+                  style="min-height: 44px;">
             + Add another job (<span x-text="queries.length"></span>/3)
           </button>
           <span x-show="queries.length >= 3 && !running" class="text-xs text-body-muted">
             Max 3 queries per run (rate-limit safety).
           </span>
-          <span></span>
-
-          <button type="submit"
-                  :disabled="running"
-                  class="btn btn-primary cursor-pointer min-w-[10rem]">
-            <span x-text="queries.length > 1 ? `Run ${queries.length} searches` : 'Run search'"></span>
-          </button>
         </div>
+
+        {# Location typeahead — its own full-width row. Applies to every
+           job title above. #}
+        <div class="mt-3 typeahead-wrap">
+          <input type="text" name="location"
+                 x-model="locationValue"
+                 placeholder="City, region, country"
+                 :disabled="running"
+                 autocomplete="off"
+                 spellcheck="false"
+                 id="loc-input"
+                 hx-get="/api/geocode"
+                 hx-trigger="keyup changed delay:150ms, focus"
+                 hx-sync="this:replace"
+                 hx-target="#loc-drop-remote"
+                 hx-swap="innerHTML"
+                 @htmx:after-swap="dedupePhoton()"
+                 @focus="setTypeaheadFocus('loc')"
+                 @blur="clearTypeaheadFocus()"
+                 class="typeahead-input input input-bordered w-full">
+          {# Dual-container dropdown: Alpine renders instant local (CA) matches
+             above, HTMX renders Photon results below. Divider only shows when
+             both are non-empty. Dedupe happens client-side post-swap. #}
+          <div id="loc-drop"
+               x-show="typeaheadFocus === 'loc' && (localLocMatches.length > 0 || remoteCount > 0)"
+               x-cloak
+               class="typeahead-dropdown">
+            <ul x-show="localLocMatches.length > 0" class="typeahead-list">
+              <template x-for="item in localLocMatches" :key="item">
+                <li>
+                  <button type="button" class="typeahead-item" tabindex="-1"
+                          @mousedown.prevent="fillTypeahead('loc', 0, $el.dataset.value)"
+                          :data-value="item" x-text="item"></button>
+                </li>
+              </template>
+            </ul>
+            <div id="loc-drop-remote"></div>
+          </div>
+        </div>
+
+        {# Run search button — full-width on mobile so it's obviously the
+           primary action; auto-width from md up. #}
+        <button type="submit"
+                :disabled="running"
+                class="btn btn-primary cursor-pointer w-full md:w-auto md:min-w-[10rem] mt-4">
+          <span x-text="queries.length > 1 ? `Run ${queries.length} searches` : 'Run search'"></span>
+        </button>
 
         <div x-show="queries.length > 1" x-cloak class="text-xs text-body-muted mt-2">
           Sequential — each ~60s, 8s cooldown between to avoid rate-limits. Results merged into one entry.
@@ -278,16 +292,19 @@
             hx-swap="innerHTML"
             @htmx:before-request="start(); document.getElementById('from-url-feedback').innerHTML = ''"
             @htmx:after-request="stop($event)">
-        <div class="flex gap-2 items-stretch">
+        {# Stack URL input + Analyze button on mobile so the button doesn't
+           overflow / crush the input to nothing on narrow screens.
+           Side-by-side from md up where there's room. #}
+        <div class="flex flex-col md:flex-row gap-2 md:items-stretch">
           <input type="url" name="job_url"
                  placeholder="https://… (LinkedIn, Indeed, Workday, company career page, anything)"
                  required
                  :disabled="running"
-                 class="input input-bordered flex-1"
+                 class="input input-bordered w-full md:flex-1"
                  autocomplete="off">
           <button type="submit"
                   :disabled="running"
-                  class="btn btn-primary cursor-pointer min-w-[8rem]">
+                  class="btn btn-primary cursor-pointer w-full md:w-auto md:min-w-[8rem]">
             Analyze
           </button>
         </div>

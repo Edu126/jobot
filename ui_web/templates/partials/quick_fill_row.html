@@ -1,7 +1,7 @@
 {# Quick-fill chips fragment. Rendered inline on Jobs landing when the AI
    suggestion cache already has entries, OR swapped in via HTMX after the
    auto-fetch / Shuffle button completes. #}
-<div class="flex flex-wrap items-center gap-2 mb-3" id="quick-fill-row">
+<div class="hidden md:flex flex-wrap items-center gap-2 mb-3" id="quick-fill-row">
   {% if quick_fill %}
   <span class="text-xs text-base-content/50">Quick fill:</span>
   {% for c in quick_fill %}
