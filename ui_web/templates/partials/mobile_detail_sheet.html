@@ -1,0 +1,67 @@
+{# Mobile bottom sheet for job detail. Fills the gap left by the
+   `hidden lg:block` right-sidebar pattern on jobs_results.html / jobs.html
+   — without this the whole detail-viewing UX vanishes below lg (cards
+   fire HTMX into an invisible target).
+
+   Opens via Alpine.store('selectedJob').select(id) when the viewport is
+   below lg (see base.html). Dismisses via backdrop tap, close button,
+   or hardware Back on Android.
+
+   Same HTMX target endpoint as desktop (/jobs/detail/{id}) — server
+   doesn't need to know about viewport. The partials/job_detail.html
+   content stays identical; the sheet just wraps it.
+
+   NOT rendered on desktop (`lg:hidden`) — the sticky right pane wins.
+#}
+<template x-teleport="body">
+  <div x-show="$store.selectedJob.mobileOpen" x-cloak class="lg:hidden">
+    {# Backdrop — tap to dismiss #}
+    <div class="mobile-detail-sheet-backdrop"
+         @click="$store.selectedJob.closeMobile()"
+         x-transition:enter="transition-opacity duration-150"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition-opacity duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"></div>
+
+    {# Panel — slides up. #}
+    <div class="mobile-detail-sheet-panel"
+         role="dialog"
+         aria-modal="true"
+         aria-label="Job detail"
+         x-transition:enter="transition-transform duration-200 ease-out"
+         x-transition:enter-start="translate-y-full"
+         x-transition:enter-end="translate-y-0"
+         x-transition:leave="transition-transform duration-200 ease-in"
+         x-transition:leave-start="translate-y-0"
+         x-transition:leave-end="translate-y-full">
+
+      {# Drag handle — visual affordance for "swipe down to dismiss".
+       Not wired to a real gesture (adds complexity for marginal gain);
+       tap the backdrop or the × instead. #}
+      <div class="mobile-detail-sheet-handle" aria-hidden="true"></div>
+
+      <div class="mobile-detail-sheet-header">
+        <span class="text-sm text-body-muted flex-1 truncate">Job detail</span>
+        <button type="button"
+                @click="$store.selectedJob.closeMobile()"
+                aria-label="Close"
+                class="cursor-pointer text-base-content/50 hover:text-base-content"
+                style="min-width: 44px; min-height: 44px; display:inline-flex; align-items:center; justify-content:center;">
+          <i class="ph-thin ph-x" style="font-size: 1.35rem;"></i>
+        </button>
+      </div>
+
+      {# Content region — HTMX-loaded by selectedJob.select() when the
+       viewport is below lg. Identical content to desktop's right pane. #}
+      <div id="mobile-detail-scroll" class="mobile-detail-sheet-scroll">
+        <div id="mobile-detail-body">
+          <div class="text-body-muted text-sm text-center py-16">
+            Loading…
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

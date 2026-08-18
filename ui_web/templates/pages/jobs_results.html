@@ -39,6 +39,17 @@
              this.snapToQualityFilter();
            }
          };
+         // Called by the swipe handler after a save / dismiss / undo POST
+         // completes. Mutates the reactive jobs array so the client-side
+         // filter hides (or restores) the card without a page reload.
+         window.__jobotMarkJob = (id, action) => {
+           const j = this.jobs.find(x => x.id === id);
+           if (!j) return;
+           if (action === 'saved')       { /* filter unchanged; heart chip on next reload */ }
+           else if (action === 'dismissed')  { j.dismissed = 1; }
+           else if (action === 'undismissed') { j.dismissed = 0; }
+           else if (action === 'unsaved') { /* no client-side undo state today */ }
+         };
          // If we loaded with everything already scored, auto-snap after paint.
          if (this.pendingScoreCount === 0 && !this.isFreshView) {
            this.$nextTick(() => this.snapToQualityFilter());
@@ -61,6 +72,7 @@
        },
        destroy() {
          if (window.__jobotUpdateScore) delete window.__jobotUpdateScore;
+         if (window.__jobotMarkJob) delete window.__jobotMarkJob;
        }
      }">
 
@@ -217,6 +229,11 @@
            title="Hide jobs you've already spent time reading">
       <input type="checkbox" x-model="$store.filters.hideViewed" class="checkbox checkbox-sm">
       <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-eye-slash i-4"></i>Hide viewed</span>
+    </label>
+    <label class="flex items-center gap-2 cursor-pointer select-none"
+           title="Hide jobs you've swiped away as 'not interested'">
+      <input type="checkbox" x-model="$store.filters.hideDismissed" class="checkbox checkbox-sm">
+      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-x-circle i-4"></i>Hide dismissed</span>
     </label>
     <div>
       <label class="text-label block mb-1">Remote</label>

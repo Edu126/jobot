@@ -607,10 +607,11 @@ async def jobs_results(request: Request, cache_key: str):
     jobs_dicts = [j.to_dict() for j in cached.jobs]
     db.upsert_jobs(jobs_dicts)   # ensure FK for scoring
 
-    # Load viewed + "new since expand" sets in one shot for the whole
-    # cache. Both drive per-card flags AND the two-line header stats.
+    # Load viewed + dismissed + "new since expand" sets in one shot for
+    # the whole cache. All three drive per-card flags AND the header stats.
     all_ids = [j["id"] for j in jobs_dicts]
     viewed_ids = db.get_viewed_ids(all_ids)
+    dismissed_ids = db.get_dismissed_ids(all_ids)
     new_since_expand_ids = set(cached.last_expand_added_ids)
 
     resume = db.get_current_resume()
@@ -668,6 +669,7 @@ async def jobs_results(request: Request, cache_key: str):
             j["_pending_score"] = can_score_async
         j["_experience"] = _extract_experience(j.get("description", ""))
         j["_is_viewed"] = j["id"] in viewed_ids
+        j["_is_dismissed"] = j["id"] in dismissed_ids
         j["_is_new_since_expand"] = j["id"] in new_since_expand_ids
 
         # "New" flag — first_seen within 48h
@@ -698,6 +700,7 @@ async def jobs_results(request: Request, cache_key: str):
             "remote": int(bool(j.get("is_remote"))),
             "is_new": int(bool(j.get("_is_new"))),
             "viewed": int(bool(j.get("_is_viewed"))),
+            "dismissed": int(bool(j.get("_is_dismissed"))),
             "new_since_expand": int(bool(j.get("_is_new_since_expand"))),
         }
         for j in jobs_dicts
@@ -1542,6 +1545,30 @@ async def jobs_detail(request: Request, job_id: str):
         "partials/job_detail.html",
         {"job": job, "ai": ai},
     )
+
+
+@router.post("/jobs/dismiss/{job_id}")
+@limiter.limit("300/hour")
+async def jobs_dismiss(request: Request, job_id: str):
+    """Mark a job as dismissed ("not interested"). Fired by the
+    swipe-left gesture on mobile cards. Idempotent, 204 no-content."""
+    if not db.get_job(job_id):
+        return Response(status_code=404)
+    db.mark_dismissed(job_id)
+    events.track("job.dismissed", job_id=job_id)
+    return Response(status_code=204)
+
+
+@router.post("/jobs/undismiss/{job_id}")
+@limiter.limit("300/hour")
+async def jobs_undismiss(request: Request, job_id: str):
+    """Undo a dismissal. Wired to the "Undo" button in the swipe toast
+    (planned follow-up) and to a manual "restore" affordance in the
+    filter panel."""
+    if not db.get_job(job_id):
+        return Response(status_code=404)
+    db.unmark_dismissed(job_id)
+    return Response(status_code=204)
 
 
 @router.post("/jobs/viewed/{job_id}")

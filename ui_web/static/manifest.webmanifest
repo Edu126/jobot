@@ -1,0 +1,20 @@
+{
+  "name": "Jobot",
+  "short_name": "Jobot",
+  "description": "Personal job-search cockpit — search, tailor, apply.",
+  "start_url": "/jobs",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#6d5ef1",
+  "background_color": "#ffffff",
+  "categories": ["productivity", "business"],
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -49,10 +49,13 @@
     </p>
   {% endif %}
 
-  {# Live status — polled every 2s. Auto-redirect on complete via HX-Redirect. #}
+  {# Live status — polled every 2s while the tab is visible. The
+     `[document.body.dataset.visible === 'true']` guard skips polls when
+     the user backgrounds the tab (cuts battery + cellular data). HTMX
+     resumes automatically on the next visibilitychange back to visible. #}
   <div class="mt-6 text-sm min-h-[2rem]"
        hx-get="/jobs/loading/{{ task_id }}/status"
-       hx-trigger="load, every 2s"
+       hx-trigger="load, every 2s [document.body.dataset.visible === 'true']"
        hx-swap="innerHTML">
     <div class="text-body-muted">Starting…</div>
   </div>

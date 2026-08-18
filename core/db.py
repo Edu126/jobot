@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -221,6 +221,19 @@ CREATE TABLE IF NOT EXISTS viewed_jobs (
     viewed_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_viewed_jobs_at ON viewed_jobs(viewed_at);
+
+-- v10: per-job "dismissed" state — the user's "not interested; don't
+-- surface this again" signal. Wired to the swipe-left gesture on mobile
+-- and (later) an explicit dismiss button in the desktop detail pane.
+-- Distinct from "not saved" (the neutral state) — dismissal is active
+-- disinterest; the fresh view and default filters hide these.
+--
+-- Undo is a delete: POST /jobs/undismiss/{id} removes the row.
+CREATE TABLE IF NOT EXISTS dismissed_jobs (
+    job_id        TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    dismissed_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dismissed_jobs_at ON dismissed_jobs(dismissed_at);
 """
 
 
@@ -519,6 +532,36 @@ def get_viewed_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str]:
         placeholders = ",".join("?" * len(ids))
         rows = conn.execute(
             f"SELECT job_id FROM viewed_jobs WHERE job_id IN ({placeholders})",
+            ids,
+        ).fetchall()
+    return {r["job_id"] for r in rows}
+
+
+def mark_dismissed(job_id: str, path: Path = DB_PATH) -> None:
+    """Mark a job as dismissed ("not interested"). Idempotent."""
+    with tx(path) as conn:
+        conn.execute(
+            "INSERT INTO dismissed_jobs (job_id, dismissed_at) VALUES (?, ?) "
+            "ON CONFLICT(job_id) DO UPDATE SET dismissed_at = excluded.dismissed_at",
+            (job_id, _now()),
+        )
+
+
+def unmark_dismissed(job_id: str, path: Path = DB_PATH) -> None:
+    """Undo dismissal. Used by the toast Undo button after a swipe-left."""
+    with tx(path) as conn:
+        conn.execute("DELETE FROM dismissed_jobs WHERE job_id = ?", (job_id,))
+
+
+def get_dismissed_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str]:
+    """Batch lookup of dismissed status for a set of job_ids."""
+    ids = list(job_ids)
+    if not ids:
+        return set()
+    with connect(path) as conn:
+        placeholders = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT job_id FROM dismissed_jobs WHERE job_id IN ({placeholders})",
             ids,
         ).fetchall()
     return {r["job_id"] for r in rows}

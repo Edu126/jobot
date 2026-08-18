@@ -39,21 +39,32 @@ from core.ratelimit.sqlite_store import SqliteStore  # noqa: F401
 _LOG = logging.getLogger(__name__)
 
 
+SID_COOKIE_NAME = "jobot_sid"
+
+
 def get_identity(request: Request) -> str:
     """The rate-limit key identity for this request.
 
-    Today: client IP. Behind Fly's proxy, `request.client.host` is the
-    proxy; the real IP arrives in `Fly-Client-IP` (or `X-Forwarded-For`).
-    Prefer the header if present; fall back to the socket peer.
+    Priority:
+      1. `jobot_sid` cookie (opaque UUID minted by IdentityMiddleware).
+         Survives across requests + across restarts. Critical for mobile
+         users on CGNAT carriers — without it, everyone on Rogers/Bell
+         mobile shares one rate-limit bucket.
+      2. `Fly-Client-IP` header (Fly's edge-inserted real client IP).
+      3. `X-Forwarded-For` header (first entry — origin client).
+      4. Socket peer (dev / non-Fly deploys).
 
-    Post-auth: return the user_id string (prefixed to avoid collision
-    with IPs). Single change here; SlowAPI + `check_and_charge` inherit.
+    Post-auth (see docs/rate-limiting-quotas.md §10) this becomes:
+      1. `user:{id}` when authenticated
+      2. else this cookie fallback
     """
+    sid = request.cookies.get(SID_COOKIE_NAME)
+    if sid:
+        return f"sid:{sid}"
+
     for header in ("fly-client-ip", "x-forwarded-for"):
         value = request.headers.get(header)
         if value:
-            # X-Forwarded-For may be a comma-separated list; first entry
-            # is the origin client.
             return value.split(",", 1)[0].strip()
     client = request.client
     return client.host if client and client.host else "unknown"

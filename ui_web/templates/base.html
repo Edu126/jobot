@@ -2,8 +2,20 @@
 <html lang="en" data-theme="jobot">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>{% block title %}Jobot{% endblock %}</title>
+
+  {# PWA — add-to-home-screen support. Uses the static SVG icon; on iOS
+     Safari's Share sheet the Add-to-Home-Screen action picks up the
+     apple-touch-icon link. Standalone display gives the chrome-less
+     window on both platforms. See docs/mobile-plan.md §2 for scope. #}
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <meta name="theme-color" content="#6d5ef1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Jobot">
+  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,6 +53,7 @@
       // as the user scrolls / filters.
       Alpine.store('selectedJob', {
         id: null,
+        mobileOpen: false,            // controls the mobile bottom sheet
         _viewedTimer: null,           // pending "mark viewed" timeout id
         _viewedMarked: new Set(),     // per-session dedup — no duplicate POSTs
         select(id) {
@@ -52,15 +65,27 @@
             this._viewedTimer = null;
           }
           this.id = id;
+          // Viewport branch: desktop uses the sticky right pane;
+          // mobile opens a full-height bottom sheet with the same content.
+          // The sidebar is CSS-hidden below lg, so targeting it on mobile
+          // silently loads content into an invisible element.
+          const isMobile = window.matchMedia('(max-width: 1023.98px)').matches;
+          const targetSelector = isMobile ? '#mobile-detail-body' : '#job-detail-pane';
           if (window.htmx) {
             htmx.ajax('GET', `/jobs/detail/${id}`, {
-              target: '#job-detail-pane',
+              target: targetSelector,
               swap: 'innerHTML',
             });
           }
+          if (isMobile) {
+            this.mobileOpen = true;
+            // Lock body scroll while the sheet is open so the page
+            // behind doesn't rubber-band on iOS.
+            document.body.style.overflow = 'hidden';
+          }
           // Reset the detail pane's own scroll to the top so long JDs from
           // the previous card don't leave the new content mid-scroll.
-          const scroll = document.getElementById('job-detail-scroll');
+          const scroll = document.getElementById(isMobile ? 'mobile-detail-scroll' : 'job-detail-scroll');
           if (scroll) scroll.scrollTop = 0;
 
           // Start the 3-second "actually read this" timer. Only POSTs if
@@ -81,6 +106,16 @@
             this._viewedTimer = null;
           }, 3000);
         },
+        closeMobile() {
+          this.mobileOpen = false;
+          // Cancel any pending viewed timer — user dismissed before
+          // the 3s threshold, so they didn't "actually read" it.
+          if (this._viewedTimer) {
+            clearTimeout(this._viewedTimer);
+            this._viewedTimer = null;
+          }
+          document.body.style.overflow = '';
+        },
       });
 
       Alpine.store('filters', {
@@ -90,6 +125,8 @@
         maxAgeDays: null,      // null = no limit; used by Top matches date filter
         onlyNew: false,        // if true, only jobs first_seen within 48h
         hideViewed: false,     // fresh view (post-expand) defaults this to true
+        hideDismissed: true,   // "not interested" — hidden by default;
+                               // filter panel has a toggle to reveal
         matches(job) {
           if (job.score < this.minScore) return false;
           if (this.hideFrench && job.french) return false;
@@ -98,6 +135,7 @@
           if (this.maxAgeDays !== null && job.age_days !== undefined && job.age_days > this.maxAgeDays) return false;
           if (this.onlyNew && !job.is_new) return false;
           if (this.hideViewed && job.viewed) return false;
+          if (this.hideDismissed && job.dismissed) return false;
           return true;
         },
         visibleCount(jobs) {
@@ -107,17 +145,151 @@
 
       // Toast queue — surface transient success/info messages bottom-right.
       // Anywhere in the app can call: Alpine.store('toast').show('Saved!', 'success')
+      // The optional `action` param produces an inline button (e.g. Undo).
+      // Toasts with an action stay visible longer so the user has time to
+      // reach for the button.
       Alpine.store('toast', {
         items: [],
-        show(msg, type = 'info') {
+        show(msg, type = 'info', action = null) {
           const id = Date.now() + Math.random();
-          this.items.push({ id, msg, type });
-          setTimeout(() => this.dismiss(id), 5000);
+          this.items.push({ id, msg, type, action });
+          setTimeout(() => this.dismiss(id), action ? 8000 : 5000);
         },
         dismiss(id) {
           this.items = this.items.filter(t => t.id !== id);
         },
+        runAction(t) {
+          try { if (t.action && typeof t.action.onClick === 'function') t.action.onClick(); }
+          finally { this.dismiss(t.id); }
+        },
       });
+
+      // Swipe-to-save / swipe-to-dismiss on `article.job-swipeable` cards.
+      // Below lg only — desktop keeps the heart button + right sidebar
+      // pattern. Horizontal-only gestures; vertical scrolls cancel the
+      // swipe so users can still scroll the list. Right-swipe → save as
+      // interested. Left-swipe → dismiss. Both fire an Undo toast.
+      //
+      // Respects `prefers-reduced-motion`: still detects the gesture, but
+      // skips the follow-the-finger transform. Cards just animate off
+      // after threshold — no continuous motion.
+      (function setupSwipe() {
+        const mqMobile = window.matchMedia('(max-width: 1023.98px)');
+        const mqReduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+        const THRESHOLD = 100;      // pixels to fire an action
+        const LOCK_AT = 8;          // pixels to lock direction (horizontal vs vertical)
+
+        let card = null, startX = 0, startY = 0, deltaX = 0;
+        let active = false, locked = false;
+
+        const isInteractive = (el) => {
+          return el.closest('button, a, input, textarea, select, label, [role="button"]');
+        };
+
+        document.addEventListener('touchstart', (e) => {
+          if (!mqMobile.matches || e.touches.length !== 1) return;
+          const c = e.target.closest('article.job-swipeable');
+          if (!c) return;
+          if (isInteractive(e.target)) return;
+          card = c;
+          startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
+          deltaX = 0;
+          active = true;
+          locked = false;
+          card.style.transition = 'none';
+        }, { passive: true });
+
+        document.addEventListener('touchmove', (e) => {
+          if (!active || !card) return;
+          const dx = e.touches[0].clientX - startX;
+          const dy = e.touches[0].clientY - startY;
+          if (!locked) {
+            if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > LOCK_AT) {
+              // Vertical scroll — release the card, let native scroll happen.
+              active = false;
+              card.style.transform = '';
+              card.style.transition = '';
+              card = null;
+              return;
+            }
+            if (Math.abs(dx) > LOCK_AT) locked = true;
+          }
+          if (locked) {
+            deltaX = dx;
+            if (!mqReduced.matches) {
+              // Follow the finger with a slight resistance past threshold.
+              card.style.transform = `translateX(${dx}px)`;
+            }
+          }
+        }, { passive: true });
+
+        const finish = () => {
+          if (!active || !card) { active = false; card = null; return; }
+          active = false;
+          const c = card;
+          card = null;
+          c.style.transition = 'transform 0.2s ease-out';
+          if (deltaX > THRESHOLD) {
+            c.style.transform = 'translateX(120%)';
+            handleSwipe(c, 'save');
+          } else if (deltaX < -THRESHOLD) {
+            c.style.transform = 'translateX(-120%)';
+            handleSwipe(c, 'dismiss');
+          } else {
+            c.style.transform = '';
+          }
+        };
+        document.addEventListener('touchend', finish);
+        document.addEventListener('touchcancel', finish);
+
+        function handleSwipe(cardEl, action) {
+          const jobId = cardEl.dataset.jobId;
+          if (!jobId) return;
+          if (navigator.vibrate) navigator.vibrate(10);
+
+          const url = action === 'dismiss'
+            ? `/jobs/dismiss/${encodeURIComponent(jobId)}`
+            : `/jobs/save/${encodeURIComponent(jobId)}`;
+          const undoUrl = action === 'dismiss'
+            ? `/jobs/undismiss/${encodeURIComponent(jobId)}`
+            : `/jobs/unsave/${encodeURIComponent(jobId)}`;
+          const body = new FormData();
+          if (action === 'save') body.append('status', 'interested');
+
+          fetch(url, { method: 'POST', body, keepalive: true })
+            .then((r) => {
+              if (!r.ok && r.status !== 204) throw new Error('http ' + r.status);
+              const meta = action === 'dismiss' ? 'dismissed' : 'saved';
+              if (window.__jobotMarkJob) window.__jobotMarkJob(jobId, meta);
+              Alpine.store('toast').show(
+                action === 'dismiss' ? 'Dismissed' : 'Saved as interested',
+                'success',
+                {
+                  label: 'Undo',
+                  onClick: () => {
+                    fetch(undoUrl, { method: 'POST', body: new FormData(), keepalive: true })
+                      .then(() => {
+                        const revert = action === 'dismiss' ? 'undismissed' : 'unsaved';
+                        if (window.__jobotMarkJob) window.__jobotMarkJob(jobId, revert);
+                        cardEl.style.transition = 'transform 0.2s ease-out';
+                        cardEl.style.transform = '';
+                      })
+                      .catch(() => Alpine.store('toast').show('Undo failed — try again', 'info'));
+                  },
+                }
+              );
+            })
+            .catch(() => {
+              cardEl.style.transition = 'transform 0.2s ease-out';
+              cardEl.style.transform = '';
+              Alpine.store('toast').show(
+                action === 'dismiss' ? "Couldn't dismiss — try again" : "Couldn't save — try again",
+                'info'
+              );
+            });
+        }
+      })();
 
       // Analytics beacons — fire-and-forget POST to /events/track. Uses
       // navigator.sendBeacon so it survives tab close. Never blocks UX.
@@ -136,6 +308,60 @@
         } catch (_) { /* analytics must never break UX */ }
       };
       window.__jobotBeacon('page_view', { path: location.pathname });
+
+      // Body data-visible attribute — used by HTMX hx-trigger conditions
+      // to skip polls while the tab is hidden. Cuts cellular data +
+      // battery drain when the user backgrounds the app mid-loading.
+      const __syncVisibility = () => {
+        document.body.dataset.visible = document.visibilityState === 'visible' ? 'true' : 'false';
+      };
+      __syncVisibility();
+      document.addEventListener('visibilitychange', __syncVisibility);
+
+      // iOS Safari bfcache: when the user backs into a page from bfcache,
+      // HTMX's `hx-trigger="load"` doesn't refire. Score-batch chains and
+      // status polls would silently stall. Re-scanning triggers a fresh
+      // pass so lazy-scoring resumes where it left off.
+      window.addEventListener('pageshow', (evt) => {
+        if (evt.persisted && window.htmx) {
+          try { window.htmx.process(document.body); } catch (_) { /* noop */ }
+        }
+      });
+
+      // A2HS (add-to-home-screen) hint store — shown once, only on iOS
+      // Safari, only from the user's 2nd session onward, only when not
+      // already installed. iOS is the special-case because it has no
+      // `beforeinstallprompt`; Android Chrome will surface its own
+      // native install banner. Dismissal is permanent (localStorage).
+      Alpine.store('a2hs', {
+        show: false,
+        init() {
+          try {
+            const dismissed = localStorage.getItem('jobot_a2hs_dismissed') === '1';
+            if (dismissed) return;
+            const inStandalone =
+              window.matchMedia('(display-mode: standalone)').matches ||
+              window.navigator.standalone === true;
+            if (inStandalone) return;
+            const ua = navigator.userAgent;
+            const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+            // Chrome/Firefox/Edge on iOS all include their own UA suffix.
+            const isSafari = !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+            if (!isIOS || !isSafari) return;
+            const key = 'jobot_session_count';
+            const count = parseInt(localStorage.getItem(key) || '0', 10) + 1;
+            localStorage.setItem(key, String(count));
+            // From the 2nd session onwards — natural "you're using this
+            // like an app" moment per the mobile-plan doc §7.
+            if (count >= 2) this.show = true;
+          } catch (_) { /* localStorage disabled — silently skip */ }
+        },
+        dismiss() {
+          this.show = false;
+          try { localStorage.setItem('jobot_a2hs_dismissed', '1'); } catch (_) {}
+        },
+      });
+
       let __visStart = Date.now();
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
@@ -314,7 +540,9 @@
     });
   </script>
 </head>
-<body class="bg-base-200 min-h-screen flex flex-col text-base-content">
+<body class="bg-base-200 min-h-screen flex flex-col text-base-content"
+      style="padding-bottom: env(safe-area-inset-bottom);"
+      x-bind:class="{ 'pb-16 lg:pb-0': true }">
 
   <header class="border-b border-base-300 bg-base-100 sticky top-0 z-30"
           x-data="{ mobileOpen: false }">
@@ -386,8 +614,22 @@
     </div>
   </footer>
 
-  {# ── Toast queue — bottom-right, fixed, auto-dismisses in 5s ── #}
-  <div x-data class="fixed bottom-4 right-4 z-[100] space-y-2 pointer-events-none max-w-sm">
+  {# Mobile bottom nav — visible below lg. Hides on desktop where the
+     top nav suffices. See partials/mobile_nav.html. Body has
+     `pb-16 lg:pb-0` above so content isn't clipped by this bar. #}
+  {% include "partials/mobile_nav.html" %}
+
+  {# Mobile job-detail bottom sheet — controlled by
+     Alpine.store('selectedJob').mobileOpen. Rendered once from base so
+     any page that uses the selectedJob pattern (results, top matches)
+     gets it for free. Uses x-teleport internally so it can be safely
+     nested inside other Alpine trees. #}
+  {% include "partials/mobile_detail_sheet.html" %}
+
+  {# ── Toast queue — bottom-right, fixed, auto-dismisses in 5s.
+     Padding accounts for iOS home indicator via env(safe-area-inset-*). #}
+  <div x-data class="fixed z-[100] space-y-2 pointer-events-none max-w-sm"
+       style="bottom: calc(1rem + env(safe-area-inset-bottom)); right: calc(1rem + env(safe-area-inset-right));">
     <template x-for="t in $store.toast.items" :key="t.id">
       <div class="pointer-events-auto rounded-lg shadow-lg px-4 py-3 flex items-center gap-3"
            :class="t.type === 'success'
@@ -403,10 +645,47 @@
            :class="t.type === 'success' ? 'ph-check-circle' : 'ph-info'"
            :style="t.type === 'success' ? 'color: oklch(var(--su))' : 'color: oklch(var(--in))'"></i>
         <span class="text-sm flex-1" x-text="t.msg"></span>
+        <template x-if="t.action">
+          <button @click="$store.toast.runAction(t)"
+                  class="text-sm font-semibold underline cursor-pointer shrink-0"
+                  style="min-height:36px; padding: 0 6px;"
+                  x-text="t.action.label"></button>
+        </template>
         <button @click="$store.toast.dismiss(t.id)"
-                class="text-base-content/40 hover:text-base-content cursor-pointer"><i class="ph-thin ph-x i-4"></i></button>
+                class="text-base-content/40 hover:text-base-content cursor-pointer"
+                aria-label="Dismiss"
+                style="min-width:32px; min-height:32px; display:inline-flex; align-items:center; justify-content:center;">
+          <i class="ph-thin ph-x i-4"></i>
+        </button>
       </div>
     </template>
+  </div>
+
+  {# ── A2HS (add-to-home-screen) hint — iOS-Safari only, appears from
+     the user's 2nd session onward, permanently dismissible. Positioned
+     to sit above the mobile bottom nav; only shows on narrow screens
+     since desktop users have zero use for it. See Alpine.store('a2hs'). #}
+  <div x-data
+       x-init="$store.a2hs.init()"
+       x-show="$store.a2hs.show"
+       x-cloak
+       class="lg:hidden fixed left-4 right-4 z-[90] pointer-events-none"
+       style="bottom: calc(4rem + env(safe-area-inset-bottom));">
+    <div class="pointer-events-auto rounded-xl shadow-lg px-4 py-3 flex items-start gap-3 bg-base-100 border border-base-300">
+      <i class="ph-thin ph-device-mobile text-xl shrink-0 mt-0.5" style="color: oklch(var(--p));"></i>
+      <div class="flex-1 min-w-0 text-sm">
+        <div class="font-semibold">Install Jobot on your home screen</div>
+        <div class="text-body-muted mt-0.5">
+          Tap the Share icon <span class="inline-block">⎋</span> below, then <strong>Add to Home Screen</strong>.
+        </div>
+      </div>
+      <button @click="$store.a2hs.dismiss()"
+              class="text-base-content/40 hover:text-base-content cursor-pointer shrink-0"
+              aria-label="Dismiss"
+              style="min-width:36px; min-height:36px; display:inline-flex; align-items:center; justify-content:center;">
+        <i class="ph-thin ph-x i-4"></i>
+      </button>
+    </div>
   </div>
 
   {# ── Nav progress bar — thin top ribbon for full-page <a href> navigations.

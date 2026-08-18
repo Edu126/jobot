@@ -4,7 +4,8 @@
 
    Card is clickable: sets $store.selectedJob so the split-viewport right pane
    loads this job's details. Highlighted via ring when selected. #}
-<article class="card-quiet cursor-pointer transition-shadow"
+<article class="card-quiet cursor-pointer transition-shadow job-swipeable"
+         data-job-id="{{ job.id }}"
          x-data="{
            ageDays: {% if job._age_days is defined %}{{ job._age_days }}{% else %}null{% endif %}
          }"
@@ -45,7 +46,7 @@
           {# Requirement + source pills. "New" (salmon accent) surfaces
              first-time-seen jobs within 48h so the user knows which are fresh
              vs already-scored from previous scrapes. #}
-          {% if job._is_new or job._is_new_since_expand or job._is_viewed or job._experience or job.is_remote or job.min_salary or job._source_label %}
+          {% if job._is_new or job._is_new_since_expand or job._is_viewed or job._is_dismissed or job._experience or job.is_remote or job.min_salary or job._source_label %}
           <div class="flex flex-wrap gap-1.5 mt-2">
             {% if job._is_new_since_expand %}
             {# Different from the 48h "New" chip: this one flags jobs that
@@ -67,6 +68,13 @@
                   style="background: hsl(0 0% 96%); border-color: hsl(0 0% 88%);"
                   title="You spent time reading this before">
               <i class="ph-thin ph-eye i-3"></i>Viewed
+            </span>
+            {% endif %}
+            {% if job._is_dismissed %}
+            <span class="chip inline-flex items-center gap-1"
+                  style="background: hsl(0 40% 96%); border-color: hsl(0 30% 88%); color: hsl(0 50% 45%);"
+                  title="You dismissed this — swipe again or toggle 'Show dismissed' to restore">
+              <i class="ph-thin ph-x-circle i-3"></i>Dismissed
             </span>
             {% endif %}
             {% if job._source_label %}
@@ -145,7 +153,8 @@
            on results HTML). Uses hx-select to pull just the JD block out
            of the shared job_detail partial. First click loads + hides
            the button. Desktop path unchanged — sidebar detail pane owns it. #}
-        <button class="text-xs text-base-content/50 hover:text-base-content ml-auto cursor-pointer"
+        <button class="text-xs text-base-content/50 hover:text-base-content ml-auto cursor-pointer inline-flex items-center px-3"
+                style="min-height: 44px;"
                 hx-get="/jobs/detail/{{ job.id }}"
                 hx-select=".jd-body"
                 hx-target="closest article"

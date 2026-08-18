@@ -1,0 +1,29 @@
+{# Mobile bottom navigation. Fixed 56px bar (with safe-area padding for
+   iOS home indicator). Icons + 10px labels — labels aid discovery for
+   first-time users (per mobile-plan doc §5).
+
+   Matches the three top-nav destinations (Jobs / Journey / Profile).
+   No separate Applications tab because Journey has a Kanban view of
+   the pipeline. Body has `pb-16 lg:pb-0` in base.html so cards aren't
+   clipped by this bar. #}
+<nav class="lg:hidden fixed left-0 right-0 bottom-0 z-40 bg-base-100 border-t border-base-300"
+     style="padding-bottom: env(safe-area-inset-bottom);"
+     role="navigation"
+     aria-label="Main">
+  <div class="grid grid-cols-3 h-14">
+    {% for label, href, key, icon in [
+      ('Jobs',    '/jobs',    'jobs',    'ph-magnifying-glass'),
+      ('Journey', '/journey', 'journey', 'ph-compass'),
+      ('Profile', '/profile', 'profile', 'ph-user'),
+    ] %}
+    <a href="{{ href }}"
+       class="flex flex-col items-center justify-center gap-0.5 transition-colors {% if active_tab == key %}font-semibold{% else %}text-base-content/60 hover:text-base-content{% endif %}"
+       {% if active_tab == key %}style="color: oklch(var(--p));"{% endif %}
+       aria-current="{{ 'page' if active_tab == key else 'false' }}">
+      <i class="{% if active_tab == key %}ph-fill{% else %}ph-thin{% endif %} {{ icon }}"
+         style="font-size: 1.35rem; line-height: 1;"></i>
+      <span style="font-size: 10px; line-height: 1; letter-spacing: 0.02em;">{{ label }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</nav>
