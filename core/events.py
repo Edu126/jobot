@@ -53,6 +53,11 @@ ERROR                  = "error"
 # they degrade the search UX — e.g. LinkedIn blocking us 3 days in a row
 # means it's time to think about a proxy or headless approach.
 SEARCH_BLOCKED         = "search.blocked"
+# A URL-import extraction attempt failed at a specific step of the pipeline
+# (adapter fetch, JSON-LD parse, or LLM extraction). Payload carries the
+# adapter name so silent rot of an ATS adapter shows up in the log before a
+# user reports garbage output.
+EXTRACT_FAILED         = "extract.failed"
 
 
 def track(event_type: str, **payload: Any) -> None:

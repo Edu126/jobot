@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 8
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -117,6 +117,29 @@ CREATE TABLE IF NOT EXISTS suggested_queries (
     generated_at  TEXT NOT NULL
 );
 
+-- One-shot LLM read of a resume, generated on upload/switch and cached
+-- (keyed by resume_id, no expiry — a new upload gets a new id, so the
+-- cache is naturally invalidated on content change). Bundles 3 things
+-- from a single call since they all need the same resume-text context:
+--   role_label          — 2-5 word field/role guess ("AEC / BIM Coordination")
+--   first_impression    — one-sentence honest gut-check, complements the
+--                          deterministic ATS score with a qualitative read
+--   suggestions_json    — [{"section": "languages", "reason": "..."}], only
+--                          for STANDARD sections the candidate doesn't have
+--                          (see core.resume.anomalies.missing_sections) that
+--                          are judged actually worth adding for their field/
+--                          market — not a generic "you're missing X" checklist
+-- NOT named "profile_insights" — that name is taken by the local activity-
+-- analytics feature (events table, /profile/insights route). This is a
+-- distinct, LLM-generated, per-resume artifact.
+CREATE TABLE IF NOT EXISTS resume_ai_summary (
+    resume_id         INTEGER PRIMARY KEY REFERENCES resumes(id) ON DELETE CASCADE,
+    role_label        TEXT,
+    first_impression  TEXT,
+    suggestions_json  TEXT NOT NULL DEFAULT '[]',
+    generated_at      TEXT NOT NULL
+);
+
 -- Analytics — append-only event log. Never leaves this SQLite file.
 -- Used by the Insights view on Profile to visualize activity.
 CREATE TABLE IF NOT EXISTS events (
@@ -127,6 +150,64 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts   ON events(ts_utc);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+
+-- v7: durable state for background multi-search + Expand workers. Replaces
+-- the in-memory `state.search_tasks` dict so tasks survive Fly's auto-stop
+-- machine cycling and process restarts.
+--
+--   status : queued | running | done | failed
+--   payload_json : {queries: [...], location: "..."} for the initial request
+--   result_url   : /jobs/results/{cache_key} when done; NULL otherwise
+--   message      : last-known human status line for the polling UI
+--   error        : populated only on status=failed
+CREATE TABLE IF NOT EXISTS search_tasks (
+    id           TEXT PRIMARY KEY,
+    kind         TEXT NOT NULL DEFAULT 'multi',   -- 'multi' | 'expand'
+    status       TEXT NOT NULL,
+    message      TEXT NOT NULL DEFAULT '',
+    started_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    result_url   TEXT,
+    error        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_search_tasks_updated ON search_tasks(updated_at);
+
+-- v8: per-identity daily accounting for Gemini calls. Enforces a per-user
+-- (per-IP today, per user_id post-auth) cap on LLM spend so a cost-bomb
+-- attacker can't run us dry in an afternoon. Also feeds the admin UI
+-- (planned) with usage stats.
+--
+--   identity : IP address today; user_id string post-auth
+--   day      : YYYY-MM-DD UTC — rolls over at UTC midnight
+--   calls    : number of successful generate_json calls
+--   tokens_* : cumulative token counters if the SDK reports them; else 0
+--
+-- Primary key on (identity, model, day) so accounting is a single UPSERT.
+CREATE TABLE IF NOT EXISTS gemini_usage (
+    identity   TEXT NOT NULL,
+    model      TEXT NOT NULL,
+    day        TEXT NOT NULL,
+    calls      INTEGER NOT NULL DEFAULT 0,
+    tokens_in  INTEGER NOT NULL DEFAULT 0,
+    tokens_out INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (identity, model, day)
+);
+CREATE INDEX IF NOT EXISTS idx_gemini_usage_day ON gemini_usage(day);
+
+-- v8: SlowAPI SQLite-backed storage — persists rate-limit counters across
+-- Fly `auto_stop_machines` cycling. Without persistence, an attacker
+-- pacing requests to force machine sleep resets the in-memory limit
+-- store on every wake-up.
+--
+--   key    : the SlowAPI-computed key (usually "{identity}/{limit}/{window}")
+--   expiry : Unix seconds when this counter should be considered zero
+CREATE TABLE IF NOT EXISTS rate_limits (
+    key    TEXT PRIMARY KEY,
+    count  INTEGER NOT NULL DEFAULT 0,
+    expiry INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_expiry ON rate_limits(expiry);
 """
 
 
@@ -296,6 +377,35 @@ def delete_resume(resume_id: int, path: Path = DB_PATH) -> None:
         conn.execute("DELETE FROM resumes WHERE id = ?", (resume_id,))
 
 
+def update_resume_contact(resume_id: int, contact: dict, path: Path = DB_PATH) -> None:
+    """Merge user-confirmed contact fields into parsed_json.contact. Only
+    keys present in `contact` are overwritten — callers pass the full form
+    (including blanks) so this is a full replace of the contact sub-dict,
+    not a sparse patch."""
+    with tx(path) as conn:
+        row = conn.execute(
+            "SELECT parsed_json FROM resumes WHERE id = ?", (resume_id,)
+        ).fetchone()
+        if not row:
+            return
+        parsed = json.loads(row["parsed_json"])
+        parsed["contact"] = contact
+        conn.execute(
+            "UPDATE resumes SET parsed_json = ? WHERE id = ?",
+            (json.dumps(parsed, ensure_ascii=False), resume_id),
+        )
+
+
+def update_resume_parsed(resume_id: int, parsed: dict, path: Path = DB_PATH) -> None:
+    """Replace the full parsed_json for a resume. Used by the LLM regeneration
+    pass — caller has already produced a validated, complete parsed dict."""
+    with tx(path) as conn:
+        conn.execute(
+            "UPDATE resumes SET parsed_json = ? WHERE id = ?",
+            (json.dumps(parsed, ensure_ascii=False), resume_id),
+        )
+
+
 def _resume_row_to_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
     d["parsed"] = json.loads(d.pop("parsed_json"))
@@ -372,6 +482,25 @@ def get_job(job_id: str, path: Path = DB_PATH) -> Optional[dict]:
     with connect(path) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return dict(row) if row else None
+
+
+def get_jobs(job_ids: Iterable[str], path: Path = DB_PATH) -> list[dict]:
+    """Batch-load full job rows for a set of ids. Order matches `job_ids`
+    (rows missing from the DB are silently skipped — treat as a stale cache
+    pointer referencing a job that got pruned).
+
+    Used by cache.load() to resolve pointer files into full Job dicts."""
+    ids = list(job_ids)
+    if not ids:
+        return []
+    with connect(path) as conn:
+        placeholders = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT * FROM jobs WHERE id IN ({placeholders})",
+            ids,
+        ).fetchall()
+    by_id = {r["id"]: dict(r) for r in rows}
+    return [by_id[i] for i in ids if i in by_id]
 
 
 def get_first_seen_batch(job_ids: Iterable[str], path: Path = DB_PATH) -> dict[str, str]:
@@ -661,6 +790,56 @@ def save_suggestions(
                  queries_json = excluded.queries_json,
                  generated_at = excluded.generated_at""",
             (resume_id, json.dumps(queries, ensure_ascii=False), _now()),
+        )
+
+
+def get_resume_ai_summary(resume_id: int, path: Path = DB_PATH) -> Optional[dict]:
+    """Return the cached one-shot AI read of a resume:
+    {'role_label': str, 'first_impression': str, 'suggestions': [...]}
+    or None if never generated. No max-age check — a new resume upload
+    gets a fresh row via its own resume_id."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT role_label, first_impression, suggestions_json
+               FROM resume_ai_summary WHERE resume_id = ?""",
+            (resume_id,),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        suggestions = json.loads(row["suggestions_json"])
+    except Exception:
+        suggestions = []
+    return {
+        "role_label": row["role_label"] or "",
+        "first_impression": row["first_impression"] or "",
+        "suggestions": suggestions,
+    }
+
+
+def save_resume_ai_summary(
+    resume_id: int,
+    *,
+    role_label: str,
+    first_impression: str,
+    suggestions: list[dict],
+    path: Path = DB_PATH,
+) -> None:
+    """Upsert the cached AI summary for a resume."""
+    with tx(path) as conn:
+        conn.execute(
+            """INSERT INTO resume_ai_summary
+               (resume_id, role_label, first_impression, suggestions_json, generated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(resume_id) DO UPDATE SET
+                 role_label = excluded.role_label,
+                 first_impression = excluded.first_impression,
+                 suggestions_json = excluded.suggestions_json,
+                 generated_at = excluded.generated_at""",
+            (
+                resume_id, role_label, first_impression,
+                json.dumps(suggestions, ensure_ascii=False), _now(),
+            ),
         )
 
 

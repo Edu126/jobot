@@ -1,0 +1,27 @@
+{# AI-generated resume read: role label + one-sentence first impression +
+   "worth adding for your field" section suggestions. Swapped into
+   #ai-summary by GET /profile/ai-summary (hx-trigger="load", same lazy
+   pattern as the Updates check on this page). #}
+<div class="flex flex-col gap-1">
+  {% if summary.role_label %}
+  <div class="text-xs text-body-muted">
+    Background reads as <span class="font-medium text-base-content">{{ summary.role_label }}</span>
+  </div>
+  {% endif %}
+  {% if summary.first_impression %}
+  <div class="text-sm text-base-content/90 italic">
+    "{{ summary.first_impression }}"
+  </div>
+  {% endif %}
+</div>
+
+{% if summary.suggestions %}
+<div class="mt-3 flex flex-wrap gap-1.5">
+  {% for s in summary.suggestions %}
+  <span class="pill pill-neutral inline-flex items-center gap-1"
+        title="{{ s.reason }}">
+    <i class="ph-thin ph-plus-circle i-3"></i>Add {{ s.section | title }}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}

@@ -155,7 +155,18 @@ class GeminiClient:
         """Try each model in the chain until one succeeds. On 429 for a
         model, mark it exhausted and move on. Non-quota failures propagate
         so the UI can show the real error.
+
+        Enforces the LLM_DISABLED kill switch and the per-identity daily
+        cap before touching the wire — see `core.llm.usage`. Identity
+        comes from a request-scoped ContextVar set by
+        `ui_web.middleware.IdentityMiddleware`.
         """
+        # Kill switch + per-identity daily cap. Uses "any" as model bucket
+        # because the fallback chain means a single logical call may hit
+        # different models; the cap is on total calls per identity per day.
+        from core.llm import usage as llm_usage
+        llm_usage.check_and_charge(model="any")
+
         available = self.available_models()
         if not available:
             raise QuotaExhaustedError(
@@ -166,9 +177,10 @@ class GeminiClient:
         last_exc: Optional[Exception] = None
         for model in available:
             try:
-                result = self._call_one(model, prompt, max_retries)
+                result, tokens_in, tokens_out = self._call_one(model, prompt, max_retries)
                 self.last_model_used = model
                 _increment_count(model)   # track successful requests only
+                llm_usage.record_tokens(model, tokens_in, tokens_out)
                 return result
             except QuotaExhaustedError as exc:
                 _mark_exhausted(model)
@@ -183,9 +195,12 @@ class GeminiClient:
         ) from last_exc
 
     # ── internal ──────────────────────────────────────────────
-    def _call_one(self, model: str, prompt: str, max_retries: int) -> dict:
+    def _call_one(self, model: str, prompt: str, max_retries: int) -> tuple[dict, int, int]:
         """Call a single model with retry. Translates 429 into QuotaExhaustedError
-        so the outer loop can advance to the next model."""
+        so the outer loop can advance to the next model.
+
+        Returns (parsed_json, tokens_in, tokens_out). Token counts are 0
+        when the SDK doesn't report usage_metadata."""
         config = types.GenerateContentConfig(
             temperature=self.temperature,
             max_output_tokens=self.max_output_tokens,
@@ -204,7 +219,9 @@ class GeminiClient:
                 text = (response.text or "").strip()
                 if not text:
                     raise GeminiError(f"{model}: empty response")
-                return _safe_json_parse(text)
+                parsed = _safe_json_parse(text)
+                tokens_in, tokens_out = _extract_token_usage(response)
+                return parsed, tokens_in, tokens_out
 
             except GeminiError:
                 raise
@@ -222,6 +239,19 @@ class GeminiClient:
                 ) from exc
 
         raise GeminiError(f"{model} failed: {last_err}")
+
+
+def _extract_token_usage(response) -> tuple[int, int]:
+    """Best-effort read of prompt/response token counts from google-genai
+    responses. Field is `usage_metadata` with `prompt_token_count` and
+    `candidates_token_count`. Returns (0, 0) if the field is missing —
+    older SDKs and safety-filtered responses may omit it."""
+    meta = getattr(response, "usage_metadata", None)
+    if not meta:
+        return 0, 0
+    tokens_in = int(getattr(meta, "prompt_token_count", 0) or 0)
+    tokens_out = int(getattr(meta, "candidates_token_count", 0) or 0)
+    return tokens_in, tokens_out
 
 
 # ── response validation ──────────────────────────────────────

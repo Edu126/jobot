@@ -30,15 +30,16 @@ from typing import Optional
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
-from core import db, events
+from core import db, events, feature_flags
 from core.jobs import cache as jobs_cache
+from core.jobs import tasks as search_tasks
 from core.jobs.from_url import (
     UrlExtractError,
     UrlFetchError,
     extract_job_from_text,
     fetch_page_text,
 )
-from core.jobs.search import JobSearchParams, search_jobs
+from core.jobs.search import Job, JobSearchParams, search_jobs
 from core.llm.gemini import (
     DEFAULT_MODEL,
     GeminiClient,
@@ -58,10 +59,40 @@ from core.resume.writer import render_cover_letter_docx, render_docx
 
 from .. import state
 from ..deps import slugify, templates
+from ..ratelimit import limiter
 from ..state import get_tailored, list_runs, record_tailor
 
 
 router = APIRouter(tags=["jobs"])
+
+
+# Cache-hit short-circuit: a search resubmitted with identical params
+# within this window skips the scrape and jumps straight to results.
+# Job market moves slowly enough that 6h feels "instant on resubmit" while
+# not hiding meaningful churn. `?force=1` on /jobs/run bypasses.
+_CACHE_SHORT_CIRCUIT_SECONDS = 6 * 3600
+
+# Cooldown between sequential scrapes anywhere in this module (multi-search,
+# expand, bulk). Was previously a local constant in `_run_multi_background`;
+# hoisted here so every scrape path uses the same pacing.
+_SCRAPE_COOLDOWN_S = 8
+
+
+def _scrape_disabled_response() -> HTMLResponse:
+    """HTMX-friendly 503 when SCRAPE_DISABLED is set. Returned inline so
+    the existing error slots on the jobs page render it correctly."""
+    return HTMLResponse(
+        f'<div class="alert alert-warning text-sm p-3">{feature_flags.scrape_disabled_message()}</div>',
+        status_code=feature_flags.KILL_SWITCH_STATUS,
+    )
+
+
+def _tailor_disabled_response() -> HTMLResponse:
+    """HTMX-friendly 503 when TAILOR_DISABLED is set."""
+    return HTMLResponse(
+        f'<div class="alert alert-warning text-sm">{feature_flags.tailor_disabled_message()}</div>',
+        status_code=feature_flags.KILL_SWITCH_STATUS,
+    )
 
 
 # Regex-driven experience extraction. Ordered by specificity — first hit wins
@@ -409,6 +440,7 @@ async def jobs_landing(request: Request):
 # ─────────────────────────────────────────────────────────────
 
 @router.post("/jobs/run")
+@limiter.limit("30/hour")
 async def jobs_run(
     request: Request,
     search_name: Optional[str] = Form(None),
@@ -421,6 +453,8 @@ async def jobs_run(
     navigation on receiving it; regular form submitters get a 200 with the
     link exposed so we don't fall over.
     """
+    if feature_flags.is_scrape_disabled():
+        return _scrape_disabled_response()
     if search_name:
         # search_name is now a DB row id (from the saved-searches picker on
         # Profile) OR still the string name for backward-compat with older
@@ -455,6 +489,20 @@ async def jobs_run(
     else:
         raise HTTPException(status_code=400, detail="Provide search_name or custom_query")
 
+    # Cache short-circuit: identical params submitted within 6h skips the
+    # scrape and jumps straight to results. Saves rate-limit budget on
+    # accidental double-submits and back-button retries. `?force=1`
+    # bypasses (Refresh button, admin re-run).
+    force = request.query_params.get("force", "0") == "1"
+    if not force:
+        cached = jobs_cache.load(params)
+        if cached and cached.jobs:
+            age = jobs_cache.age_seconds(cached.fetched_at)
+            if age is not None and age < _CACHE_SHORT_CIRCUIT_SECONDS:
+                resp = Response(status_code=200)
+                resp.headers["HX-Redirect"] = f"/jobs/results/{params.cache_key()}"
+                return resp
+
     try:
         jobs = search_jobs(params)
     except RuntimeError as exc:
@@ -470,8 +518,35 @@ async def jobs_run(
             status_code=200,
         )
 
-    # No results — stay on the jobs page, show an inline message. Way better
-    # UX than redirecting to an empty results page which reads as broken.
+    # Auto-widen on empty results: retry once with doubled hours_old +
+    # distance. Small firms + niche titles often have nothing in 168h/50 km
+    # but plenty in 336h/100 km. Cache is written against the widened
+    # params so a second submit hits the short-circuit above.
+    widened_note = ""
+    if not jobs:
+        time.sleep(_SCRAPE_COOLDOWN_S)
+        widened = JobSearchParams(
+            query=params.query,
+            location=params.location,
+            distance=params.distance * 2,
+            sites=list(params.sites),
+            hours_old=params.hours_old * 2,
+            results_wanted=params.results_wanted,
+            is_remote=params.is_remote,
+            country_indeed=params.country_indeed,
+            linkedin_fetch_description=params.linkedin_fetch_description,
+        )
+        try:
+            jobs = search_jobs(widened)
+        except RuntimeError:
+            jobs = []
+        if jobs:
+            params = widened
+            label = f"{label} (widened)"
+            widened_note = " widened to " + f"{widened.hours_old // 24}d/{widened.distance}km"
+
+    # Still nothing after widening — surface the same "no results" message
+    # the original code showed, with a note that we widened once.
     if not jobs:
         return HTMLResponse(
             f'''<div class="rounded-lg p-4 my-3 flex items-start gap-3 text-sm"
@@ -480,16 +555,18 @@ async def jobs_run(
                   <div>
                     <div class="font-semibold">No results for "{params.query}"</div>
                     <div class="text-body-muted mt-1">
-                      Try broader terms (e.g. "Coordinator" instead of "Coordinator I"),
-                      a nearby city, or a longer time window.
+                      We also tried a wider search — still nothing. Try broader terms
+                      (e.g. "Coordinator" instead of "Coordinator I") or a nearby city.
                     </div>
                   </div>
                 </div>''',
             status_code=200,
         )
 
-    jobs_cache.save(params, jobs, label=label)
+    # DB upsert must precede the cache save — cache files now store pointers
+    # (job_ids), and the results page hydrates those ids from `db.jobs`.
     db.upsert_jobs([j.to_dict() for j in jobs])
+    jobs_cache.save(params, jobs, label=label)
 
     target = f"/jobs/results/{params.cache_key()}"
     resp = Response(status_code=200)
@@ -502,10 +579,16 @@ async def jobs_run(
 # ─────────────────────────────────────────────────────────────
 
 @router.get("/jobs/results/{cache_key}")
+@limiter.limit("60/hour")
 async def jobs_results(request: Request, cache_key: str):
     """Render the scored job list for a specific cached search.
 
-    Uses SQLite score cache first; hits Gemini only for uncached jobs.
+    **No blocking Gemini calls here.** We read the SQLite score cache
+    only. Any job without a cached score renders with a spinner in its
+    badge, and the client kicks off `/jobs/results/{key}/score-batch`
+    which streams scores in 5-at-a-time via OOB HTMX swaps. Users see
+    the page instantly instead of waiting 30s+ for a full re-score
+    after an Expand.
     """
     cached = _find_cached_by_key(cache_key)
     if cached is None:
@@ -521,48 +604,25 @@ async def jobs_results(request: Request, cache_key: str):
     scoring_note: str = ""
     scoring_error: Optional[str] = None
     quota_exhausted: bool = False
+    pending_score_count = 0
 
-    if resume and api_key and jobs_dicts:
-        try:
-            client = GeminiClient(api_key=api_key)
-            all_ids = [j["id"] for j in jobs_dicts]
-            already = db.get_cached_scores(int(resume["id"]), all_ids)
-            fresh_needed = len(jobs_dicts) - len(already)
+    if resume and jobs_dicts:
+        all_ids = [j["id"] for j in jobs_dicts]
+        from core.matching.semantic_score import _row_to_result
+        cached_rows = db.get_cached_scores(int(resume["id"]), all_ids)
+        for jid, row in cached_rows.items():
+            ai_scores[jid] = _row_to_result(row)
 
-            ai_scores = score_jobs_batch(
-                resume_id=int(resume["id"]),
-                resume_text=resume["parsed"].get("raw_text", ""),
-                jobs=jobs_dicts,
-                client=client,
-            )
-            # Any jobs still without a score after the call = quota ran out
-            # mid-scoring OR was already exhausted at start.
-            unscored = len(jobs_dicts) - len(ai_scores)
-            actually_fresh = len(ai_scores) - len(already)
+        pending_score_count = len(jobs_dicts) - len(ai_scores)
 
-            if unscored > 0 and client.all_models_exhausted():
-                quota_exhausted = True
-                scoring_note = (
-                    f"{len(already)} from cache · {actually_fresh} newly scored · "
-                    f"{unscored} pending (all models hit daily quota)"
-                )
-            elif actually_fresh > 0:
-                scoring_note = f"{len(already)} from cache · {actually_fresh} newly scored"
-            else:
-                scoring_note = f"all {len(already)} from cache"
-
-        except QuotaExhaustedError:
-            quota_exhausted = True
-            # We still show whatever scores we did manage to cache
-            all_ids = [j["id"] for j in jobs_dicts]
-            for jid, row in db.get_cached_scores(int(resume["id"]), all_ids).items():
-                from core.matching.semantic_score import _row_to_result
-                ai_scores[jid] = _row_to_result(row)
-            scoring_note = f"{len(ai_scores)} from cache · quota hit for the day"
-        except GeminiError as exc:
-            scoring_error = str(exc)
-        except Exception as exc:  # noqa: BLE001
-            scoring_error = f"unexpected: {exc}"
+        # Compose the header note. Real scoring status arrives later via
+        # OOB swaps; here we describe the initial state.
+        if not api_key:
+            scoring_note = f"{len(ai_scores)} from cache · no Gemini key set"
+        elif pending_score_count > 0:
+            scoring_note = f"{len(ai_scores)} from cache · {pending_score_count} scoring…"
+        else:
+            scoring_note = f"all {len(ai_scores)} from cache"
 
     # Batch first_seen lookup for "New job" flag
     from datetime import datetime as _dt2
@@ -570,6 +630,10 @@ async def jobs_results(request: Request, cache_key: str):
     first_seens = db.get_first_seen_batch([j["id"] for j in jobs_dicts])
 
     # Attach score + verdict + experience to each job for template convenience.
+    # `_pending_score` distinguishes "genuinely un-scorable (no resume/key)"
+    # from "scored async by the batch endpoint". The score_badge partial
+    # renders a spinner when pending, "—" when unscorable.
+    can_score_async = bool(resume and api_key)
     for j in jobs_dicts:
         r = ai_scores.get(j["id"])
         if r:
@@ -578,12 +642,14 @@ async def jobs_results(request: Request, cache_key: str):
             j["_reasoning"] = r.reasoning
             j["_matched"] = r.matched
             j["_gaps"] = r.gaps
+            j["_pending_score"] = False
         else:
             j["_score"] = 0
             j["_verdict"] = "none"
             j["_reasoning"] = ""
             j["_matched"] = []
             j["_gaps"] = []
+            j["_pending_score"] = can_score_async
         j["_experience"] = _extract_experience(j.get("description", ""))
 
         # "New" flag — first_seen within 48h
@@ -630,6 +696,7 @@ async def jobs_results(request: Request, cache_key: str):
             "total_jobs": len(jobs_dicts),
             "has_resume": bool(resume),
             "has_api_key": bool(api_key),
+            "pending_score_count": pending_score_count,
             "scoring_note": scoring_note,
             "scoring_error": scoring_error,
             "quota_exhausted": quota_exhausted,
@@ -638,8 +705,124 @@ async def jobs_results(request: Request, cache_key: str):
     )
 
 
+# ─────────────────────────────────────────────────────────────
+# Lazy scoring — batch endpoint that streams scored fragments
+# ─────────────────────────────────────────────────────────────
+
+# How many pending jobs to score per batch call. Small enough that the
+# first badges appear quickly, large enough that the chain doesn't
+# thrash the server. Fits ~1s scoring on Gemini's Flash-Lite tier.
+_SCORE_BATCH_SIZE = 5
+
+
+@router.get("/jobs/results/{cache_key}/score-batch")
+@limiter.limit("120/hour")
+async def jobs_score_batch(request: Request, cache_key: str):
+    """Score the next `_SCORE_BATCH_SIZE` pending jobs, return HTML fragments.
+
+    Response body always ends with either:
+      - a self-triggering `<div hx-get="…" hx-trigger="load">` when more
+        pending jobs remain (chain continues on the client), OR
+      - an empty terminal element when nothing left / no permission /
+        quota exhausted (chain stops).
+
+    Per-job scored badges + gaps are emitted as `hx-swap-oob="true"`
+    fragments targeted at `#score-slot-{job_id}` and `#gaps-slot-{job_id}`
+    already present in each rendered card.
+    """
+    if feature_flags.is_llm_disabled():
+        # Kill switch — silently stop the chain. Header note already
+        # shows scoring status; blowing up the results page over this
+        # would be bad UX.
+        return HTMLResponse("")
+
+    cached = jobs_cache.load_by_key(cache_key)
+    if cached is None or not cached.jobs:
+        return HTMLResponse("")
+
+    resume = db.get_current_resume()
+    api_key = resolve_api_key()
+    if not resume or not api_key:
+        return HTMLResponse("")
+
+    resume_id = int(resume["id"])
+    all_ids = [j.id for j in cached.jobs]
+    already_scored_ids = set(db.get_cached_scores(resume_id, all_ids).keys())
+
+    # Pending = jobs still uncached against THIS resume. Order matches
+    # the cached list order so the visual "spinner → badge" cascade
+    # matches the render order.
+    pending = [j.to_dict() for j in cached.jobs if j.id not in already_scored_ids]
+    if not pending:
+        return HTMLResponse("")
+
+    batch = pending[:_SCORE_BATCH_SIZE]
+
+    try:
+        client = GeminiClient(api_key=api_key)
+    except GeminiError:
+        return HTMLResponse("")
+
+    try:
+        results = score_jobs_batch(
+            resume_id=resume_id,
+            resume_text=resume["parsed"].get("raw_text", ""),
+            jobs=batch,
+            client=client,
+        )
+    except QuotaExhaustedError:
+        # Quota out for the day — stop chain. Already-scored jobs stay
+        # visible; user will see partial results.
+        return HTMLResponse("")
+    except GeminiError:
+        # Some transient issue — stop chain to avoid tight loops.
+        return HTMLResponse("")
+
+    # Build OOB swaps for each scored job in this batch + a tiny script
+    # that pushes the new score into the client-side jobs_meta array so
+    # Alpine's minScore filter re-evaluates. Without this, a card that
+    # scores 82 stays hidden when the user has minScore ≥ 1 because
+    # jobs_meta still says score=0 for it.
+    fragments: list[str] = []
+    scored_ids: list[tuple[str, int]] = []
+    for j in batch:
+        r = results.get(j["id"])
+        if not r:
+            continue
+        j["_score"] = r.score
+        j["_verdict"] = r.verdict
+        j["_reasoning"] = r.reasoning
+        j["_matched"] = r.matched
+        j["_gaps"] = r.gaps
+        j["_pending_score"] = False
+        fragments.append(templates.env.get_template("partials/score_badge.html")
+                         .render(job=j, oob=True))
+        fragments.append(templates.env.get_template("partials/job_gaps.html")
+                         .render(job=j, oob=True))
+        scored_ids.append((j["id"], int(r.score)))
+    if scored_ids:
+        pushes = "".join(
+            f'window.__jobotUpdateScore && window.__jobotUpdateScore("{jid}", {score});'
+            for jid, score in scored_ids
+        )
+        fragments.append(f'<script>{pushes}</script>')
+
+    # Chain continuation: are there more pending after this batch?
+    remaining_after = len(pending) - len(batch)
+    if remaining_after > 0:
+        fragments.append(
+            f'<div hx-get="/jobs/results/{cache_key}/score-batch"'
+            f' hx-trigger="load delay:200ms"'
+            f' hx-swap="outerHTML"></div>'
+        )
+
+    return HTMLResponse("\n".join(fragments))
+
+
 @router.post("/jobs/run/multi")
+@limiter.limit("30/hour")
 async def jobs_run_multi(
+    request: Request,
     queries: list[str] = Form(...),
     location: str = Form("Ottawa, Ontario, Canada"),
 ):
@@ -651,6 +834,8 @@ async def jobs_run_multi(
     - 2-3      → behaves like /jobs/run/bulk: merge into one "Multi: A + B + C"
                  cache entry, redirect to combined results
     """
+    if feature_flags.is_scrape_disabled():
+        return _scrape_disabled_response()
     queries = [q.strip() for q in queries if q and q.strip()]
     if not queries:
         return HTMLResponse(
@@ -665,9 +850,17 @@ async def jobs_run_multi(
         )
     location = (location or "Ottawa, Ontario, Canada").strip()
 
-    # Single query: same as /jobs/run — cache + redirect
+    # Single query: same as /jobs/run — cache short-circuit + redirect
     if len(queries) == 1:
         params = JobSearchParams(query=queries[0], location=location)
+        cached = jobs_cache.load(params)
+        if cached and cached.jobs:
+            age = jobs_cache.age_seconds(cached.fetched_at)
+            if age is not None and age < _CACHE_SHORT_CIRCUIT_SECONDS:
+                return Response(
+                    status_code=200,
+                    headers={"HX-Redirect": f"/jobs/results/{params.cache_key()}"},
+                )
         try:
             jobs = search_jobs(params)
         except RuntimeError as exc:
@@ -683,22 +876,24 @@ async def jobs_run_multi(
                 f'</div>',
                 status_code=200,
             )
-        jobs_cache.save(params, jobs, label=queries[0])
         db.upsert_jobs([j.to_dict() for j in jobs])
+        jobs_cache.save(params, jobs, label=queries[0])
         return Response(status_code=200, headers={"HX-Redirect": f"/jobs/results/{params.cache_key()}"})
 
     # Multi-query: fire off as a background thread so the browser doesn't hang.
     # User gets redirected to a dedicated loading page that polls status.
+    # Task state is durable (SQLite) — survives Fly machine cycling so a user
+    # who closes the tab and returns can still see the completion.
     task_id = str(uuid.uuid4())[:8]
-    state.search_tasks[task_id] = {
-        "status": "queued",
-        "message": "Starting…",
-        "started_at": datetime.utcnow().isoformat(),
-        "queries": queries,
-        "location": location,
-        "result_url": None,
-        "error": None,
-    }
+    search_tasks.create(
+        task_id,
+        kind="multi",
+        payload={
+            "queries": queries,
+            "location": location,
+            "message": "Starting…",
+        },
+    )
     thread = threading.Thread(
         target=_run_multi_background,
         args=(task_id, queries, location),
@@ -713,24 +908,26 @@ async def jobs_run_multi(
 
 
 def _run_multi_background(task_id: str, queries: list[str], location: str) -> None:
-    """Worker for multi-query bulk runs. Runs sequential scrapes with 8s
-    cooldown, merges results into ONE cache entry, updates task status so
-    the loading page can poll progress."""
-    task = state.search_tasks.get(task_id)
-    if task is None:
-        return
-    COOLDOWN_S = 8
+    """Worker for multi-query bulk runs. Runs sequential scrapes with an
+    8s cooldown, merges results into ONE cache entry, updates task status
+    so the loading page can poll progress.
 
-    task["status"] = "running"
-    merged: dict[str, "Job"] = {}
+    Task state lives in SQLite via `core.jobs.tasks` — survives process
+    restarts. The thread itself does not; a stale-running row will be
+    swept to `failed` by `tasks._sweep()` when the next task is created."""
+    if search_tasks.get(task_id) is None:
+        return
+
+    search_tasks.update(task_id, status="running")
+    merged: dict[str, Job] = {}
     successes: list[str] = []
     failures: list[str] = []
 
     for i, q in enumerate(queries):
         if i > 0:
-            task["message"] = f"Cooling down 8s before '{q}'…"
-            time.sleep(COOLDOWN_S)
-        task["message"] = f"Searching for '{q}' ({i + 1}/{len(queries)})…"
+            search_tasks.update(task_id, message=f"Cooling down {_SCRAPE_COOLDOWN_S}s before '{q}'…")
+            time.sleep(_SCRAPE_COOLDOWN_S)
+        search_tasks.update(task_id, message=f"Searching for '{q}' ({i + 1}/{len(queries)})…")
         try:
             params = JobSearchParams(query=q, location=location)
             js = search_jobs(params)
@@ -742,18 +939,22 @@ def _run_multi_background(task_id: str, queries: list[str], location: str) -> No
             failures.append(f"{q}: {exc}")
 
     if not merged:
-        task["status"] = "failed"
-        task["error"] = "No results from any of the searches. " + (
-            f"Errors: {', '.join(failures)}" if failures else ""
+        search_tasks.mark_failed(
+            task_id,
+            "No results from any of the searches. " + (
+                f"Errors: {', '.join(failures)}" if failures else ""
+            ),
         )
         return
 
-    task["message"] = "Saving and organizing results…"
+    search_tasks.update(task_id, message="Saving and organizing results…")
     bulk_params = JobSearchParams(query=f"multi_{int(time.time())}", location=location)
     bulk_label = "Multi: " + " + ".join(successes)
     merged_list = list(merged.values())
-    jobs_cache.save(bulk_params, merged_list, label=bulk_label)
+    # DB upsert must precede the cache save — the cache file now stores
+    # only pointers into the jobs table.
     db.upsert_jobs([j.to_dict() for j in merged_list])
+    jobs_cache.save(bulk_params, merged_list, label=bulk_label)
 
     events.track(
         events.SEARCH_BROAD,
@@ -762,16 +963,18 @@ def _run_multi_background(task_id: str, queries: list[str], location: str) -> No
         failure_count=len(failures),
     )
 
-    task["status"] = "done"
-    task["result_url"] = f"/jobs/results/{bulk_params.cache_key()}"
-    task["message"] = f"Done — {len(merged_list)} jobs across {len(successes)} searches."
+    search_tasks.mark_done(
+        task_id,
+        result_url=f"/jobs/results/{bulk_params.cache_key()}",
+        message=f"Done — {len(merged_list)} jobs across {len(successes)} searches.",
+    )
 
 
 @router.get("/jobs/loading/{task_id}")
 async def jobs_loading_page(request: Request, task_id: str):
     """Full-page loader for background multi-searches. Polls task status
     every 2s. When done, redirects to results. Non-blocking for the user."""
-    task = state.search_tasks.get(task_id)
+    task = search_tasks.get(task_id)
     if task is None:
         return Response(status_code=404, content="Task not found — probably completed already.")
     return templates.TemplateResponse(
@@ -782,28 +985,54 @@ async def jobs_loading_page(request: Request, task_id: str):
 
 
 @router.get("/jobs/loading/{task_id}/status")
-async def jobs_loading_status(task_id: str):
-    """Polled every 2s by the loading page. Returns HTML fragment with the
-    current status message. On done: includes HX-Redirect header so HTMX
-    navigates to the results page."""
-    task = state.search_tasks.get(task_id)
+async def jobs_loading_status(request: Request, task_id: str):
+    """Polled every 2-3s by two different clients:
+
+    - The dedicated `/jobs/loading/{id}` page (multi-search) — default
+      mode. On done, returns HX-Redirect so HTMX navigates to results.
+    - The inline expand widget on `/jobs/results/{key}` (see
+      `_expand_widget_*_html`) — `?inline=1` mode. On done, returns a
+      "refresh" pill (no navigation). Fires a toast via inline <script>.
+
+    Both share the same task_id + status polling; the response shape
+    differs only in the terminal state. Still-running responses are also
+    shape-differentiated so the inline widget re-uses its polling
+    envelope while the loading page uses a plain text line."""
+    inline = request.query_params.get("inline", "0") == "1"
+    task = search_tasks.get(task_id)
+
     if task is None:
-        return HTMLResponse(
-            '<div class="text-error">Task not found.</div>',
-            status_code=200,
-        )
+        if inline:
+            return HTMLResponse(_expand_widget_failed_html("Task not found — try again."))
+        return HTMLResponse('<div class="text-error">Task not found.</div>', status_code=200)
+
     if task["status"] == "done":
-        return Response(status_code=200, headers={"HX-Redirect": task["result_url"] or "/jobs"})
+        if inline:
+            return HTMLResponse(_expand_widget_done_html(
+                task.get("message") or "New results ready."
+            ))
+        return Response(status_code=200, headers={"HX-Redirect": task.get("result_url") or "/jobs"})
+
     if task["status"] == "failed":
+        error = task.get("error") or "Unknown error"
+        if inline:
+            return HTMLResponse(_expand_widget_failed_html(error))
         return HTMLResponse(
-            f'<div class="text-error text-sm">{task.get("error", "Unknown error")}</div>',
+            f'<div class="text-error text-sm">{error}</div>',
             status_code=200,
         )
+
     # Still running
-    started = datetime.fromisoformat(task["started_at"])
-    elapsed = int((datetime.utcnow() - started).total_seconds())
+    message = task.get("message", "Working…")
+    if inline:
+        return HTMLResponse(_expand_widget_polling_html(task_id, message))
+    try:
+        started = datetime.fromisoformat((task.get("started_at") or "").rstrip("Z"))
+        elapsed = int((datetime.utcnow() - started).total_seconds())
+    except (TypeError, ValueError):
+        elapsed = 0
     return HTMLResponse(
-        f'<div class="text-body-muted">{task["message"]} <span class="text-base-content/40 ml-1">({elapsed}s)</span></div>',
+        f'<div class="text-body-muted">{message} <span class="text-base-content/40 ml-1">({elapsed}s)</span></div>',
         status_code=200,
     )
 
@@ -905,13 +1134,276 @@ async def jobs_run_bulk(search_ids: list[str] = Form(...)):
     bulk_label = "Bulk: " + " + ".join(sub_labels)
 
     merged_list = list(merged_jobs.values())
-    jobs_cache.save(bulk_params, merged_list, label=bulk_label)
+    # DB upsert precedes cache save — pointer files reference jobs by id.
     db.upsert_jobs([j.to_dict() for j in merged_list])
+    jobs_cache.save(bulk_params, merged_list, label=bulk_label)
 
     return Response(
         status_code=200,
         headers={"HX-Redirect": f"/jobs/results/{bulk_params.cache_key()}"},
     )
+
+
+@router.post("/jobs/results/{cache_key}/expand")
+@limiter.limit("10/hour")
+async def jobs_expand(request: Request, cache_key: str):
+    """Broaden an existing search by running 2 LLM-generated variant queries
+    and merging the results into the SAME cache entry.
+
+    Response contract: this endpoint is triggered by a plain <form
+    target="_blank"> on the results page, so we return a full HTML page
+    (or a 303 redirect to the loading page), NOT an HTMX fragment. That
+    keeps the user's original results tab intact while the expansion
+    runs and reports progress in a new tab.
+
+    Both kill switches gate this: it does an LLM call AND scrape calls.
+
+    Answers the recurring "we're only seeing the same 30 jobs" complaint:
+    varies the query dimension (adjacent titles) rather than the params,
+    which is what actually surfaces new postings on niche searches.
+
+    Flow:
+        1. Load the cache entry — need original query + top titles.
+        2. Ask Gemini for 2 adjacent titles not already present.
+        3. Kick off `_run_expand_background` in a thread.
+        4. Redirect to /jobs/loading/{task_id}; the loader polls and
+           finally sends the user back to /jobs/results/{cache_key} with
+           the widened result set.
+    """
+    if feature_flags.is_scrape_disabled():
+        return _expand_inline_error(feature_flags.scrape_disabled_message())
+    cached = jobs_cache.load_by_key(cache_key)
+    if cached is None:
+        return _expand_inline_error("Search cache not found — reload the page.")
+
+    cached_meta = _load_cache_params(cache_key)
+    if not cached_meta or not cached_meta.get("params"):
+        return _expand_inline_error("Cache missing params — can't expand.")
+    params = JobSearchParams(**cached_meta["params"])
+    original_label = cached_meta.get("params_label") or params.query
+
+    task_id = str(uuid.uuid4())[:8]
+    search_tasks.create(
+        task_id,
+        kind="expand",
+        payload={
+            "cache_key": cache_key,
+            "query": params.query,
+            "location": params.location,
+            "message": "Searching deeper…",
+        },
+    )
+    thread = threading.Thread(
+        target=_run_expand_background,
+        args=(task_id, cache_key, params, original_label),
+        daemon=True,
+    )
+    thread.start()
+
+    # Floating notification lifecycle:
+    #   POST → returns initial "Expanding…" toast into #expand-notification-slot
+    #   toast polls /jobs/loading/{id}/status?inline=1 every 3s
+    #   done  → toast becomes "New results ready · Refresh · ×"
+    #   fail  → toast becomes "Expand failed · ×"
+    # Toast is a fixed bottom-left card so it doesn't interrupt browsing.
+    return HTMLResponse(_expand_widget_polling_html(task_id, message="Starting…"))
+
+
+# ── HTML fragments for the floating expand-notification widget ────────
+#
+# All three states share the same wrapper — fixed bottom-left card with
+# thin border + soft shadow, white bg, no filled color blocks. Follows
+# the codebase's hairline aesthetic instead of DaisyUI's filled badges.
+# Small colored dot on the left signals state (spinner / green / red)
+# without turning the whole card into a color block.
+
+_TOAST_WRAPPER_STYLE = (
+    "background: white; "
+    "border: 1px solid hsl(0 0% 88%); "
+    "box-shadow: 0 8px 24px rgba(0,0,0,0.10); "
+    "border-radius: 12px; "
+    "padding: 14px 18px; "
+    "min-width: 320px; "
+    "max-width: 460px;"
+)
+
+# Common dismiss button — matches the "×" affordance used elsewhere.
+_DISMISS_BUTTON = (
+    '<button type="button" '
+    'onclick="this.closest(\'#expand-widget\').remove()" '
+    'aria-label="Dismiss" '
+    'style="background:none;border:none;font-size:1.35rem;line-height:1;'
+    'color:hsl(0 0% 55%);cursor:pointer;padding:2px 6px;">×</button>'
+)
+
+
+def _expand_widget_polling_html(task_id: str, message: str) -> str:
+    """Rendered by /expand (initial) AND by the ?inline=1 status endpoint
+    (subsequent polls) while the task is still running. Keeps the
+    hx-trigger so it re-polls every 3s until swapped by a done/failed
+    fragment that lacks the trigger."""
+    return (
+        f'<div id="expand-widget"'
+        f' style="{_TOAST_WRAPPER_STYLE}"'
+        f' hx-get="/jobs/loading/{task_id}/status?inline=1"'
+        f' hx-trigger="every 3s"'
+        f' hx-swap="outerHTML"'
+        f' hx-target="this">'
+        f'  <div style="display:flex;align-items:center;gap:12px;">'
+        f'    <span class="loading loading-spinner loading-sm" style="color:hsl(210 60% 50%);flex-shrink:0;"></span>'
+        f'    <div style="flex:1;min-width:0;">'
+        f'      <div style="font-size:14px;font-weight:600;color:hsl(0 0% 20%);">Expanding search</div>'
+        f'      <div style="font-size:12.5px;color:hsl(0 0% 42%);margin-top:3px;">{_esc(message)}</div>'
+        f'    </div>'
+        f'    {_DISMISS_BUTTON}'
+        f'  </div>'
+        f'</div>'
+    )
+
+
+def _expand_widget_done_html(message: str) -> str:
+    """Terminal state — no hx-trigger, so polling stops. Persists on
+    screen until the user clicks Refresh or dismisses. Small green dot
+    signals success without filling the whole card."""
+    return (
+        f'<div id="expand-widget" style="{_TOAST_WRAPPER_STYLE}">'
+        f'  <div style="display:flex;align-items:center;gap:12px;">'
+        f'    <span style="width:10px;height:10px;border-radius:50%;background:hsl(140 60% 45%);flex-shrink:0;"></span>'
+        f'    <div style="flex:1;min-width:0;">'
+        f'      <div style="font-size:14px;font-weight:600;color:hsl(0 0% 20%);">New results ready</div>'
+        f'      <div style="font-size:12.5px;color:hsl(0 0% 42%);margin-top:3px;">{_esc(message)}</div>'
+        f'    </div>'
+        f'    <button type="button" class="btn btn-sm btn-outline"'
+        f'            onclick="location.reload()"'
+        f'            style="border-color:hsl(0 0% 75%);color:hsl(0 0% 25%);">Refresh</button>'
+        f'    {_DISMISS_BUTTON}'
+        f'  </div>'
+        f'</div>'
+    )
+
+
+def _expand_widget_failed_html(error: str) -> str:
+    return (
+        f'<div id="expand-widget" style="{_TOAST_WRAPPER_STYLE}">'
+        f'  <div style="display:flex;align-items:center;gap:12px;">'
+        f'    <span style="width:10px;height:10px;border-radius:50%;background:hsl(0 60% 50%);flex-shrink:0;"></span>'
+        f'    <div style="flex:1;min-width:0;">'
+        f'      <div style="font-size:14px;font-weight:600;color:hsl(0 0% 20%);">Expand failed</div>'
+        f'      <div style="font-size:12.5px;color:hsl(0 0% 42%);margin-top:3px;">{_esc(error)}</div>'
+        f'    </div>'
+        f'    {_DISMISS_BUTTON}'
+        f'  </div>'
+        f'</div>'
+    )
+
+
+def _expand_inline_error(message: str) -> HTMLResponse:
+    """Returned by the /expand endpoint itself when it refuses before
+    even starting a task (kill switch, missing cache). Rendered as a
+    failed-state widget — same floating position, no polling."""
+    return HTMLResponse(_expand_widget_failed_html(message), status_code=200)
+
+
+def _esc(s: str) -> str:
+    """Cheap HTML escape for values we build into inline fragments."""
+    return (
+        (s or "")
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+
+
+def _run_expand_background(
+    task_id: str,
+    cache_key: str,
+    original_params: JobSearchParams,
+    original_label: str,
+) -> None:
+    """Worker for /jobs/results/{cache_key}/expand.
+
+    Single deeper scrape on the same query, then merge back into the
+    cache entry. This is the "give me another 30 of the same job"
+    experience — no LLM, no adjacent-title variants (dropped 2026-08-18
+    based on user feedback that the multi-scrape flow was too slow and
+    the extra titles weren't what they wanted).
+
+    Params get widened all three ways: `results_wanted` bumped (2×,
+    floor 60) so jobspy pages deeper, `hours_old` doubled so older
+    postings become visible, `distance` doubled so nearby metros come
+    in. Duplicates against what's already in the cache are dropped so
+    the "N new jobs" count is honest.
+
+    Runtime: ~15-30s depending on jobspy latency. No cooldowns (only
+    one scrape)."""
+    already_ids = _existing_cache_job_ids(cache_key)
+
+    search_tasks.update(task_id, message="Searching deeper…")
+    deeper_params = JobSearchParams(
+        query=original_params.query,
+        location=original_params.location,
+        distance=max(original_params.distance * 2, original_params.distance),
+        sites=list(original_params.sites),
+        hours_old=max(original_params.hours_old * 2, original_params.hours_old),
+        results_wanted=max(original_params.results_wanted * 2, 60),
+        is_remote=original_params.is_remote,
+        country_indeed=original_params.country_indeed,
+        linkedin_fetch_description=original_params.linkedin_fetch_description,
+    )
+    try:
+        scraped = search_jobs(deeper_params)
+    except Exception as exc:  # noqa: BLE001
+        search_tasks.mark_failed(task_id, f"Deeper scrape failed: {exc}")
+        return
+
+    all_new: dict[str, Job] = {}
+    for j in scraped:
+        if j.id not in all_new and j.id not in already_ids:
+            all_new[j.id] = j
+
+    if not all_new:
+        search_tasks.mark_done(
+            task_id,
+            result_url=f"/jobs/results/{cache_key}",
+            message=f"No new jobs found beyond your current {len(already_ids)}.",
+        )
+        return
+
+    search_tasks.update(task_id, message="Merging into results…")
+    new_jobs = list(all_new.values())
+    db.upsert_jobs([j.to_dict() for j in new_jobs])
+
+    # Label swap: append "(expanded)" once, don't stack.
+    new_label = original_label if "(expanded)" in original_label else f"{original_label} (expanded)"
+    merged = jobs_cache.merge_into(cache_key, new_jobs, new_label=new_label)
+    if merged is None:
+        search_tasks.mark_failed(task_id, "Cache entry disappeared during expand.")
+        return
+
+    events.track(
+        events.SEARCH_BROAD,
+        queries=[original_params.query],
+        result_count=len(merged.jobs),
+        expand=True,
+        failure_count=0,
+    )
+
+    search_tasks.mark_done(
+        task_id,
+        result_url=f"/jobs/results/{cache_key}",
+        message=f"{len(new_jobs)} new jobs added ({len(merged.jobs)} total).",
+    )
+
+
+def _existing_cache_job_ids(cache_key: str) -> set[str]:
+    """Snapshot of what's already in the cache entry, so a deeper-pass
+    result that's identical to what the user's already seeing doesn't
+    count as 'new' in the message we show them."""
+    cached = jobs_cache.load_by_key(cache_key)
+    if not cached:
+        return set()
+    return {j.id for j in cached.jobs}
 
 
 @router.post("/jobs/refresh/{cache_key}")
@@ -920,6 +1412,8 @@ async def jobs_refresh(cache_key: str):
     Same params as the original, so the cache key stays the same. Returns
     HX-Redirect back to the results page (which will re-render + re-score
     if needed against any new jobs)."""
+    if feature_flags.is_scrape_disabled():
+        return _scrape_disabled_response()
     cached_meta = _load_cache_params(cache_key)
     if not cached_meta:
         raise HTTPException(status_code=404, detail="Cache not found")
@@ -935,8 +1429,9 @@ async def jobs_refresh(cache_key: str):
             status_code=200,
         )
 
-    jobs_cache.save(params, jobs, label=label)
+    # DB upsert precedes cache save — pointer files reference jobs by id.
     db.upsert_jobs([j.to_dict() for j in jobs])
+    jobs_cache.save(params, jobs, label=label)
 
     return Response(status_code=200, headers={"HX-Redirect": f"/jobs/results/{cache_key}"})
 
@@ -946,6 +1441,7 @@ async def jobs_refresh(cache_key: str):
 # ─────────────────────────────────────────────────────────────
 
 @router.post("/jobs/from-url")
+@limiter.limit("20/hour")
 async def jobs_from_url(
     request: Request,
     job_url: str = Form(""),
@@ -1080,9 +1576,16 @@ async def jobs_analyzed(request: Request, job_id: str):
 # ─────────────────────────────────────────────────────────────
 
 @router.get("/jobs/detail/{job_id}")
+@limiter.limit("200/hour")
 async def jobs_detail(request: Request, job_id: str):
     """Job detail fragment for the split-viewport right pane. Loaded by
-    HTMX when a card is clicked on the results page."""
+    HTMX when a card is clicked on the results page — and by the mobile
+    "Show description" button (via `hx-select`) so descriptions are no
+    longer inlined into the results HTML.
+
+    Rate-limited per IP so bulk scrapers can't loop the whole cache
+    through this endpoint. 200/hour comfortably covers real browsing
+    (a heavy session opens ~30-60 cards)."""
     job = db.get_job(job_id)
     if not job:
         return HTMLResponse(
@@ -1208,11 +1711,14 @@ async def jobs_tailor_panel(request: Request, job_id: str):
 
 
 @router.post("/jobs/tailor/{job_id}")
+@limiter.limit("10/hour;40/day")
 async def jobs_tailor_generate(
     request: Request,
     job_id: str,
     level: Level = Form("balanced"),
 ):
+    if feature_flags.is_tailor_disabled():
+        return _tailor_disabled_response()
     job = db.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
@@ -1500,24 +2006,10 @@ async def jobs_tailor_cover_letter_download(job_id: str, run: int = -1):
 def _find_cached_by_key(cache_key: str):
     """Find a cached search by its key without needing the params.
 
-    jobs_cache.load takes params, but our URL has the key. Walk the cache
-    directory and match on filename stem.
+    Delegates to `jobs_cache.load_by_key` which handles both the pointer
+    format (job_ids resolved via db.get_jobs) and the legacy inline format.
     """
-    for path in jobs_cache.CACHE_DIR.glob("*.json"):
-        if path.stem != cache_key:
-            continue
-        try:
-            import json as _json
-            data = _json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return None
-        from core.jobs.search import Job as _Job
-        return jobs_cache.CachedResult(
-            fetched_at=data.get("fetched_at", ""),
-            params_label=data.get("params_label", ""),
-            jobs=[_Job(**j) for j in data.get("jobs", [])],
-        )
-    return None
+    return jobs_cache.load_by_key(cache_key)
 
 
 def _load_cache_params(cache_key: str) -> Optional[dict]:

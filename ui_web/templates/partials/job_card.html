@@ -6,7 +6,6 @@
    loads this job's details. Highlighted via ring when selected. #}
 <article class="card-quiet cursor-pointer transition-shadow"
          x-data="{
-           expanded: false,
            ageDays: {% if job._age_days is defined %}{{ job._age_days }}{% else %}null{% endif %}
          }"
          :class="$store.selectedJob.id === '{{ job.id }}' ? 'card-quiet--selected' : ''"
@@ -21,15 +20,10 @@
 
   <div class="flex items-start gap-4">
 
-    {# Score badge (verdict-tinted) #}
-    <div class="score-badge score-badge-{{ job._verdict }}">
-      {% if job._verdict == 'none' %}
-        <span class="score-num text-lg">—</span>
-      {% else %}
-        <span class="score-num">{{ job._score }}</span>
-        <span class="score-max">/100</span>
-      {% endif %}
-    </div>
+    {# Score badge (verdict-tinted). Rendered from a partial so the
+       lazy-scoring endpoint can OOB-swap the same fragment once a
+       Gemini score comes back. #}
+    {% include "partials/score_badge.html" %}
 
     {# Body #}
     <div class="flex-1 min-w-0">
@@ -85,15 +79,9 @@
       {# Gaps only in the summary card. Reasoning + matched skills belong in
          the expanded detail pane on the right — showing them here on every
          card was noise on a scannable list. Gaps stay because they're the
-         single most decision-worthy signal ("can I honestly cover this?"). #}
-      {% if job._verdict != 'none' and job._gaps %}
-      <div class="mt-3">
-        <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-warning i-3"></i>Gaps</div>
-        <div class="flex flex-wrap gap-1">
-          {% for g in job._gaps %}<span class="chip chip-gap">{{ g }}</span>{% endfor %}
-        </div>
-      </div>
-      {% endif %}
+         single most decision-worthy signal ("can I honestly cover this?").
+         Rendered from a partial so the lazy-scoring endpoint can OOB-swap. #}
+      {% include "partials/job_gaps.html" %}
 
       {# Warning strip for FR-required #}
       {% if job.french_required %}
@@ -128,19 +116,21 @@
           Tailor
         </button>
         {% if job.description %}
+        {# Lazy-load the description via HTMX rather than rendering it inline.
+           Anti-scraping (only revealed after a click, hits the rate-limited
+           /jobs/detail endpoint) AND a page-size win (skip 5-50KB per card
+           on results HTML). Uses hx-select to pull just the JD block out
+           of the shared job_detail partial. First click loads + hides
+           the button. Desktop path unchanged — sidebar detail pane owns it. #}
         <button class="text-xs text-base-content/50 hover:text-base-content ml-auto cursor-pointer"
-                @click="expanded = !expanded"
-                x-text="expanded ? 'Hide description' : 'Show description'"></button>
+                hx-get="/jobs/detail/{{ job.id }}"
+                hx-select=".jd-body"
+                hx-target="closest article"
+                hx-swap="beforeend"
+                hx-trigger="click once"
+                onclick="this.style.display='none'">Show description</button>
         {% endif %}
       </div>
-
-      {# Full JD — mobile-only expander. Desktop uses the detail pane. #}
-      {% if job.description %}
-      <div x-show="expanded" x-collapse class="lg:hidden mt-4 pt-4 border-t border-base-300/70">
-        <div class="text-label mb-2">Job description</div>
-        <div class="jd-body">{{ job.description | jd_html }}</div>
-      </div>
-      {% endif %}
     </div>
   </div>
 </article>

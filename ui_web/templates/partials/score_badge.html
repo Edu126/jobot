@@ -1,0 +1,31 @@
+{# Score badge for a single job.
+
+   Rendered inside job_card.html on initial page load AND by the
+   /jobs/results/{key}/score-batch endpoint as an OOB swap once the
+   job has been lazily scored.
+
+   Requires: `job` dict with `_score`, `_verdict`, and either
+   `_pending_score` (True while the async batch is still in flight)
+   or a real verdict.
+
+   Optional: `oob=True` marks this fragment as an out-of-band swap so
+   HTMX targets it by id rather than by the requesting element.
+#}
+<div id="score-slot-{{ job.id }}"
+     {% if oob %}hx-swap-oob="true"{% endif %}
+     class="shrink-0">
+  {% if job._pending_score %}
+    <div class="score-badge score-badge-none" title="Scoring against your resume…">
+      <span class="loading loading-spinner loading-xs" style="color:hsl(210 40% 55%);"></span>
+    </div>
+  {% else %}
+    <div class="score-badge score-badge-{{ job._verdict }}">
+      {% if job._verdict == 'none' %}
+        <span class="score-num text-lg">—</span>
+      {% else %}
+        <span class="score-num">{{ job._score }}</span>
+        <span class="score-max">/100</span>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>

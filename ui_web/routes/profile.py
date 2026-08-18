@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import io
 import os
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -40,6 +41,12 @@ from core.llm.gemini import (
     request_counts_today,
     resolve_api_key,
 )
+from core.resume.anomalies import (
+    analyze as analyze_anomalies,
+    missing_sections,
+    present_sections,
+)
+from core.resume.ai_regenerate import regenerate_sections
 from core.resume.ats import run_checks
 from core.resume.parser import parse_resume
 
@@ -66,7 +73,7 @@ router = APIRouter(tags=["profile"])
 
 
 @router.get("/profile")
-async def profile_page(request: Request):
+async def profile_page(request: Request, just_regenerated: int = 0):
     current = db.get_current_resume()
     if current:
         # raw_bytes is huge — strip before passing to template
@@ -76,6 +83,7 @@ async def profile_page(request: Request):
     older = [r for r in all_resumes if not r["is_current"]]
 
     ats_report = run_checks(current["parsed"]) if current else None
+    preview_report = analyze_anomalies(current["parsed"]) if current else None
 
     key = resolve_api_key()
     exhausted = set(exhausted_models())
@@ -97,11 +105,13 @@ async def profile_page(request: Request):
             "current": current,
             "older_resumes": older,
             "ats_report": ats_report,
+            "preview_report": preview_report,
             "api_key_present": bool(key),
             "api_key_masked": _mask_key(key),
             "quota_rows": quota_rows,
             "saved_searches": db.list_saved_searches(),
             "jobot_version": current_version(),
+            "just_regenerated": bool(just_regenerated),
         },
     )
 
@@ -198,6 +208,155 @@ Return JSON: {{"queries": ["query 1", "query 2", ...]}}
 
     db.save_suggestions(resume_id, queries)
     return queries, None, 0
+
+
+SECTION_SUGGESTIONS_MAX = 3
+
+
+def _maybe_generate_ai_summary(resume_id: int) -> Optional[dict]:
+    """Role label + first-impression sentence + "worth adding?" judgment on
+    missing standard sections, from a single Gemini call. Called from the
+    lazy-load GET /profile/ai-summary fragment (hx-trigger="load", same
+    pattern as the Updates check) — NOT from upload/switch directly, so the
+    upload response stays instant and the fragment's own spinner covers the
+    1-3s Gemini round-trip.
+
+    Skipped (returns None) if a summary is already cached for this
+    resume_id (then returns the cached one instead), if there's no API
+    key, or on any failure — this must never raise, the block just doesn't
+    render when it can't produce a summary.
+    """
+    cached = db.get_resume_ai_summary(resume_id)
+    if cached:
+        return cached
+    try:
+        api_key = resolve_api_key()
+        if not api_key:
+            return None
+
+        resume = db.get_resume(resume_id)
+        if not resume:
+            return None
+        parsed = resume["parsed"]
+        resume_text = (parsed.get("raw_text") or "")[:4000].strip()
+        if not resume_text:
+            return None
+
+        present = [t for _, t in present_sections(parsed)]
+        missing = missing_sections(parsed)
+        if not missing:
+            missing_block = "(none — candidate already has every standard section)"
+        else:
+            missing_block = ", ".join(t for _, t in missing)
+        location = (parsed.get("contact") or {}).get("location", "")
+
+        prompt = f"""You are a experienced colleague — not a career coach, not an HR
+department — glancing at someone's resume and telling them straight what
+you think. You'll get their resume text and two facts: which standard
+resume sections they already have, and which they don't. Do THREE things:
+
+1. role_label: In 2-5 words, name the FIELD their experience is in (e.g.
+   "civil construction coordination", "B2B sales", "BI / data analytics").
+   Base this only on their work history — resumes get reused across
+   different job applications, so don't assume this is a "target title,"
+   just what their actual experience says they've been doing. Lowercase,
+   no fluff, no corporate label-speak.
+
+2. first_impression: ONE sentence (max 22 words), your real reaction
+   reading this cold. Say whatever is actually true — could be all
+   praise, all criticism, or noting something specific and unusual. Do
+   NOT force a "here's what's good, but here's what's weak" sandwich
+   every time — that pattern reads as a template, not an opinion.
+   Write like you're texting a friend a quick honest take, not writing
+   ad copy. Banned words/phrases (instant AI-slop tell, never use them):
+   leverage, robust, seamless, dynamic, passionate, results-driven,
+   metric-driven, spearhead, utilize, synergy, cutting-edge, elevate,
+   unlock, game-changer, "stands out", "speaks volumes", em-dash chains.
+   Use plain, specific words. Contractions are fine. If something is
+   genuinely impressive, say so plainly ("this is solid") — don't dress
+   it up.
+
+3. section_suggestions: Of the MISSING sections listed below, which (if
+   any) are actually worth this specific candidate adding? Be selective —
+   most resumes don't need most of these. Consider their apparent field
+   and, if the location suggests it, the Ottawa/Montreal bilingual job
+   market (Languages section matters a LOT there). Almost never suggest
+   "References" — modern resumes drop it; only suggest it if something in
+   the resume suggests it's expected. Return at most {SECTION_SUGGESTIONS_MAX}
+   suggestions, each with a reason under 15 words, same plain-language
+   rule as above (no "leverage your robust skillset" nonsense). Empty
+   list is a valid, often-correct answer.
+
+TODAY'S DATE: {date.today().strftime("%B %Y")} — use this as "now" when
+judging any dates in the resume (e.g. a role starting a few months ago is
+current employment, not a typo or something impossible).
+CANDIDATE LOCATION: {location or "unknown"}
+SECTIONS ALREADY PRESENT: {", ".join(present) or "(none detected)"}
+SECTIONS MISSING (only suggest from this list): {missing_block}
+
+RESUME:
+---
+{resume_text}
+---
+
+Return JSON:
+{{
+  "role_label": "...",
+  "first_impression": "...",
+  "section_suggestions": [{{"section": "languages", "reason": "..."}}]
+}}
+"""
+        client = GeminiClient(api_key=api_key)
+        raw = client.generate_json(prompt)
+
+        role_label = str(raw.get("role_label", "")).strip()[:60]
+        first_impression = str(raw.get("first_impression", "")).strip()[:280]
+
+        missing_keys = {k for k, _ in missing}
+        suggestions_raw = raw.get("section_suggestions", [])
+        suggestions: list[dict] = []
+        if isinstance(suggestions_raw, list):
+            for item in suggestions_raw:
+                if not isinstance(item, dict):
+                    continue
+                key = str(item.get("section", "")).strip().lower()
+                reason = str(item.get("reason", "")).strip()[:160]
+                if key in missing_keys and reason:
+                    suggestions.append({"section": key, "reason": reason})
+                if len(suggestions) >= SECTION_SUGGESTIONS_MAX:
+                    break
+
+        db.save_resume_ai_summary(
+            resume_id,
+            role_label=role_label,
+            first_impression=first_impression,
+            suggestions=suggestions,
+        )
+        return {
+            "role_label": role_label,
+            "first_impression": first_impression,
+            "suggestions": suggestions,
+        }
+    except Exception:  # noqa: BLE001 — must never break the fragment render
+        return None
+
+
+@router.get("/profile/ai-summary")
+async def get_ai_summary(request: Request):
+    """Lazy-load fragment for the role label / first-impression / section-
+    suggestion chips. Same hx-trigger="load" pattern as the Updates check —
+    page paints instantly, this fragment resolves the 1-3s Gemini round-trip
+    on its own and swaps in (or renders nothing if no key / no resume /
+    call failed, all silent per _maybe_generate_ai_summary's contract)."""
+    current = db.get_current_resume()
+    if not current:
+        return HTMLResponse("", status_code=200)
+    summary = _maybe_generate_ai_summary(int(current["id"]))
+    if not summary:
+        return HTMLResponse("", status_code=200)
+    return templates.TemplateResponse(
+        request, "partials/ai_summary.html", {"summary": summary},
+    )
 
 
 @router.get("/profile/suggest-queries")
@@ -325,6 +484,73 @@ async def upload_resume(file: UploadFile = File(...)):
         page_estimate=parsed.get("stats", {}).get("page_estimate"),
     )
     return Response(status_code=200, headers={"HX-Refresh": "true"})
+
+
+@router.post("/profile/resume/{resume_id}/contact")
+async def update_resume_contact(
+    request: Request,
+    resume_id: int,
+    name: str = Form(""),
+    email: str = Form(""),
+    phone: str = Form(""),
+    location: str = Form(""),
+    linkedin: str = Form(""),
+):
+    """User-confirmed contact overrides. Full replace of the contact
+    sub-dict (not sparse) — the form always sends all 5 fields, blank or
+    not, so there's no ambiguity about "field omitted" vs "field cleared"."""
+    if not db.get_resume(resume_id):
+        raise HTTPException(status_code=404, detail="Resume not found")
+    db.update_resume_contact(resume_id, {
+        "name": name.strip(),
+        "email": email.strip(),
+        "phone": phone.strip(),
+        "location": location.strip(),
+        "linkedin": linkedin.strip(),
+    })
+    current = db.get_current_resume()
+    if current:
+        current.pop("raw_bytes", None)
+    return templates.TemplateResponse(
+        request, "partials/contact_verify.html", {"current": current},
+    )
+
+
+@router.post("/profile/resume/{resume_id}/regenerate")
+async def regenerate_resume(resume_id: int):
+    """LLM re-parse pass — asks Gemini to re-derive the parsed sections
+    from raw_text when the deterministic parser got confused (PDF reflow,
+    unusual layout). Overwrites parsed_json; raw_bytes are untouched, so
+    the original file is still downloadable if the re-parse also disappoints."""
+    resume = db.get_resume(resume_id)
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    api_key = resolve_api_key()
+    if not api_key:
+        return HTMLResponse(
+            '<div class="text-error text-sm">Add a Gemini API key first (Profile → API key).</div>',
+            status_code=200,
+        )
+
+    try:
+        new_parsed = regenerate_sections(resume["parsed"], api_key)
+    except GeminiError as exc:
+        return HTMLResponse(
+            f'<div class="text-error text-sm">Regeneration failed: {exc}</div>',
+            status_code=200,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return HTMLResponse(
+            f'<div class="text-error text-sm">Unexpected error: {exc}</div>',
+            status_code=200,
+        )
+
+    db.update_resume_parsed(resume_id, new_parsed)
+    # HX-Redirect (not HX-Refresh) so we can carry ?just_regenerated=1 —
+    # the profile page reads that flag on load to reopen the modal on the
+    # fresh parse and fire a success toast.
+    return Response(status_code=200, headers={"HX-Redirect": "/profile?just_regenerated=1"})
 
 
 @router.post("/profile/resume/{resume_id}/switch")

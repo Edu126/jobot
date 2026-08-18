@@ -8,8 +8,11 @@ Currently holds:
   job, newest last. Capped at MAX_TAILOR_HISTORY so we don't blow up
   memory over long sessions. Each entry:
       {"tailored": dict, "at": iso_string, "level": "conservative|balanced|aggressive"}
-- `search_tasks[task_id]` — bookkeeping for background multi-search
-  worker threads. Consumed by /jobs/loading/{task_id}/status poller.
+- `geocode_cache[query]` — 24h Photon typeahead cache.
+
+**Removed in PR 2:** `search_tasks`. Background multi-search + Expand
+task state now lives in the SQLite `search_tasks` table via
+`core.jobs.tasks` — durable across Fly `auto_stop_machines` cycling.
 """
 from __future__ import annotations
 
@@ -20,13 +23,6 @@ from typing import Any
 MAX_TAILOR_HISTORY = 5
 
 tailored_history: dict[str, list[dict[str, Any]]] = {}
-
-# Background search tasks — {task_id: {status, message, started_at, queries,
-# result_url|None, error|None}}. Used by /jobs/run/multi to run
-# 2+ scrapes off the request thread so the browser doesn't hang.
-# Cleared when the server restarts, which is fine — active tasks can't
-# survive a restart anyway (they'd lose their threads).
-search_tasks: dict[str, dict[str, Any]] = {}
 
 
 # Geocode typeahead cache — {"ottawa": {"html": "<option..>...", "expires": dt}}.

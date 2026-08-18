@@ -36,6 +36,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from core import db  # noqa: E402
 
 from .deps import templates  # noqa: E402
+from .middleware import configure as configure_middleware  # noqa: E402
+from .ratelimit import configure as configure_ratelimit  # noqa: E402
 from .routes import applications, jobs, journey, profile  # noqa: E402
 
 
@@ -46,6 +48,18 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Jobot v2", version="0.2.0", lifespan=lifespan)
+
+# SlowAPI rate limiting — persistent SQLite store so Fly's auto_stop
+# cycling doesn't reset counters between wake-ups. Endpoints declare
+# their own limits via `@limiter.limit(...)` from `ui_web.ratelimit`.
+configure_ratelimit(app)
+
+# Identity ContextVar + LLM_DISABLED kill-switch handler. Ordering
+# matters: IdentityMiddleware wraps every request so downstream Gemini
+# calls see the right identity for per-day cap accounting. Registered
+# AFTER ratelimit so it runs first on the request path (Starlette adds
+# in reverse order).
+configure_middleware(app)
 
 app.mount(
     "/static",

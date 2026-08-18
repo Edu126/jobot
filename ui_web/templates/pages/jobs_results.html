@@ -15,13 +15,64 @@
          // Reset filters that are irrelevant here or bleed in from other pages.
          $store.filters.maxAgeDays = null;
          $store.filters.onlyNew = false;
+         // Default: only surface jobs the resume actually matches. Users can
+         // still drag the slider down. Ties into the lazy-scoring flow so
+         // pending jobs (score=0) stay hidden until they score in, and jobs
+         // that score >=60 pop into view as their badge fills.
+         $store.filters.minScore = 60;
+         // Expose an updater that OOB-scored batches call to keep this
+         // page's jobs_meta reactive — otherwise the client-side filter
+         // still sees score=0 and hides freshly-scored cards.
+         window.__jobotUpdateScore = (id, score) => {
+           const j = this.jobs.find(x => x.id === id);
+           if (j) j.score = score;
+         };
+       },
+       destroy() {
+         // Route away / page unload — release the global so a follow-on
+         // page can register its own if it uses the same pattern.
+         if (window.__jobotUpdateScore) delete window.__jobotUpdateScore;
        }
      }">
 
 {# ── Header ── #}
 <div class="mb-6">
   <a href="/jobs" class="text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer inline-flex items-center gap-1"><i class="ph-thin ph-arrow-left i-4"></i>Back to search</a>
-  <h1 class="text-display mt-3">{{ label }}</h1>
+  <div class="flex items-start justify-between gap-4 mt-3">
+    <h1 class="text-display">{{ label }}</h1>
+    {# Expand: deeper scrape on the same query (2× results_wanted, 2×
+     hours_old, 2× distance). No navigation, no LLM, no adjacent titles.
+     Response HTML lands in #expand-notification-slot (fixed bottom-left)
+     so the user keeps browsing while it runs. Button itself doesn't
+     change state — floating toast owns the lifecycle. #}
+    <button type="button"
+            class="btn btn-sm btn-outline whitespace-nowrap"
+            hx-post="/jobs/results/{{ cache_key }}/expand"
+            hx-target="#expand-notification-slot"
+            hx-swap="innerHTML"
+            title="Runs a deeper scrape on this same query and merges new results in.">
+      <i class="ph-thin ph-arrows-out"></i>
+      Expand search
+    </button>
+  </div>
+
+  {# Floating notification slot — expand toast lands here (bottom-left,
+   above other content). Empty by default; populated by /expand's HTML
+   response and self-updates while the task runs. #}
+  <div id="expand-notification-slot"
+       style="position:fixed;bottom:16px;left:16px;z-index:50;"></div>
+
+  {# Lazy-scoring trigger. Fires once on page load when there's at least
+   one un-scored job to process. Response body contains OOB swaps for
+   each scored badge + gaps, plus a new trigger that continues the
+   chain until nothing's pending. Absent when nothing to score (no
+   resume / no key / all cached) — page just stays as-is. #}
+  {% if pending_score_count and has_resume and has_api_key %}
+  <div id="score-batch-trigger"
+       hx-get="/jobs/results/{{ cache_key }}/score-batch"
+       hx-trigger="load"
+       hx-swap="outerHTML"></div>
+  {% endif %}
 
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-3 mt-4">
     <div>

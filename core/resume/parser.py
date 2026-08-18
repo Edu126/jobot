@@ -73,6 +73,10 @@ SECTION_PATTERNS: dict[str, list[str]] = {
     "references": [
         r"^\s*(references?|professional\s+references?)\s*:?\s*$",
     ],
+    "publications": [
+        r"^\s*(publications?|papers?|research\s+publications?|"
+        r"published\s+works?)\s*:?\s*$",
+    ],
 }
 
 EMAIL_RE = re.compile(r"[\w._%+-]+@[\w.-]+\.[A-Za-z]{2,}")

@@ -76,9 +76,12 @@ OUTPUT — return ONLY this JSON object, no surrounding text:
     "skills":         ["..."],
     "certifications": ["..."],
     "projects":       ["..."],
+    "publications":   ["..."],
     "volunteer":      ["..."],
     "awards":         ["..."],
-    "languages":      ["..."]
+    "languages":      ["..."],
+    "interests":      ["..."],
+    "references":     ["..."]
   },
   "cover_letter": "Full cover letter as a single string. 200-350 words. Plain text only — no markdown, no bullet glyphs, no decorative characters. Use \\n\\n between paragraphs. Address it 'Dear Hiring Manager,' unless the JD names someone specific. Reference 1-2 specific JD requirements and how the candidate's real experience matches. Close with a clear call to next steps (interview, conversation). Sign with the candidate's ACTUAL NAME from the CANDIDATE CONTACT block above — never use placeholders like [Your Name], Your Name, [Name], or [Candidate]. Match the same LEVEL of tailoring as the resume. Canadian professional tone — direct, not flowery.",
   "notes": "1–2 sentence summary of what you changed in the resume and why.",

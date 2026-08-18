@@ -42,10 +42,12 @@ SECTION_ORDER = [
     "skills",
     "certifications",
     "projects",
+    "publications",
     "volunteer",
     "awards",
     "languages",
     "interests",
+    "references",
 ]
 
 SECTION_TITLES = {
@@ -55,10 +57,12 @@ SECTION_TITLES = {
     "skills": "SKILLS",
     "certifications": "CERTIFICATIONS",
     "projects": "PROJECTS",
+    "publications": "PUBLICATIONS",
     "volunteer": "VOLUNTEER EXPERIENCE",
     "awards": "AWARDS",
     "languages": "LANGUAGES",
     "interests": "INTERESTS",
+    "references": "REFERENCES",
 }
 
 

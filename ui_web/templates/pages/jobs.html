@@ -68,6 +68,70 @@
               Simpler than a reactive object with dynamic keys — no Alpine
               reactivity gotchas with property-add-after-init. */
            typeaheadFocus: '',
+           /* Static bundle: top CA cities in exact Photon display format.
+              Rendered client-side instantly on every keystroke so users
+              typing 'toronto' see it before Photon's ~500ms round-trip.
+              Photon still runs in parallel for coverage (US/intl/small towns);
+              its results are dedup'd against this list post-swap. */
+           caCities: [
+             'Ottawa, Ontario, Canada','Toronto, Ontario, Canada',
+             'Mississauga, Ontario, Canada','Brampton, Ontario, Canada',
+             'Hamilton, Ontario, Canada','London, Ontario, Canada',
+             'Kitchener, Ontario, Canada','Windsor, Ontario, Canada',
+             'Waterloo, Ontario, Canada','Kingston, Ontario, Canada',
+             'Barrie, Ontario, Canada','Guelph, Ontario, Canada',
+             'Oshawa, Ontario, Canada',
+             'Montréal, Québec, Canada','Québec, Québec, Canada',
+             'Gatineau, Québec, Canada','Laval, Québec, Canada',
+             'Sherbrooke, Québec, Canada',
+             'Vancouver, British Columbia, Canada','Surrey, British Columbia, Canada',
+             'Burnaby, British Columbia, Canada','Victoria, British Columbia, Canada',
+             'Richmond, British Columbia, Canada',
+             'Calgary, Alberta, Canada','Edmonton, Alberta, Canada',
+             'Red Deer, Alberta, Canada',
+             'Winnipeg, Manitoba, Canada',
+             'Saskatoon, Saskatchewan, Canada','Regina, Saskatchewan, Canada',
+             'Halifax, Nova Scotia, Canada',
+             'Fredericton, New Brunswick, Canada','Moncton, New Brunswick, Canada',
+             'St. John\'s, Newfoundland and Labrador, Canada',
+             'Charlottetown, Prince Edward Island, Canada',
+           ],
+           /* Normalize for dedupe: strip accents, lowercase first token. */
+           _locNormKey(s) {
+             return (s || '').split(',')[0].toLowerCase()
+               .normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+           },
+           get localLocMatches() {
+             const q = (this.locationValue || '').trim().toLowerCase();
+             if (q.length < 1) return [];
+             const qn = q.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+             const first = (s) => this._locNormKey(s);
+             const prefix = this.caCities.filter(c => first(c).startsWith(qn));
+             const contains = this.caCities.filter(c =>
+               !first(c).startsWith(qn) &&
+               c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes(qn)
+             );
+             return [...prefix, ...contains].slice(0, 5);
+           },
+           /* Reactive counter for Photon items currently rendered. Bumped in
+              dedupePhoton() so the outer dropdown's x-show can hide when
+              both local + remote are empty. */
+           remoteCount: 0,
+           /* Called after Photon swap lands. Drops any remote row whose
+              first token matches an already-shown local row. Keeps merged
+              list clean (no Toronto-duplicated-both-lists case). */
+           dedupePhoton() {
+             const remote = document.getElementById('loc-drop-remote');
+             if (!remote) { this.remoteCount = 0; return; }
+             const locals = new Set(this.localLocMatches.map(s => this._locNormKey(s)));
+             remote.querySelectorAll('.typeahead-item').forEach(btn => {
+               const key = this._locNormKey(btn.dataset.value || '');
+               if (locals.has(key)) btn.closest('li')?.remove();
+             });
+             const ul = remote.querySelector('ul');
+             if (ul && !ul.children.length) ul.remove();
+             this.remoteCount = remote.querySelectorAll('.typeahead-item').length;
+           },
            setTypeaheadFocus(key)   { this.typeaheadFocus = key; },
            clearTypeaheadFocus()    { setTimeout(() => { this.typeaheadFocus = ''; }, 150); },
            addQuery() { if (this.queries.length < 3) this.queries.push({value: ''}); },
@@ -124,7 +188,8 @@
                      spellcheck="false"
                      :id="`q-input-${idx}`"
                      hx-get="/api/search-suggest"
-                     hx-trigger="keyup changed delay:300ms, focus"
+                     hx-trigger="keyup changed delay:120ms, focus"
+                     hx-sync="this:replace"
                      :hx-target="`#q-drop-${idx}`"
                      hx-swap="innerHTML"
                      @focus="setTypeaheadFocus(`q-${idx}`)"
@@ -144,15 +209,32 @@
                        spellcheck="false"
                        id="loc-input"
                        hx-get="/api/geocode"
-                       hx-trigger="keyup changed delay:400ms, focus"
-                       hx-target="#loc-drop"
+                       hx-trigger="keyup changed delay:150ms, focus"
+                       hx-sync="this:replace"
+                       hx-target="#loc-drop-remote"
                        hx-swap="innerHTML"
+                       @htmx:after-swap="dedupePhoton()"
                        @focus="setTypeaheadFocus('loc')"
                        @blur="clearTypeaheadFocus()"
                        class="typeahead-input input input-bordered w-full">
+                {# Dual-container dropdown: Alpine renders instant local (CA) matches
+                   above, HTMX renders Photon results below. Divider only shows when
+                   both are non-empty. Dedupe happens client-side post-swap. #}
                 <div id="loc-drop"
-                     x-show="typeaheadFocus === 'loc'" x-cloak
-                     class="typeahead-dropdown"></div>
+                     x-show="typeaheadFocus === 'loc' && (localLocMatches.length > 0 || remoteCount > 0)"
+                     x-cloak
+                     class="typeahead-dropdown">
+                  <ul x-show="localLocMatches.length > 0" class="typeahead-list">
+                    <template x-for="item in localLocMatches" :key="item">
+                      <li>
+                        <button type="button" class="typeahead-item" tabindex="-1"
+                                @mousedown.prevent="fillTypeahead('loc', 0, $el.dataset.value)"
+                                :data-value="item" x-text="item"></button>
+                      </li>
+                    </template>
+                  </ul>
+                  <div id="loc-drop-remote"></div>
+                </div>
               </div>
             </template>
             <template x-if="idx > 0">
