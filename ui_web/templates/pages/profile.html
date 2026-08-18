@@ -21,7 +21,7 @@
 {# Root x-data — modal state + section toggles. Kept at page level so
    the modal can be positioned as a sibling of the card that opened it. #}
 <div class="space-y-6"
-     x-data="{ atsModal: false, resumeModal: {{ 'true' if just_regenerated else 'false' }}, showReplace: false, showOlder: false, settingsTab: 'api' }"
+     x-data="{ atsModal: false, resumeModal: {{ 'true' if just_regenerated else 'false' }}, showReplace: false, showOlder: false, settingsTab: 'notifications' }"
      x-init="{% if just_regenerated %}$store.toast.show('Resume re-parsed cleanly', 'success'); history.replaceState({}, '', '/profile');{% endif %}"
      @keydown.escape.window="atsModal = false; resumeModal = false">
 
@@ -187,22 +187,30 @@
 
     {# ═══ RIGHT: Settings hub with seg-tabs ═══ #}
     <section class="card-quiet">
+      {# API key + Updates tabs hidden from users as of 2026-08-18.
+       - API key is now backend-only (env / Fly secrets). The tab content
+         + POST /profile/api-key handlers stay in the codebase so the
+         future admin panel (docs/rate-limiting-quotas.md §10) can wire
+         a user-management view on top without re-implementing.
+       - Updates was for the pre-web-app installer flow (Update
+         Jobot.command). Web app self-updates via Fly deploy; users don't
+         drive it. Tab removed; corresponding /profile/updates/check
+         endpoint is still callable but nothing links to it.
+
+       Notifications remains as the only user-facing settings tab. When
+       auth ships and we introduce an admin role, restore the API-key
+       tab behind an is_admin gate. #}
       <div class="seg-tabs mb-5">
-        <button type="button" @click="settingsTab = 'api'"
-                :class="settingsTab === 'api' ? 'seg-tab seg-tab--active' : 'seg-tab'">
-          <i class="ph-thin ph-key i-4"></i>API key
-        </button>
-        <button type="button" @click="settingsTab = 'updates'"
-                :class="settingsTab === 'updates' ? 'seg-tab seg-tab--active' : 'seg-tab'">
-          <i class="ph-thin ph-cloud-arrow-down i-4"></i>Updates
-        </button>
         <button type="button" @click="settingsTab = 'notifications'"
                 :class="settingsTab === 'notifications' ? 'seg-tab seg-tab--active' : 'seg-tab'">
           <i class="ph-thin ph-bell i-4"></i>Notifications
         </button>
       </div>
 
-      {# ─── Tab: API key + usage quota ─── #}
+      {# ─── Tab: API key + usage quota (hidden — admin-only surface).
+       Kept in the template so the admin view can restore visibility by
+       flipping the outer conditional (currently always false). #}
+      {% if false %}
       <div x-show="settingsTab === 'api'" x-data="{ showEditor: false }">
         <div class="flex items-start justify-between gap-3 mb-3">
           <div>
@@ -285,24 +293,14 @@
         {% endif %}
       </div>
 
-      {# ─── Tab: App updates ─── #}
-      <div x-show="settingsTab === 'updates'" x-cloak>
-        <div class="mb-3">
-          <div class="text-label">App updates</div>
-          <p class="text-sm text-body-muted mt-1">
-            Running <strong>v{{ jobot_version }}</strong>. Installing runs via <code>Update Jobot.command</code>.
-          </p>
-        </div>
-        <div id="update-status"
-             hx-get="/profile/updates/check"
-             hx-trigger="load"
-             hx-swap="innerHTML">
-          <div class="text-sm text-body-muted inline-flex items-center gap-2">
-            <span class="loading loading-spinner loading-xs"></span>
-            Checking for updates…
-          </div>
-        </div>
-      </div>
+      {# API-key tab content ends here. Kept behind `{% if false %}` for
+       admin restoration; see the seg-tabs comment above. #}
+      {% endif %}
+
+      {# ─── Tab: App updates — REMOVED 2026-08-18.
+       Web app updates via Fly deploy; users don't drive it. The
+       /profile/updates/check endpoint is still callable (in case an
+       admin wants version diagnostics) but no UI links to it. #}
 
       {# ─── Tab: Notifications ─── #}
       <div x-show="settingsTab === 'notifications'" x-cloak>

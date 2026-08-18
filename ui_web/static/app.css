@@ -318,6 +318,30 @@ body {
     font-size: 1.1rem;
   }
 }
+
+/* Toast wrapper — bottom-right fixed. On mobile the bar sits above the
+   fixed bottom nav (~3.5rem tall) so the Undo button of a swipe toast
+   isn't obscured by the Profile tab. On desktop there's no bottom nav
+   so we use the base offset. */
+.toast-wrapper {
+  bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  right: calc(1rem + env(safe-area-inset-right));
+}
+@media (min-width: 1024px) {
+  .toast-wrapper {
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Kill horizontal scroll globally. Any element that accidentally exceeds
+   viewport width (long strings, over-wide grids, DaisyUI defaults with
+   min-widths) would otherwise cause the whole page to be pannable,
+   which on mobile reads as "the site is expanded / blank on the right."
+   Fixed elements (nav, toast, sheets) remain viewport-anchored. */
+html, body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
 .score-badge .score-num {
   font-size: 1.25rem;
   line-height: 1;

@@ -627,9 +627,11 @@
   {% include "partials/mobile_detail_sheet.html" %}
 
   {# ── Toast queue — bottom-right, fixed, auto-dismisses in 5s.
-     Padding accounts for iOS home indicator via env(safe-area-inset-*). #}
-  <div x-data class="fixed z-[100] space-y-2 pointer-events-none max-w-sm"
-       style="bottom: calc(1rem + env(safe-area-inset-bottom)); right: calc(1rem + env(safe-area-inset-right));">
+     `toast-wrapper` class handles positioning: on mobile the offset is
+     pushed above the fixed bottom nav (h-14 = 3.5rem) so the toast
+     doesn't sit on top of the Profile tab. On desktop no nav → base
+     offset. Safe-area accounts for iOS home indicator. #}
+  <div x-data class="fixed z-[100] space-y-2 pointer-events-none max-w-sm toast-wrapper">
     <template x-for="t in $store.toast.items" :key="t.id">
       <div class="pointer-events-auto rounded-lg shadow-lg px-4 py-3 flex items-center gap-3"
            :class="t.type === 'success'
