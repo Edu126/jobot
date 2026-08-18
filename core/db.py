@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -208,6 +208,19 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     expiry INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rate_limits_expiry ON rate_limits(expiry);
+
+-- v9: per-job "viewed" state. A card is marked viewed when the user has
+-- kept the detail pane open for >3 seconds (see the client-side timer in
+-- pages/jobs_results.html) — the "I've actually read this" signal, not
+-- "I accidentally clicked it once." Persists globally per job_id so a
+-- job that appears in multiple searches shows viewed everywhere.
+--
+-- No user_id yet; when auth ships this becomes viewed_jobs(user_id, job_id).
+CREATE TABLE IF NOT EXISTS viewed_jobs (
+    job_id     TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    viewed_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_viewed_jobs_at ON viewed_jobs(viewed_at);
 """
 
 
@@ -482,6 +495,33 @@ def get_job(job_id: str, path: Path = DB_PATH) -> Optional[dict]:
     with connect(path) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return dict(row) if row else None
+
+
+def mark_viewed(job_id: str, path: Path = DB_PATH) -> None:
+    """Mark a job as viewed. Idempotent — updates viewed_at on repeat calls
+    so the most recent view timestamp wins (useful for "recently viewed"
+    lists we might add later)."""
+    with tx(path) as conn:
+        conn.execute(
+            "INSERT INTO viewed_jobs (job_id, viewed_at) VALUES (?, ?) "
+            "ON CONFLICT(job_id) DO UPDATE SET viewed_at = excluded.viewed_at",
+            (job_id, _now()),
+        )
+
+
+def get_viewed_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str]:
+    """Return the subset of `job_ids` the user has viewed. Batch query so
+    the results page can render viewed chips in one SQL round-trip."""
+    ids = list(job_ids)
+    if not ids:
+        return set()
+    with connect(path) as conn:
+        placeholders = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT job_id FROM viewed_jobs WHERE job_id IN ({placeholders})",
+            ids,
+        ).fetchall()
+    return {r["job_id"] for r in rows}
 
 
 def get_jobs(job_ids: Iterable[str], path: Path = DB_PATH) -> list[dict]:

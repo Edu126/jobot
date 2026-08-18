@@ -41,7 +41,16 @@
       // as the user scrolls / filters.
       Alpine.store('selectedJob', {
         id: null,
+        _viewedTimer: null,           // pending "mark viewed" timeout id
+        _viewedMarked: new Set(),     // per-session dedup — no duplicate POSTs
         select(id) {
+          // Cancel any pending "mark viewed" timer from the previous card.
+          // Rapid switching → nothing gets marked, matching the "you have
+          // to actually spend time on it" intent behind the 3s threshold.
+          if (this._viewedTimer) {
+            clearTimeout(this._viewedTimer);
+            this._viewedTimer = null;
+          }
           this.id = id;
           if (window.htmx) {
             htmx.ajax('GET', `/jobs/detail/${id}`, {
@@ -53,6 +62,24 @@
           // the previous card don't leave the new content mid-scroll.
           const scroll = document.getElementById('job-detail-scroll');
           if (scroll) scroll.scrollTop = 0;
+
+          // Start the 3-second "actually read this" timer. Only POSTs if
+          // the same id is still selected 3s later — switching cards
+          // cancels via the clearTimeout above. Skip if we already
+          // marked this id in the current session.
+          if (!id || this._viewedMarked.has(id)) return;
+          const target = id;
+          this._viewedTimer = setTimeout(() => {
+            if (this.id !== target) return;   // guard against races
+            this._viewedMarked.add(target);
+            const body = new FormData();
+            fetch(`/jobs/viewed/${encodeURIComponent(target)}`, {
+              method: 'POST',
+              body,
+              keepalive: true,   // survives tab close mid-flight
+            }).catch(() => { /* viewed tracking must never break UX */ });
+            this._viewedTimer = null;
+          }, 3000);
         },
       });
 
@@ -62,6 +89,7 @@
         remoteFilter: 'any',   // 'any' | 'remote' | 'onsite'
         maxAgeDays: null,      // null = no limit; used by Top matches date filter
         onlyNew: false,        // if true, only jobs first_seen within 48h
+        hideViewed: false,     // fresh view (post-expand) defaults this to true
         matches(job) {
           if (job.score < this.minScore) return false;
           if (this.hideFrench && job.french) return false;
@@ -69,6 +97,7 @@
           if (this.remoteFilter === 'onsite' && job.remote) return false;
           if (this.maxAgeDays !== null && job.age_days !== undefined && job.age_days > this.maxAgeDays) return false;
           if (this.onlyNew && !job.is_new) return false;
+          if (this.hideViewed && job.viewed) return false;
           return true;
         },
         visibleCount(jobs) {

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Running multi-search — Jobot{% endblock %}
+{% set is_expand = task.kind == "expand" %}
+{% block title %}{% if is_expand %}Expanding search{% else %}Running multi-search{% endif %} — Jobot{% endblock %}
 {% block container_class %}max-w-3xl{% endblock %}
 
 {% block content %}
@@ -10,27 +11,43 @@
 
 <div class="card-quiet py-16 text-center"
      x-data="{
-       // When the poll returns HX-Redirect, HTMX handles navigation.
-       // We hook after-swap to fire the browser notification if enabled.
        taskId: '{{ task_id }}',
+       kind: '{{ task.kind }}',
      }"
      @htmx:after-request.window="
        const xhr = $event.detail.xhr;
        if (xhr && xhr.getResponseHeader && xhr.getResponseHeader('HX-Redirect')) {
-         Alpine.store('notif').fire('Jobot: multi-search done', 'Your results are ready.');
-         Alpine.store('toast').show('Multi-search complete — loading results', 'success');
+         const isExpand = kind === 'expand';
+         Alpine.store('notif').fire(
+           isExpand ? 'Jobot: expand done' : 'Jobot: multi-search done',
+           isExpand ? 'Fresh results merged into your original search.' : 'Your results are ready.'
+         );
+         Alpine.store('toast').show(
+           isExpand ? 'Expand complete — showing fresh results' : 'Multi-search complete — loading results',
+           'success'
+         );
        }
      ">
 
   {# Big obvious spinner #}
   <div class="loading loading-spinner loading-lg mx-auto" style="color: oklch(var(--p)); width: 4rem; height: 4rem;"></div>
 
-  <h2 class="text-title mt-6">Running your searches</h2>
-  <p class="text-body-muted mt-2 max-w-md mx-auto">
-    Searching {{ task.queries | length }} job title{{ '' if task.queries|length == 1 else 's' }}
-    with an 8-second cooldown between each to avoid rate-limits.
-    Takes ~{{ (task.queries|length * 70) // 60 }}–{{ ((task.queries|length * 70) // 60) + 1 }} minutes total.
-  </p>
+  {# Header + subtitle branch on kind so the copy matches what's running. #}
+  {% if is_expand %}
+    <h2 class="text-title mt-6">Expanding your search</h2>
+    <p class="text-body-muted mt-2 max-w-md mx-auto">
+      Deeper scrape on <span class="font-medium">"{{ task.query }}"</span> — 2× the results window,
+      2× the time range, 2× the geographic radius. Takes about 15-30 seconds.
+      When done, this tab flips to the fresh view (new + unviewed jobs only).
+    </p>
+  {% else %}
+    <h2 class="text-title mt-6">Running your searches</h2>
+    <p class="text-body-muted mt-2 max-w-md mx-auto">
+      Searching {{ task.queries | length }} job title{{ '' if task.queries|length == 1 else 's' }}
+      with an 8-second cooldown between each to avoid rate-limits.
+      Takes ~{{ (task.queries|length * 70) // 60 }}–{{ ((task.queries|length * 70) // 60) + 1 }} minutes total.
+    </p>
+  {% endif %}
 
   {# Live status — polled every 2s. Auto-redirect on complete via HX-Redirect. #}
   <div class="mt-6 text-sm min-h-[2rem]"
@@ -40,21 +57,37 @@
     <div class="text-body-muted">Starting…</div>
   </div>
 
-  {# What the user is searching for #}
+  {# Query context — labeled to match kind. #}
   <div class="mt-8 pt-6 border-t border-base-300 max-w-md mx-auto">
-    <div class="text-label mb-2">Searching for</div>
-    <div class="flex flex-wrap justify-center gap-2">
-      {% for q in task.queries %}
-      <span class="chip chip-neutral">{{ q }}</span>
-      {% endfor %}
-    </div>
+    {% if is_expand %}
+      <div class="text-label mb-2">Based on</div>
+      <div class="flex flex-wrap justify-center gap-2">
+        <span class="chip chip-neutral">{{ task.query }}</span>
+      </div>
+    {% else %}
+      <div class="text-label mb-2">Searching for</div>
+      <div class="flex flex-wrap justify-center gap-2">
+        {% for q in task.queries %}
+        <span class="chip chip-neutral">{{ q }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
     <div class="text-xs text-base-content/40 mt-3">in {{ task.location }}</div>
   </div>
 
-  {# Reassurance for the user — can leave the tab #}
+  {# Reassurance — differentiated. Expand runs in a NEW tab launched from
+     the results page, so we tell users they can close this tab and go
+     back to browsing. Multi-search navigates in place. #}
   <div class="mt-8 text-xs text-body-muted max-w-md mx-auto">
-    You can leave this tab open or switch to another tab —
-    we'll <strong>notify you when it's done</strong> (if you enabled browser notifications on Profile).
+    {% if is_expand %}
+      You can close this tab and keep browsing your original search — the
+      expansion will keep running in the background. Reopen this tab (or
+      wait) to see the fresh results.
+    {% else %}
+      You can leave this tab open or switch to another tab —
+      we'll <strong>notify you when it's done</strong> (if you enabled browser
+      notifications on Profile).
+    {% endif %}
   </div>
 
 </div>

@@ -589,13 +589,29 @@ async def jobs_results(request: Request, cache_key: str):
     which streams scores in 5-at-a-time via OOB HTMX swaps. Users see
     the page instantly instead of waiting 30s+ for a full re-score
     after an Expand.
+
+    `?view=fresh` — landed on after Expand completes. Same underlying
+    cache; the template defaults its client-side filters to hide
+    already-viewed jobs and chips cards that were added by the most
+    recent expand pass as "new". The user can toggle back to the
+    unified list without a server round-trip.
     """
     cached = _find_cached_by_key(cache_key)
     if cached is None:
         raise HTTPException(status_code=404, detail="Search cache not found")
 
+    view = request.query_params.get("view", "all").lower()
+    if view not in ("all", "fresh"):
+        view = "all"
+
     jobs_dicts = [j.to_dict() for j in cached.jobs]
     db.upsert_jobs(jobs_dicts)   # ensure FK for scoring
+
+    # Load viewed + "new since expand" sets in one shot for the whole
+    # cache. Both drive per-card flags AND the two-line header stats.
+    all_ids = [j["id"] for j in jobs_dicts]
+    viewed_ids = db.get_viewed_ids(all_ids)
+    new_since_expand_ids = set(cached.last_expand_added_ids)
 
     resume = db.get_current_resume()
     api_key = resolve_api_key()
@@ -651,6 +667,8 @@ async def jobs_results(request: Request, cache_key: str):
             j["_gaps"] = []
             j["_pending_score"] = can_score_async
         j["_experience"] = _extract_experience(j.get("description", ""))
+        j["_is_viewed"] = j["id"] in viewed_ids
+        j["_is_new_since_expand"] = j["id"] in new_since_expand_ids
 
         # "New" flag — first_seen within 48h
         j["_is_new"] = False
@@ -679,9 +697,20 @@ async def jobs_results(request: Request, cache_key: str):
             ),
             "remote": int(bool(j.get("is_remote"))),
             "is_new": int(bool(j.get("_is_new"))),
+            "viewed": int(bool(j.get("_is_viewed"))),
+            "new_since_expand": int(bool(j.get("_is_new_since_expand"))),
         }
         for j in jobs_dicts
     ]
+
+    # Aggregate counts for the fresh-view header. Computed server-side so
+    # the template doesn't need Alpine reactivity for them.
+    total_new_since_expand = len(new_since_expand_ids & set(all_ids))
+    total_viewed = len(viewed_ids)
+    total_unviewed_from_before = sum(
+        1 for j in jobs_dicts
+        if not j["_is_new_since_expand"] and not j["_is_viewed"]
+    )
 
     return templates.TemplateResponse(
         request,
@@ -701,6 +730,11 @@ async def jobs_results(request: Request, cache_key: str):
             "scoring_error": scoring_error,
             "quota_exhausted": quota_exhausted,
             "exhausted_models": exhausted_models(),
+            "view": view,
+            "is_fresh_view": view == "fresh",
+            "total_new_since_expand": total_new_since_expand,
+            "total_unviewed_from_before": total_unviewed_from_before,
+            "total_viewed": total_viewed,
         },
     )
 
@@ -986,46 +1020,22 @@ async def jobs_loading_page(request: Request, task_id: str):
 
 @router.get("/jobs/loading/{task_id}/status")
 async def jobs_loading_status(request: Request, task_id: str):
-    """Polled every 2-3s by two different clients:
-
-    - The dedicated `/jobs/loading/{id}` page (multi-search) — default
-      mode. On done, returns HX-Redirect so HTMX navigates to results.
-    - The inline expand widget on `/jobs/results/{key}` (see
-      `_expand_widget_*_html`) — `?inline=1` mode. On done, returns a
-      "refresh" pill (no navigation). Fires a toast via inline <script>.
-
-    Both share the same task_id + status polling; the response shape
-    differs only in the terminal state. Still-running responses are also
-    shape-differentiated so the inline widget re-uses its polling
-    envelope while the loading page uses a plain text line."""
-    inline = request.query_params.get("inline", "0") == "1"
+    """Polled every 2s by the loading page for both multi-search and
+    expand tasks. Returns HTML fragment for the running/failed states;
+    on done, returns HX-Redirect so HTMX drives the browser to the
+    task's result URL (results page or ?view=fresh for expand)."""
     task = search_tasks.get(task_id)
-
     if task is None:
-        if inline:
-            return HTMLResponse(_expand_widget_failed_html("Task not found — try again."))
         return HTMLResponse('<div class="text-error">Task not found.</div>', status_code=200)
-
     if task["status"] == "done":
-        if inline:
-            return HTMLResponse(_expand_widget_done_html(
-                task.get("message") or "New results ready."
-            ))
         return Response(status_code=200, headers={"HX-Redirect": task.get("result_url") or "/jobs"})
-
     if task["status"] == "failed":
-        error = task.get("error") or "Unknown error"
-        if inline:
-            return HTMLResponse(_expand_widget_failed_html(error))
         return HTMLResponse(
-            f'<div class="text-error text-sm">{error}</div>',
+            f'<div class="text-error text-sm">{task.get("error", "Unknown error")}</div>',
             status_code=200,
         )
-
     # Still running
     message = task.get("message", "Working…")
-    if inline:
-        return HTMLResponse(_expand_widget_polling_html(task_id, message))
     try:
         started = datetime.fromisoformat((task.get("started_at") or "").rstrip("Z"))
         elapsed = int((datetime.utcnow() - started).total_seconds())
@@ -1147,38 +1157,29 @@ async def jobs_run_bulk(search_ids: list[str] = Form(...)):
 @router.post("/jobs/results/{cache_key}/expand")
 @limiter.limit("10/hour")
 async def jobs_expand(request: Request, cache_key: str):
-    """Broaden an existing search by running 2 LLM-generated variant queries
-    and merging the results into the SAME cache entry.
+    """Broaden an existing search by running a deeper same-query scrape,
+    merging new jobs into the same cache entry.
 
-    Response contract: this endpoint is triggered by a plain <form
-    target="_blank"> on the results page, so we return a full HTML page
-    (or a 303 redirect to the loading page), NOT an HTMX fragment. That
-    keeps the user's original results tab intact while the expansion
-    runs and reports progress in a new tab.
+    Triggered by a plain <form target="_blank"> on the results page so
+    it opens in a NEW TAB. Returns a 303 to a loading page that polls
+    the background task and — when done — HX-Redirects to
+    /jobs/results/{key}?view=fresh (the "just what came from this
+    expand" view). The user's original tab is never touched.
 
-    Both kill switches gate this: it does an LLM call AND scrape calls.
-
-    Answers the recurring "we're only seeing the same 30 jobs" complaint:
-    varies the query dimension (adjacent titles) rather than the params,
-    which is what actually surfaces new postings on niche searches.
-
-    Flow:
-        1. Load the cache entry — need original query + top titles.
-        2. Ask Gemini for 2 adjacent titles not already present.
-        3. Kick off `_run_expand_background` in a thread.
-        4. Redirect to /jobs/loading/{task_id}; the loader polls and
-           finally sends the user back to /jobs/results/{cache_key} with
-           the widened result set.
+    303 (See Other) converts the POST to a GET on the loading URL so a
+    browser refresh doesn't re-fire the expand task.
     """
     if feature_flags.is_scrape_disabled():
-        return _expand_inline_error(feature_flags.scrape_disabled_message())
+        return _expand_error_page(feature_flags.scrape_disabled_message(),
+                                  status=feature_flags.KILL_SWITCH_STATUS)
     cached = jobs_cache.load_by_key(cache_key)
     if cached is None:
-        return _expand_inline_error("Search cache not found — reload the page.")
+        return _expand_error_page("Search cache not found — reload the results page and try again.",
+                                  status=404)
 
     cached_meta = _load_cache_params(cache_key)
     if not cached_meta or not cached_meta.get("params"):
-        return _expand_inline_error("Cache missing params — can't expand.")
+        return _expand_error_page("Cache missing params — can't expand.", status=400)
     params = JobSearchParams(**cached_meta["params"])
     original_label = cached_meta.get("params_label") or params.query
 
@@ -1200,119 +1201,30 @@ async def jobs_expand(request: Request, cache_key: str):
     )
     thread.start()
 
-    # Floating notification lifecycle:
-    #   POST → returns initial "Expanding…" toast into #expand-notification-slot
-    #   toast polls /jobs/loading/{id}/status?inline=1 every 3s
-    #   done  → toast becomes "New results ready · Refresh · ×"
-    #   fail  → toast becomes "Expand failed · ×"
-    # Toast is a fixed bottom-left card so it doesn't interrupt browsing.
-    return HTMLResponse(_expand_widget_polling_html(task_id, message="Starting…"))
-
-
-# ── HTML fragments for the floating expand-notification widget ────────
-#
-# All three states share the same wrapper — fixed bottom-left card with
-# thin border + soft shadow, white bg, no filled color blocks. Follows
-# the codebase's hairline aesthetic instead of DaisyUI's filled badges.
-# Small colored dot on the left signals state (spinner / green / red)
-# without turning the whole card into a color block.
-
-_TOAST_WRAPPER_STYLE = (
-    "background: white; "
-    "border: 1px solid hsl(0 0% 88%); "
-    "box-shadow: 0 8px 24px rgba(0,0,0,0.10); "
-    "border-radius: 12px; "
-    "padding: 14px 18px; "
-    "min-width: 320px; "
-    "max-width: 460px;"
-)
-
-# Common dismiss button — matches the "×" affordance used elsewhere.
-_DISMISS_BUTTON = (
-    '<button type="button" '
-    'onclick="this.closest(\'#expand-widget\').remove()" '
-    'aria-label="Dismiss" '
-    'style="background:none;border:none;font-size:1.35rem;line-height:1;'
-    'color:hsl(0 0% 55%);cursor:pointer;padding:2px 6px;">×</button>'
-)
-
-
-def _expand_widget_polling_html(task_id: str, message: str) -> str:
-    """Rendered by /expand (initial) AND by the ?inline=1 status endpoint
-    (subsequent polls) while the task is still running. Keeps the
-    hx-trigger so it re-polls every 3s until swapped by a done/failed
-    fragment that lacks the trigger."""
-    return (
-        f'<div id="expand-widget"'
-        f' style="{_TOAST_WRAPPER_STYLE}"'
-        f' hx-get="/jobs/loading/{task_id}/status?inline=1"'
-        f' hx-trigger="every 3s"'
-        f' hx-swap="outerHTML"'
-        f' hx-target="this">'
-        f'  <div style="display:flex;align-items:center;gap:12px;">'
-        f'    <span class="loading loading-spinner loading-sm" style="color:hsl(210 60% 50%);flex-shrink:0;"></span>'
-        f'    <div style="flex:1;min-width:0;">'
-        f'      <div style="font-size:14px;font-weight:600;color:hsl(0 0% 20%);">Expanding search</div>'
-        f'      <div style="font-size:12.5px;color:hsl(0 0% 42%);margin-top:3px;">{_esc(message)}</div>'
-        f'    </div>'
-        f'    {_DISMISS_BUTTON}'
-        f'  </div>'
-        f'</div>'
+    return Response(
+        status_code=303,
+        headers={"Location": f"/jobs/loading/{task_id}"},
     )
 
 
-def _expand_widget_done_html(message: str) -> str:
-    """Terminal state — no hx-trigger, so polling stops. Persists on
-    screen until the user clicks Refresh or dismisses. Small green dot
-    signals success without filling the whole card."""
-    return (
-        f'<div id="expand-widget" style="{_TOAST_WRAPPER_STYLE}">'
-        f'  <div style="display:flex;align-items:center;gap:12px;">'
-        f'    <span style="width:10px;height:10px;border-radius:50%;background:hsl(140 60% 45%);flex-shrink:0;"></span>'
-        f'    <div style="flex:1;min-width:0;">'
-        f'      <div style="font-size:14px;font-weight:600;color:hsl(0 0% 20%);">New results ready</div>'
-        f'      <div style="font-size:12.5px;color:hsl(0 0% 42%);margin-top:3px;">{_esc(message)}</div>'
-        f'    </div>'
-        f'    <button type="button" class="btn btn-sm btn-outline"'
-        f'            onclick="location.reload()"'
-        f'            style="border-color:hsl(0 0% 75%);color:hsl(0 0% 25%);">Refresh</button>'
-        f'    {_DISMISS_BUTTON}'
-        f'  </div>'
-        f'</div>'
+def _expand_error_page(message: str, *, status: int) -> HTMLResponse:
+    """Standalone HTML error for the /expand tab-opening flow. Since the
+    Expand button opens a new tab, an error can't be an HTMX fragment
+    swapped into the results page — it has to render as a page in the
+    new tab."""
+    return HTMLResponse(
+        f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Expand — Jobot</title>
+<style>body{{font:16px/1.5 system-ui,sans-serif;max-width:520px;margin:6rem auto;padding:0 1rem;color:#333}}
+h1{{font-size:1.1rem;color:#a44}} .btn{{display:inline-block;margin-top:1.5rem;padding:.5rem .9rem;
+border:1px solid #999;border-radius:.4rem;text-decoration:none;color:#333}}</style>
+</head><body>
+<h1>Couldn't start the expansion</h1>
+<p>{message}</p>
+<a class="btn" href="javascript:window.close()">Close this tab</a>
+</body></html>""",
+        status_code=status,
     )
-
-
-def _expand_widget_failed_html(error: str) -> str:
-    return (
-        f'<div id="expand-widget" style="{_TOAST_WRAPPER_STYLE}">'
-        f'  <div style="display:flex;align-items:center;gap:12px;">'
-        f'    <span style="width:10px;height:10px;border-radius:50%;background:hsl(0 60% 50%);flex-shrink:0;"></span>'
-        f'    <div style="flex:1;min-width:0;">'
-        f'      <div style="font-size:14px;font-weight:600;color:hsl(0 0% 20%);">Expand failed</div>'
-        f'      <div style="font-size:12.5px;color:hsl(0 0% 42%);margin-top:3px;">{_esc(error)}</div>'
-        f'    </div>'
-        f'    {_DISMISS_BUTTON}'
-        f'  </div>'
-        f'</div>'
-    )
-
-
-def _expand_inline_error(message: str) -> HTMLResponse:
-    """Returned by the /expand endpoint itself when it refuses before
-    even starting a task (kill switch, missing cache). Rendered as a
-    failed-state widget — same floating position, no polling."""
-    return HTMLResponse(_expand_widget_failed_html(message), status_code=200)
-
-
-def _esc(s: str) -> str:
-    """Cheap HTML escape for values we build into inline fragments."""
-    return (
-        (s or "")
-        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-
-
 
 
 def _run_expand_background(
@@ -1363,9 +1275,12 @@ def _run_expand_background(
             all_new[j.id] = j
 
     if not all_new:
+        # No new jobs to chip — send the user to the fresh view anyway,
+        # where the "0 new since expand" header + "unviewed from before"
+        # count still gives them something actionable.
         search_tasks.mark_done(
             task_id,
-            result_url=f"/jobs/results/{cache_key}",
+            result_url=f"/jobs/results/{cache_key}?view=fresh",
             message=f"No new jobs found beyond your current {len(already_ids)}.",
         )
         return
@@ -1389,9 +1304,13 @@ def _run_expand_background(
         failure_count=0,
     )
 
+    # Fresh view: filters to jobs added by this expand pass +
+    # jobs the user hasn't viewed yet from before. Keeps them out of the
+    # already-worked-through pile so the new tab feels like turning a
+    # page, not re-reading the previous one.
     search_tasks.mark_done(
         task_id,
-        result_url=f"/jobs/results/{cache_key}",
+        result_url=f"/jobs/results/{cache_key}?view=fresh",
         message=f"{len(new_jobs)} new jobs added ({len(merged.jobs)} total).",
     )
 
@@ -1623,6 +1542,26 @@ async def jobs_detail(request: Request, job_id: str):
         "partials/job_detail.html",
         {"job": job, "ai": ai},
     )
+
+
+@router.post("/jobs/viewed/{job_id}")
+@limiter.limit("600/hour")
+async def jobs_mark_viewed(request: Request, job_id: str):
+    """Mark a job as viewed. Fired by the client-side 3-second
+    detail-pane timer — the "I actually read this" signal, not an
+    accidental click.
+
+    Idempotent (INSERT ... ON CONFLICT DO UPDATE), so repeat POSTs from a
+    stale tab or duplicate timer are harmless. Returns 204 — nothing to
+    render, the client already knows what changed.
+
+    Rate limit generous (10/min) because a heavy browsing session opens
+    dozens of cards; the endpoint is cheap (one UPSERT).
+    """
+    if not db.get_job(job_id):
+        return Response(status_code=404)
+    db.mark_viewed(job_id)
+    return Response(status_code=204)
 
 
 @router.post("/jobs/save/{job_id}")

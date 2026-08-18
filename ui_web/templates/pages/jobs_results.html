@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ label }} — Jobs — Jobot{% endblock %}
+{% block title %}{{ label }}{% if is_fresh_view %} · Fresh{% endif %} — Jobs — Jobot{% endblock %}
 {# Wider container for the split viewport — need room for list + detail #}
 {% block container_class %}max-w-7xl{% endblock %}
 
@@ -11,26 +11,55 @@
 
 <div x-data="{
        jobs: JSON.parse(document.getElementById('jobs-meta-data').textContent),
+       pendingScoreCount: {{ pending_score_count | default(0) }},
+       isFreshView: {{ is_fresh_view | tojson }},
+       autoSnapped: false,
+       totalJobs: {{ total_jobs }},
        init() {
-         // Reset filters that are irrelevant here or bleed in from other pages.
+         // Reset filters that bleed in from other pages or aren't relevant here.
          $store.filters.maxAgeDays = null;
          $store.filters.onlyNew = false;
-         // Default: only surface jobs the resume actually matches. Users can
-         // still drag the slider down. Ties into the lazy-scoring flow so
-         // pending jobs (score=0) stay hidden until they score in, and jobs
-         // that score >=60 pop into view as their badge fills.
-         $store.filters.minScore = 60;
-         // Expose an updater that OOB-scored batches call to keep this
-         // page's jobs_meta reactive — otherwise the client-side filter
-         // still sees score=0 and hides freshly-scored cards.
+         // Fresh view (post-expand) hides jobs the user has already read.
+         // Regular view starts fully open — score-based auto-snap arrives later.
+         $store.filters.hideViewed = this.isFreshView;
+         // Start with everything visible. In the all-view, once all scores
+         // arrive we auto-snap to minScore=60 (with a dismissible toast) so
+         // the settled page defaults to 'quality only'. In the fresh view we
+         // don't auto-snap — the user came here to see fresh material.
+         $store.filters.minScore = 0;
+         // Score updater called by OOB batch script per newly-scored job.
+         // Each call = one previously-pending job now has a real score, so
+         // we decrement the pending counter and auto-snap when it hits 0.
          window.__jobotUpdateScore = (id, score) => {
            const j = this.jobs.find(x => x.id === id);
            if (j) j.score = score;
+           if (this.pendingScoreCount > 0) this.pendingScoreCount--;
+           if (this.pendingScoreCount === 0 && !this.autoSnapped && !this.isFreshView) {
+             this.autoSnapped = true;
+             this.snapToQualityFilter();
+           }
          };
+         // If we loaded with everything already scored, auto-snap after paint.
+         if (this.pendingScoreCount === 0 && !this.isFreshView) {
+           this.$nextTick(() => this.snapToQualityFilter());
+         }
+       },
+       snapToQualityFilter() {
+         if ($store.filters.minScore >= 60) return;
+         $store.filters.minScore = 60;
+         const hidden = this.jobs.filter(j => j.score < 60).length;
+         if (hidden > 0) {
+           Alpine.store('toast').show(
+             'Filtered to score ≥ 60 · ' + hidden + ' hidden — drag the slider to show more',
+             'info'
+           );
+         }
+       },
+       progressPct() {
+         if (this.totalJobs === 0) return 100;
+         return Math.round(((this.totalJobs - this.pendingScoreCount) / this.totalJobs) * 100);
        },
        destroy() {
-         // Route away / page unload — release the global so a follow-on
-         // page can register its own if it uses the same pattern.
          if (window.__jobotUpdateScore) delete window.__jobotUpdateScore;
        }
      }">
@@ -39,28 +68,37 @@
 <div class="mb-6">
   <a href="/jobs" class="text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer inline-flex items-center gap-1"><i class="ph-thin ph-arrow-left i-4"></i>Back to search</a>
   <div class="flex items-start justify-between gap-4 mt-3">
-    <h1 class="text-display">{{ label }}</h1>
+    <div class="min-w-0">
+      <h1 class="text-display truncate">{{ label }}</h1>
+      {% if is_fresh_view %}
+      <div class="text-xs text-body-muted mt-1 inline-flex items-center gap-1.5">
+        <span style="width:6px;height:6px;border-radius:50%;background:hsl(140 60% 45%);display:inline-block;"></span>
+        Fresh view — <a href="/jobs/results/{{ cache_key }}" class="underline hover:text-base-content">switch to full list</a>
+      </div>
+      {% elif total_new_since_expand > 0 %}
+      <div class="text-xs text-body-muted mt-1">
+        {{ total_new_since_expand }} new since your last expand ·
+        <a href="/jobs/results/{{ cache_key }}?view=fresh" class="underline hover:text-base-content">view just those</a>
+      </div>
+      {% endif %}
+    </div>
     {# Expand: deeper scrape on the same query (2× results_wanted, 2×
-     hours_old, 2× distance). No navigation, no LLM, no adjacent titles.
-     Response HTML lands in #expand-notification-slot (fixed bottom-left)
-     so the user keeps browsing while it runs. Button itself doesn't
-     change state — floating toast owns the lifecycle. #}
-    <button type="button"
-            class="btn btn-sm btn-outline whitespace-nowrap"
-            hx-post="/jobs/results/{{ cache_key }}/expand"
-            hx-target="#expand-notification-slot"
-            hx-swap="innerHTML"
-            title="Runs a deeper scrape on this same query and merges new results in.">
-      <i class="ph-thin ph-arrows-out"></i>
-      Expand search
-    </button>
+     hours_old, 2× distance). Opens a NEW TAB pointing at a dedicated
+     loading page that self-redirects to ?view=fresh when done. Plain
+     form + target="_blank" — HTMX's HX-Redirect always drives the
+     current tab, defeating the "preserve my exploration" goal. #}
+    <form action="/jobs/results/{{ cache_key }}/expand"
+          method="post"
+          target="_blank"
+          class="inline-flex shrink-0">
+      <button type="submit"
+              class="btn btn-sm btn-outline whitespace-nowrap"
+              title="Deeper scrape on this same query. Opens in a new tab with only fresh/unviewed jobs by default.">
+        <i class="ph-thin ph-arrows-out"></i>
+        Expand search
+      </button>
+    </form>
   </div>
-
-  {# Floating notification slot — expand toast lands here (bottom-left,
-   above other content). Empty by default; populated by /expand's HTML
-   response and self-updates while the task runs. #}
-  <div id="expand-notification-slot"
-       style="position:fixed;bottom:16px;left:16px;z-index:50;"></div>
 
   {# Lazy-scoring trigger. Fires once on page load when there's at least
    one un-scored job to process. Response body contains OOB swaps for
@@ -74,48 +112,84 @@
        hx-swap="outerHTML"></div>
   {% endif %}
 
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-3 mt-4">
-    <div>
-      <div class="text-label">Showing</div>
-      <div class="text-metric-sm mt-1">
-        <span x-text="$store.filters.visibleCount(jobs)">{{ total_jobs }}</span>
-        <span class="text-base-content/30 font-normal text-base"> / {{ total_jobs }}</span>
+  {# Two-line header: primary "X of Y visible" + secondary contextual line.
+     Replaces the older 4-column grid. The fork's UX doc has the full state
+     matrix; here we branch by fresh-view vs. all-view, then by scoring state. #}
+  <div class="mt-4">
+    {# Primary line — the one number that always matters. #}
+    <div class="text-metric-sm">
+      <span x-text="$store.filters.visibleCount(jobs)">{{ total_jobs }}</span>
+      <span class="text-base-content/30 font-normal text-base">of {{ total_jobs }} visible</span>
+      <span x-show="pendingScoreCount > 0 && !isFreshView"
+            x-cloak
+            class="text-base font-normal text-body-muted ml-2">· ranking the rest</span>
+    </div>
+
+    {# Secondary line — either scoring progress or filter/view summary. #}
+    <div class="text-sm text-body-muted mt-1.5">
+      {% if is_fresh_view %}
+        {# Fresh-view breakdown: 3 groups, 1 visible by default. #}
+        <span>
+          {{ total_new_since_expand }} new since expand
+          {% if total_unviewed_from_before > 0 %}· {{ total_unviewed_from_before }} unviewed from before{% endif %}
+          {% if total_viewed > 0 %}
+            · {{ total_viewed }} already viewed
+            <button type="button"
+                    class="underline hover:text-base-content ml-0.5"
+                    @click="$store.filters.hideViewed = false">show</button>
+          {% endif %}
+        </span>
+      {% else %}
+        {# All-view secondary: switches between scoring progress and filter summary. #}
+        <span x-show="pendingScoreCount > 0" x-cloak>
+          <span x-text="totalJobs - pendingScoreCount"></span> ranked ·
+          <span x-text="pendingScoreCount"></span> still evaluating
+        </span>
+        <span x-show="pendingScoreCount === 0" x-cloak>
+          <span x-show="$store.filters.minScore >= 60">
+            Filtered to score ≥ 60 ·
+            <span x-text="jobs.filter(j => j.score < 60).length"></span> hidden ·
+            <button type="button"
+                    class="underline hover:text-base-content"
+                    @click="$store.filters.minScore = 0">show all</button>
+          </span>
+          <span x-show="$store.filters.minScore < 60">
+            All ranked · sorted by fit
+          </span>
+        </span>
+      {% endif %}
+    </div>
+
+    {# Progress bar — visible only while scoring, matches the secondary
+       line's "N ranked / M evaluating" data. Thin so it doesn't dominate. #}
+    <div x-show="pendingScoreCount > 0 && !isFreshView"
+         x-cloak
+         class="mt-2 w-full h-1 rounded-full overflow-hidden"
+         style="background: hsl(0 0% 92%);">
+      <div class="h-full transition-all duration-500 ease-out"
+           style="background: oklch(var(--p));"
+           :style="'width: ' + progressPct() + '%'"></div>
+    </div>
+
+    {# Secondary status line: fetched-at + scoring health notes. Compact. #}
+    <div class="text-xs text-body-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span>Fetched {{ fetched_at | humanize }}</span>
+      {% if quota_exhausted %}
+        <span style="color: hsl(28 75% 32%);">·  Scoring paused until tomorrow</span>
+      {% elif not has_resume %}
+        <span>· Upload a resume on <a href="/profile" class="underline">Profile</a> to rank these</span>
+      {% elif not has_api_key %}
+        <span>· Add a Gemini key on <a href="/profile" class="underline">Profile</a> to rank these</span>
+      {% endif %}
+    </div>
+    {% if quota_exhausted and exhausted_models %}
+      <div class="mt-2 text-xs text-body-muted">
+        Models tried today: {{ exhausted_models | join(', ') }}. Cached scores still visible.
       </div>
-    </div>
-    <div>
-      <div class="text-label">Hidden by filters</div>
-      <div class="text-metric-sm mt-1 text-base-content/50"
-           x-text="{{ total_jobs }} - $store.filters.visibleCount(jobs)">0</div>
-    </div>
-    <div>
-      <div class="text-label">Fetched</div>
-      <div class="text-sm mt-2">{{ fetched_at | humanize }}</div>
-    </div>
-    <div>
-      <div class="text-label">AI scoring</div>
-      <div class="text-sm mt-2 leading-tight">
-        {% if quota_exhausted %}
-          <span style="color: hsl(28 75% 32%);">Paused</span>
-          <div class="text-xs text-body-muted">until tomorrow</div>
-        {% elif scoring_note %}
-          <span>{{ scoring_note }}</span>
-        {% elif not has_resume %}
-          <span class="text-body-muted">skipped — no resume</span>
-        {% elif not has_api_key %}
-          <span class="text-body-muted">skipped — no API key</span>
-        {% else %}
-          <span class="text-body-muted">—</span>
-        {% endif %}
-      </div>
-    </div>
+    {% elif scoring_error %}
+      <div class="mt-2 text-sm text-error/80">{{ scoring_error }}</div>
+    {% endif %}
   </div>
-  {% if quota_exhausted and exhausted_models %}
-    <div class="mt-3 text-xs text-body-muted">
-      Models tried today: {{ exhausted_models | join(', ') }}. Cached scores still visible.
-    </div>
-  {% elif scoring_error %}
-    <div class="mt-3 text-sm text-error/80">{{ scoring_error }}</div>
-  {% endif %}
 </div>
 
 {# ── Filters ── #}
@@ -138,6 +212,11 @@
            title="Only jobs first seen in the last 48 hours">
       <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
       <span class="text-sm inline-flex items-center gap-1"><i class="ph-fill ph-sparkle i-4" style="color: oklch(var(--a));"></i>Only new</span>
+    </label>
+    <label class="flex items-center gap-2 cursor-pointer select-none"
+           title="Hide jobs you've already spent time reading">
+      <input type="checkbox" x-model="$store.filters.hideViewed" class="checkbox checkbox-sm">
+      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-eye-slash i-4"></i>Hide viewed</span>
     </label>
     <div>
       <label class="text-label block mb-1">Remote</label>
@@ -167,7 +246,7 @@
          class="card-quiet text-center py-8">
       <div class="text-body-muted text-sm">All {{ total_jobs }} jobs hidden by current filters.</div>
       <button class="mt-2 text-sm text-primary hover:underline cursor-pointer"
-              @click="$store.filters.minScore = 0; $store.filters.hideFrench = false; $store.filters.remoteFilter = 'any'">
+              @click="$store.filters.minScore = 0; $store.filters.hideFrench = false; $store.filters.remoteFilter = 'any'; $store.filters.hideViewed = false;">
         Reset filters
       </button>
     </div>

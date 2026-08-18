@@ -19,7 +19,7 @@ use the pointer format; old files age out naturally over normal use.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -38,6 +38,10 @@ class CachedResult:
     fetched_at: str           # ISO-8601 UTC-ish
     params_label: str         # human label, for the UI
     jobs: list[Job]
+    # Job ids added by the most recent expand pass (empty on first save
+    # and after a full re-run). The fresh view uses this to chip cards
+    # as "new" so users can spot what came from their last Expand click.
+    last_expand_added_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -79,7 +83,12 @@ def load_by_key(cache_key: str) -> Optional[CachedResult]:
     fetched_at = data.get("fetched_at", "")
     params_label = data.get("params_label", "")
     jobs = _hydrate_jobs(data)
-    return CachedResult(fetched_at=fetched_at, params_label=params_label, jobs=jobs)
+    return CachedResult(
+        fetched_at=fetched_at,
+        params_label=params_label,
+        jobs=jobs,
+        last_expand_added_ids=list(data.get("last_expand_added_ids") or []),
+    )
 
 
 def _hydrate_jobs(data: dict) -> list[Job]:
@@ -126,6 +135,10 @@ def save(params: JobSearchParams, jobs: list[Job], label: str = "") -> CachedRes
         "params_label": label,
         "params": asdict(params),
         "job_ids": [j.id for j in jobs],
+        # No expand has run against this cache entry yet — clear the
+        # "newly added" list so a subsequent fresh-view render doesn't
+        # chip cards from a previous expand cycle.
+        "last_expand_added_ids": [],
     }
     cache_path(params).write_text(json.dumps(payload, indent=2, ensure_ascii=False))
     return CachedResult(fetched_at=fetched_at, params_label=label, jobs=list(jobs))
@@ -157,9 +170,11 @@ def merge_into(cache_key: str, new_jobs: list[Job], new_label: Optional[str] = N
 
     seen = set(existing_ids)
     merged_ids = list(existing_ids)
+    added_ids: list[str] = []
     for j in new_jobs:
         if j.id not in seen:
             merged_ids.append(j.id)
+            added_ids.append(j.id)
             seen.add(j.id)
 
     fetched_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -169,6 +184,10 @@ def merge_into(cache_key: str, new_jobs: list[Job], new_label: Optional[str] = N
         "params_label": label,
         "params": data.get("params") or {},
         "job_ids": merged_ids,
+        # Overwrite (not append): "since last expand" is a single-shot
+        # cursor. If the user clicks Expand again later, that pass gets
+        # a fresh diff and the previous one's chips retire.
+        "last_expand_added_ids": added_ids,
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
 
@@ -177,6 +196,7 @@ def merge_into(cache_key: str, new_jobs: list[Job], new_label: Optional[str] = N
         fetched_at=fetched_at,
         params_label=label,
         jobs=[_job_from_db_row(r) for r in hydrated],
+        last_expand_added_ids=added_ids,
     )
 
 
