@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -253,6 +253,23 @@ CREATE TABLE IF NOT EXISTS feedback (
     submitted_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_submitted ON feedback(submitted_at);
+
+-- v12: generated BI pulse reports. One row per Gemini-authored weekly
+-- markdown summary; rendered by /admin/pulse. Kept small — markdown
+-- only, no source data (that lives in the signal tables and can be
+-- re-queried). period_start/period_end bound the analysis window so
+-- the "Δ from last week" comparison can find the prior report cleanly.
+CREATE TABLE IF NOT EXISTS admin_reports (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    generated_at  TEXT NOT NULL,
+    period_start  TEXT NOT NULL,
+    period_end    TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    markdown      TEXT NOT NULL,
+    tokens_in     INTEGER NOT NULL DEFAULT 0,
+    tokens_out    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_admin_reports_generated ON admin_reports(generated_at);
 """
 
 
@@ -1057,3 +1074,64 @@ def save_scores(
             )
             n += 1
     return n
+
+
+# ---------- admin pulse reports (BI agent) ----------
+
+def save_pulse_report(
+    *,
+    period_start: str,
+    period_end: str,
+    model: str,
+    markdown: str,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    path: Path = DB_PATH,
+) -> int:
+    """Persist a generated BI pulse report. Returns the new row id."""
+    with tx(path) as conn:
+        cur = conn.execute(
+            """INSERT INTO admin_reports
+               (generated_at, period_start, period_end, model, markdown, tokens_in, tokens_out)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (_now(), period_start, period_end, model, markdown,
+             int(tokens_in), int(tokens_out)),
+        )
+        return int(cur.lastrowid)
+
+
+def latest_pulse_report(path: Path = DB_PATH) -> Optional[dict]:
+    """Most recent report, or None if the table is empty."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT id, generated_at, period_start, period_end, model,
+                      markdown, tokens_in, tokens_out
+               FROM admin_reports
+               ORDER BY generated_at DESC LIMIT 1"""
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_pulse_reports(limit: int = 20, path: Path = DB_PATH) -> list[dict]:
+    """Newest first. Metadata only (no markdown body) — for the date-picker
+    list on /admin/pulse. Fetch the full body via get_pulse_report(id)."""
+    with connect(path) as conn:
+        rows = conn.execute(
+            """SELECT id, generated_at, period_start, period_end, model,
+                      tokens_in, tokens_out
+               FROM admin_reports
+               ORDER BY generated_at DESC LIMIT ?""",
+            (int(limit),),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_pulse_report(report_id: int, path: Path = DB_PATH) -> Optional[dict]:
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT id, generated_at, period_start, period_end, model,
+                      markdown, tokens_in, tokens_out
+               FROM admin_reports WHERE id = ?""",
+            (report_id,),
+        ).fetchone()
+    return dict(row) if row else None

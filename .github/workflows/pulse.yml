@@ -1,0 +1,57 @@
+name: Weekly BI pulse
+
+# Generate a weekly BI report on each per-user Fly app.
+#
+# Runs Sunday 09:00 UTC so Monday-morning readers see a fresh report
+# waiting at https://<app>.fly.dev/admin/pulse. Also runnable on
+# demand from the Actions tab (workflow_dispatch) for the first-run
+# seed and for backfills after a code change.
+#
+# Uses the same FLY_API_TOKEN + app list as deploy-fly.yml. Adding
+# a new per-user app? Add it to BOTH matrices (deploy + this one).
+#
+# The pulse script relies on GOOGLE_API_KEY being set in the app's
+# Fly secrets (already the case — every user's app needs it for
+# regular LLM features).
+
+on:
+  schedule:
+    - cron: '0 9 * * 0'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Rolling window in days'
+        required: false
+        default: '7'
+
+concurrency:
+  group: pulse-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pulse:
+    name: Pulse ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      # A failure on one app shouldn't skip the others — each Fly volume
+      # is independent, and losing one week's report on one app is not
+      # a reason to lose it on all three.
+      fail-fast: false
+      matrix:
+        app:
+          - jobbotv2
+          - jobbotv2-melissa
+          - jobbotv2-hermana
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Generate pulse report on ${{ matrix.app }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          DAYS: ${{ github.event.inputs.days || '7' }}
+        run: |
+          echo "Generating pulse (last $DAYS days) on ${{ matrix.app }}"
+          flyctl ssh console \
+            --app ${{ matrix.app }} \
+            --command "python -m core.bi.pulse --days $DAYS"

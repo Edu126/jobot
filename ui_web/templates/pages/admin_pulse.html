@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Pulse — Jobot admin{% endblock %}
+{% block container_class %}max-w-7xl{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+  <h1 class="text-display">Pulse</h1>
+  <p class="text-body-muted text-lg mt-2">
+    Weekly BI report — generated from the local signal tables.
+  </p>
+</div>
+
+{% if not current %}
+  <div class="card-quiet text-center py-16 max-w-2xl mx-auto">
+    <div class="inline-flex items-center gap-2 text-title mb-3">
+      <i class="ph-thin ph-chart-line-up i-6"></i>
+      No pulse reports yet
+    </div>
+    <p class="text-body-muted mb-1">
+      The weekly cron will drop the first report here on Sunday. Or trigger
+      one now on the deployed app with:
+    </p>
+    <pre class="mt-4 mx-auto text-left text-xs bg-base-200 rounded-md p-3 inline-block">fly ssh console -a &lt;app&gt; -C 'python -m core.bi.pulse --days 7'</pre>
+  </div>
+{% else %}
+  <div class="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-8">
+
+    {# ─── LEFT — date selector ─── #}
+    <aside aria-label="Older reports">
+      <div class="text-label mb-3">Reports</div>
+      <ul class="space-y-1">
+        {% for r in others %}
+          {% set is_current = (r.id == current.id) %}
+          <li>
+            <a href="/admin/pulse/{{ r.id }}"
+               class="block px-3 py-2 rounded-md text-sm
+                      {% if is_current %}bg-base-200 font-semibold{% else %}hover:bg-base-200 text-body-muted{% endif %}">
+              <div>{{ r.period_start[:10] }} → {{ r.period_end[:10] }}</div>
+              <div class="text-xs opacity-70">
+                {{ r.generated_at[:10] }}
+              </div>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    </aside>
+
+    {# ─── RIGHT — the report ─── #}
+    <article>
+      <div class="mb-5 pb-4 border-b border-base-300">
+        <div class="text-title">
+          {{ current.period_start[:10] }} → {{ current.period_end[:10] }}
+        </div>
+        <div class="text-xs text-body-muted mt-1 flex flex-wrap gap-x-4 gap-y-1">
+          <span>Generated {{ current.generated_at }}</span>
+          <span>Model: {{ current.model }}</span>
+          <span>Tokens: {{ current.tokens_in }} in · {{ current.tokens_out }} out</span>
+        </div>
+      </div>
+
+      <div class="prose max-w-none pulse-report">
+        {{ report_html | safe }}
+      </div>
+    </article>
+  </div>
+{% endif %}
+{% endblock %}
