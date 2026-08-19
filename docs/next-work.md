@@ -1,0 +1,231 @@
+# Next Sprint — i18n + Geography + BI Agent
+
+**Status:** locked plan, ready to execute.
+**Date:** 2026-08-18 (session-break checkpoint).
+**Supersedes:** the earlier session-break notes; that version conflated
+strategic direction and implementation.
+**Related:** [mobile-plan.md](./mobile-plan.md), [rate-limiting-quotas.md](./rate-limiting-quotas.md).
+
+## Why this is the sprint
+
+Four real users are hunting for jobs. Sara lives in Spain, the sister
+lives in Colombia — both write resumes in Spanish, and the app currently
+hardcodes Ottawa + `country_indeed="canada"` + English prompts. Every
+non-Canada, non-English user hits a wall before they see anything Jobot
+is actually good at.
+
+Fixing this unblocks half the user cohort AND makes Jobot honestly
+usable outside a single metro. Deferring it means Sara and the sister
+literally can't use the product.
+
+Observability (BI agent) comes second because we already have a first
+signal to react to.
+
+## Locked design decisions (do NOT re-litigate)
+
+### Three-language model — two knobs users flip
+
+| Setting | Controls | Default |
+|---|---|---|
+| **UI language** | Nav, buttons, labels, filter chips, toasts | Browser `Accept-Language`; user override in Profile |
+| **Output language** | Tailored resume + cover letter generation | Matches UI language on first set; changeable in Profile |
+| **Reasoning language** | Score reasoning, gaps, matched skills on cards / detail pane | Follows UI language (coupled — reads weird otherwise) |
+
+Two user-facing toggles: UI + Output. Reasoning piggybacks on UI.
+
+### Geography
+
+- Profile gets `home_country` + `home_city`.
+- `JobSearchParams` default location comes from profile, not hardcoded.
+- `country_indeed` derived from `home_country` via a small map.
+- First-visit banner asks for city + country when country is missing;
+  dismissible after fill.
+
+### Prompt-language handling
+
+Prompts stay in English (templates). Each gets a `{response_language}`
+slot at the top: *"Respond in {language}. All strings in your output
+must be in {language}."* Gemini is multilingual — no need for parallel
+Spanish prompt templates.
+
+### Storage (no auth yet)
+
+Per-app settings live in the existing `meta` table:
+- `settings.ui_language`
+- `settings.output_language`
+- `settings.home_country`
+- `settings.home_city`
+
+No new `user_settings` table needed. When auth ships, these move to
+`user_settings(user_id, key, value)`.
+
+### Tailor versioning
+
+Tailor history entries gain a `.language` field. History list shows
+*"Balanced (ES) · 2d ago"* / *"Aggressive (EN) · today"*. Both language
+versions coexist per user requirement about accumulating data in both.
+
+### i18n mechanism
+
+Two dict lookups (`EN`, `ES`) in a new `ui_web/i18n.py`. Templates use
+`{{ _('key') }}` via a Jinja global. **No Babel, no `.po` files, no
+compile step.** For two languages a dict is the honest choice.
+
+### BI agent
+
+- Weekly scheduled task (GitHub Actions cron, hits each app's admin
+  API endpoint).
+- Runs a Gemini prompt against `events` + `jobs` + `applications` +
+  `viewed_jobs` + `dismissed_jobs`.
+- Fixed question set (see PR 6).
+- Writes markdown to `admin_reports(week, app, report_md, generated_at)`.
+- Single `/admin/pulse` route renders the latest.
+- **Not** a real-time dashboard. Weekly is the cadence.
+
+### Subagent model tiering
+
+- Research / lookup → `general-purpose` with `model: sonnet-4-6` (or
+  haiku when the task is straight-up factual).
+- Deep synthesis (design docs, architecture) → `fork` (inherits Opus).
+- Implementation code → main session, no subagent.
+
+Net: research becomes 3-4× cheaper without losing quality.
+
+## Sprint plan — ordered PRs
+
+Each PR ships independently and can be validated on a Fly deploy before
+the next starts. Times are Claude-execution time, not human-dev time.
+
+### PR 1 — Settings model + i18n helper (~1 h)
+- `core/settings.py`: `get_setting(key)`, `set_setting(key, value)`
+  reading/writing `meta` table with a small in-process cache.
+- `ui_web/i18n.py`: EN/ES translation dicts (initially seeded with
+  ~30 core strings), `translate(key, lang=None)` helper, exposed to
+  Jinja as `_()` global via `templates.env.globals`.
+- Middleware: reads `settings.ui_language` (or falls back to
+  `Accept-Language`) and stashes it on `request.state.ui_language`.
+- **No template touches yet** — plumbing only.
+
+### PR 2 — Geography (profile fields + defaults) (~1 h)
+- `home_country` + `home_city` in `meta` via new settings API.
+- `core/jobs/search.py`: `JobSearchParams` default `location` reads
+  from settings; `country_indeed` derived from a `_COUNTRY_TO_INDEED`
+  dict (Canada, US, UK, Spain, Colombia, Mexico, Argentina, Chile,
+  France, Germany).
+- Profile UI: two inputs for home country + home city with typeahead
+  reuse from the existing Photon integration.
+- First-visit banner in `base.html`: shows when both are empty; single
+  form; dismisses on save.
+
+### PR 3 — Prompt language passthrough (~1.5 h)
+- New helper `get_output_language()` (Output setting) and
+  `get_reasoning_language()` (mirrors UI setting).
+- Every prompt template touched with a `{response_language}` slot:
+  - `core/jobs/from_url.py::_build_extraction_prompt`
+  - `core/matching/semantic_score.py::_score_batch` (scoring prompt)
+  - `core/llm/rewrite.py::rewrite_resume` + cover-letter prompt
+  - `core/llm/prompts.py` templates
+  - `ui_web/routes/jobs.py::_generate_variant_queries` (expand)
+- Callers pass the resolved language string into each `generate_json`
+  call.
+- Prompt-injection sentinel + validators from earlier PR still apply.
+
+### PR 4 — Profile settings UI + UI translation pass 1 (~1.5 h)
+- Profile: two toggles (UI language, Output language) inside the
+  existing Settings block — replaces / joins the Notifications tab.
+  Persisted via settings API.
+- Wrap user-visible strings on the three highest-value pages in `_()`:
+  - `pages/jobs.html` + `pages/jobs_results.html` + `pages/profile.html`
+  - `partials/job_card.html` + `partials/mobile_nav.html` + `base.html` header
+  - Toast messages / kill-switch messages
+- Fill Spanish dict for those strings (~80 strings). Anything not
+  translated falls back to English.
+
+### PR 5 — Tailor history language versioning (~30 min)
+- `state.tailored_history[job_id]` entries gain `.language`.
+- Tailor drawer's "past runs" list shows `(EN)` / `(ES)` suffix per
+  entry, and orders newest-first regardless of language.
+- Download filename includes language suffix.
+
+### PR 6 — BI agent + admin pulse (~4 h)
+- Schema bump 10 → 11: `admin_reports(week, app_name, report_md,
+  generated_at, question_set_version)`.
+- New `scripts/bi_agent.py`: for each app URL, calls a new
+  `/admin/bi-snapshot` endpoint that returns a JSON dump of aggregate
+  metrics (no PII beyond what's already in the DB), then feeds that
+  JSON to Gemini with the question-set prompt, then POSTs the markdown
+  report back to `/admin/bi-report`.
+- Question set v1:
+  1. Engagement per user — sessions/week, active-days/week
+  2. Funnel per user — search → view → save → tailor → apply, with
+     drop-off percentages
+  3. Score quality signal — dismiss rate at each 10-point score band
+  4. Stuck patterns — same job viewed 3+ times without action
+  5. Delta vs. previous week — what changed
+- `/admin/pulse` route renders the latest report (Jinja + markdown
+  filter). Simple, unstyled — this is a report, not a dashboard.
+- GH Actions cron: `0 6 * * 1` (Monday 06:00 UTC). Runs the script
+  against all 3 apps in parallel via a matrix.
+- Auth on `/admin/*`: HTTP Basic with a single admin password (from
+  `fly secrets set ADMIN_PASS=…`). Placeholder until real auth ships.
+
+### PR 7 (optional, only if PR 4 leaves gaps) — UI translation pass 2 (~1 h)
+- Journey page + Applications sub-view + edge/empty states
+- Any strings PR 4 skipped
+
+**Total: ~10-11 hours of Claude execution across 6 required + 1 optional PRs.**
+
+## Open decisions the user must resolve before PR 1 starts
+
+1. **Should PR 6 (BI agent) piggyback on the sprint, or land in a follow-up?**
+   Cleaner separation would say "ship the i18n+geo bundle first, then BI
+   in a follow-up sprint." Faster to ship both together while the
+   architecture is fresh. Recommendation: bundle. It's independent code
+   and doesn't slow the language work.
+
+2. **Country-to-`country_indeed` map coverage.** Confirmed: Canada, US,
+   UK, Spain, Colombia. Anything else worth pre-adding? Mexico,
+   Argentina, Chile, France, Germany would round it out. Recommendation:
+   include all 10 in one shot.
+
+3. **UI-language default source.** `Accept-Language` header vs. always
+   ask on first visit. Recommendation: `Accept-Language` first, ask only
+   if browser doesn't send a supported lang.
+
+4. **Reasoning language coupling.** Locked to UI language for now. Any
+   scenario where a user wants Spanish UI but English gaps/matched?
+   Recommendation: no. Cognitive cost > flexibility gain.
+
+## What's explicitly NOT in this sprint
+
+- **Auth / multi-user rewrite.** 3-app pattern still fine for N=4.
+- **Full admin UI.** BI markdown report is the interim.
+- **Additional languages beyond ES.** Dict pattern makes adding a third
+  language trivial; not this sprint's work.
+- **Live analytics dashboard.** Weekly BI report replaces it for now.
+- **Per-search language override.** User goes to Profile to change.
+- **Rich onboarding flow.** First-visit banner is enough for now.
+- **Migrating individual apps to a shared codebase.** They ARE the
+  isolation layer. Keep them.
+
+## Subagent tiering rule (self-instruction for this sprint)
+
+When I need external research or lookup (e.g. "what's the standard
+`country_indeed` value for Spain?"), spawn `general-purpose` with
+`model: "claude-sonnet-4-6"`. When I need synthesis with full context,
+`fork` and pay for Opus. For implementation, main session executes
+directly — no subagent hop.
+
+Estimate: sprint runs 3-4× cheaper than if I forked everything.
+
+## Sequencing calendar (rough)
+
+- **Day 1 (this or next session):** PR 1 + PR 2 + PR 3 → the language +
+  geography plumbing lands together. Ship. Users can now change UI
+  language and see their home city as the default.
+- **Day 2:** PR 4 + PR 5 → visible i18n in the UI + versioned tailor
+  history. Sara and the sister can now use the app end-to-end in Spanish.
+- **Day 3:** PR 6 + PR 7 → BI agent lands, admin can see how the 4 users
+  actually behave. Any translation gaps get filled.
+- **Week 2:** Wait. Read what the BI agent says. Don't build more until
+  we know.

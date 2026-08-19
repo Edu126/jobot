@@ -159,8 +159,13 @@ def _score_batch(
     """Score one batch. On non-quota failure, retry each job individually
     (unless already at size 1, which gives up silently). On QuotaExhausted,
     propagate up so callers can stop early. On partial response (missing
-    job_ids), retry the missing ones individually."""
-    prompt = _build_prompt(resume, jobs)
+    job_ids), retry the missing ones individually.
+
+    Reasoning language comes from settings — user-facing strings (reasoning,
+    matched, gaps) render in the UI, so they follow the UI-language setting
+    (Spanish UI + English gaps reads as broken)."""
+    from core.settings import get_reasoning_language
+    prompt = _build_prompt(resume, jobs, reasoning_language=get_reasoning_language())
     try:
         raw = client.generate_json(prompt)
     except QuotaExhaustedError:
@@ -195,7 +200,7 @@ def _score_batch(
     return parsed
 
 
-def _build_prompt(resume: str, jobs: list[dict]) -> str:
+def _build_prompt(resume: str, jobs: list[dict], reasoning_language: str = "en") -> str:
     """Craft a batch-scoring prompt that keeps each job's judgment isolated.
 
     Design notes:
@@ -224,7 +229,11 @@ def _build_prompt(resume: str, jobs: list[dict]) -> str:
     jobs_str = "\n\n".join(job_blocks)
     n = len(jobs)
 
+    from core.settings import language_instruction
+
     return f"""You are an expert AEC (architecture / engineering / construction) recruiter evaluating job postings against ONE candidate's resume. Focus on real skill overlap, seniority alignment, and whether this specific candidate could realistically succeed in the role.
+
+{language_instruction(reasoning_language)}
 
 CANDIDATE RESUME:
 ---

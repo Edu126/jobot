@@ -24,12 +24,57 @@ from typing import Any, Optional
 from jobspy import scrape_jobs
 
 
+# ---------- country → jobspy country_indeed slug ----------
+#
+# jobspy's `country_indeed` param picks which Indeed regional index to
+# search. Values are its own slugs — mostly ISO English country names
+# lowercased, plus a few historical aliases ("usa", "uk"). Grown as
+# real users arrive from new countries; canonical source is jobspy's
+# `Country` enum in its source tree.
+_COUNTRY_TO_INDEED: dict[str, str] = {
+    "canada": "canada",
+    "united states": "usa",   "usa": "usa",   "us": "usa",
+    "united kingdom": "uk",   "uk": "uk",
+    "spain": "spain",         "españa": "spain",
+    "colombia": "colombia",
+    "mexico": "mexico",       "méxico": "mexico",
+    "argentina": "argentina",
+    "chile": "chile",
+    "france": "france",
+    "germany": "germany",     "alemania": "germany",
+}
+_DEFAULT_COUNTRY_INDEED = "canada"
+_DEFAULT_LOCATION = "Ottawa, Ontario, Canada"
+
+
+def default_location() -> str:
+    """Preferred search location — user's home city if set in settings,
+    otherwise the historical Ottawa default. Read on every JobSearchParams
+    construction via `field(default_factory=...)` so a Profile change
+    takes effect on the next search without an app restart."""
+    from core.settings import get
+    return get("home_city", "") or _DEFAULT_LOCATION
+
+
+def default_country_indeed() -> str:
+    """Which Indeed regional index to hit — derived from `settings.home_country`.
+    Unknown / unmapped countries fall back to canada so at least Indeed
+    still responds; user can override at search time if needed."""
+    from core.settings import get
+    country = (get("home_country", "") or "").strip().lower()
+    return _COUNTRY_TO_INDEED.get(country, _DEFAULT_COUNTRY_INDEED)
+
+
 # ---------- params + result types ----------
 
 @dataclass
 class JobSearchParams:
     query: str
-    location: str = "Ottawa, Ontario, Canada"
+    # location + country_indeed both use factory defaults so a Profile
+    # change (Sara in Spain, sister in Colombia) takes effect immediately
+    # without touching this class or the many callers that construct
+    # JobSearchParams with only `query=` positional.
+    location: str = field(default_factory=default_location)
     distance: int = 50           # km radius
     # v0.5: added 'google' — jobspy already builds a google_search_term (see
     # scrape_jobs call below) so we just need to include the site. Google
@@ -40,7 +85,7 @@ class JobSearchParams:
     hours_old: int = 168         # 1 week
     results_wanted: int = 30
     is_remote: Optional[bool] = None
-    country_indeed: str = "canada"
+    country_indeed: str = field(default_factory=default_country_indeed)
     linkedin_fetch_description: bool = True
 
     def cache_key(self) -> str:

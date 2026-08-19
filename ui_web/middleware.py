@@ -21,9 +21,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from core import feature_flags
+from core import feature_flags, settings as app_settings
 from core.llm import usage as llm_usage
 
+from . import i18n
 from .ratelimit import SID_COOKIE_NAME, get_identity
 
 
@@ -61,10 +62,16 @@ class IdentityMiddleware(BaseHTTPMiddleware):
         # Read identity (prefers cookie; falls back to IP) BEFORE the
         # response is built so downstream Gemini calls see the right one.
         token = llm_usage.set_identity(get_identity(request))
+        # Resolve UI language for this request and stash it in the i18n
+        # ContextVar so templates' `_()` helper picks it up without
+        # having to thread the request through render calls.
+        lang = app_settings.get_ui_language(request.headers.get("accept-language", ""))
+        lang_token = i18n.set_ui_language(lang)
         needs_new_sid = SID_COOKIE_NAME not in request.cookies
         try:
             response = await call_next(request)
         finally:
+            i18n.reset_ui_language(lang_token)
             llm_usage.reset_identity(token)
 
         if needs_new_sid:

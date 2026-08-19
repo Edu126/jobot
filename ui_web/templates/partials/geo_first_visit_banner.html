@@ -1,0 +1,60 @@
+{# First-visit geography setup banner.
+
+   Shown from base.html when `settings.home_country` is empty. Submitting
+   the form (HTMX POST /profile/geo-quick-set) persists both fields and
+   HX-Refreshes, at which point this partial's conditional in base.html
+   is false and the banner disappears.
+
+   Positioned as a fixed strip above the mobile bottom nav on small
+   screens, and inline at the top of the content column on desktop.
+   Non-dismissible until submitted — the whole point is that without
+   country + city, every search hits a wrong default.
+
+   Country options mirror the keys in
+   `core.jobs.search._COUNTRY_TO_INDEED`. Add to both when opening a new
+   locale.
+#}
+<div class="fixed left-0 right-0 z-40 lg:sticky lg:top-16 bg-base-100 border-b border-base-300 shadow-sm"
+     style="top: 4rem; bottom: auto; padding-bottom: env(safe-area-inset-bottom);">
+  <div class="max-w-3xl mx-auto px-4 py-3">
+    <div class="flex items-start gap-3 mb-2">
+      <i class="ph-thin ph-globe-hemisphere-west text-xl shrink-0 mt-0.5"
+         style="color: oklch(var(--p));"></i>
+      <div class="flex-1 min-w-0 text-sm">
+        <div class="font-semibold">{{ _('geo.banner.title') if _('geo.banner.title') != 'geo.banner.title' else 'Where are you searching from?' }}</div>
+        <div class="text-body-muted text-xs mt-0.5">
+          {{ _('geo.banner.subtitle') if _('geo.banner.subtitle') != 'geo.banner.subtitle' else "Tell us your home country and city so we default your searches to the right region — otherwise we assume Ottawa, Canada." }}
+        </div>
+      </div>
+    </div>
+    <form hx-post="/profile/geo-quick-set"
+          hx-target="this"
+          hx-swap="none"
+          class="flex flex-col md:flex-row gap-2 items-stretch">
+      <select name="home_country" required
+              class="select select-bordered select-sm md:w-52 cursor-pointer">
+        <option value="" disabled selected>Country…</option>
+        <option value="Canada">Canada</option>
+        <option value="United States">United States</option>
+        <option value="United Kingdom">United Kingdom</option>
+        <option value="Spain">España / Spain</option>
+        <option value="Colombia">Colombia</option>
+        <option value="Mexico">México / Mexico</option>
+        <option value="Argentina">Argentina</option>
+        <option value="Chile">Chile</option>
+        <option value="France">France</option>
+        <option value="Germany">Deutschland / Germany</option>
+      </select>
+      <input type="text" name="home_city" required
+             placeholder="City (e.g. Bogotá, Madrid, Toronto)"
+             autocomplete="off"
+             class="input input-bordered input-sm md:flex-1">
+      <button type="submit" class="btn btn-primary btn-sm cursor-pointer whitespace-nowrap">
+        {{ _('action.save') }}
+      </button>
+    </form>
+  </div>
+</div>
+{# Push content down so the fixed banner doesn't cover the top of the
+   page. Only needed until the banner is dismissed. #}
+<div class="h-32 lg:h-0" aria-hidden="true"></div>

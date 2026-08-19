@@ -36,6 +36,19 @@ def static_url(rel_path: str) -> str:
 
 templates.env.globals["static_url"] = static_url
 
+# i18n — `{{ _('key') }}` in templates. Reads the current UI language
+# from a ContextVar set by IdentityMiddleware; falls back to English
+# when unset (background renders, tests). See ui_web/i18n.py.
+from . import i18n as _i18n  # noqa: E402
+templates.env.globals["_"] = _i18n.translate
+templates.env.globals["current_ui_language"] = _i18n.current_ui_language
+
+# Settings accessor — `{{ get_setting('home_country') }}` in templates.
+# Cheap (in-process cache). Used by base.html to gate the first-visit
+# geography banner without threading the value through every route.
+from core import settings as _app_settings  # noqa: E402
+templates.env.globals["get_setting"] = _app_settings.get
+
 # Jinja filters — mirror what the Streamlit UI uses so templates read the same.
 templates.env.filters["humanize"] = humanize
 

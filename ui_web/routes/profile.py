@@ -433,6 +433,36 @@ async def update_api_key(request: Request, api_key: str = Form(...)):
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
+@router.post("/profile/geo-quick-set")
+async def geo_quick_set(
+    request: Request,
+    home_country: str = Form(...),
+    home_city: str = Form(...),
+):
+    """Save home country + city from the first-visit banner (base.html).
+
+    Non-Canada users hit the app and immediately face a hardcoded
+    Ottawa default; this endpoint captures where they actually are so
+    every subsequent JobSearchParams inherits sensible defaults (see
+    `core.jobs.search.default_location` / `default_country_indeed`).
+
+    Idempotent — the banner shows on first visit only (gated by
+    `settings.home_country` presence), but re-submitting is safe.
+    HX-Refresh so the banner disappears + defaults propagate."""
+    from core import settings
+
+    country = (home_country or "").strip()
+    city = (home_city or "").strip()
+    if not country or not city:
+        return HTMLResponse(
+            '<div class="text-error text-sm">Country and city are both required.</div>',
+            status_code=200,
+        )
+    settings.set("home_country", country)
+    settings.set("home_city", city)
+    return Response(status_code=200, headers={"HX-Refresh": "true"})
+
+
 @router.post("/profile/api-key/clear")
 async def clear_api_key():
     """Remove the API key from both the .env and process env."""

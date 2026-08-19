@@ -114,6 +114,7 @@ def build_rewrite_prompt(
     job_description: str,
     level: Level,
     company_context: str = "",
+    output_language: str = "en",
 ) -> str:
     """Build the full prompt for a single rewrite call.
 
@@ -125,6 +126,10 @@ def build_rewrite_prompt(
     company_context: optional pre-researched company briefing. The LLM
         is told this is *background only* — it must not invent facts to
         match anything in here.
+    output_language: which language the tailored resume + cover letter
+        come back in ('en' | 'es'). User-controlled via Profile — a
+        Colombian user with a Spanish resume applying to a multinational
+        Bogotá office wants English output; the reverse also happens.
     """
     if level not in LEVEL_RULES:
         raise ValueError(f"Unknown level: {level!r}")
@@ -141,7 +146,11 @@ def build_rewrite_prompt(
             f"\"\"\"\n{company_context.strip()}\n\"\"\"\n"
         )
 
+    from core.settings import language_instruction
+
     return f"""{_SYSTEM_PREAMBLE}
+
+{language_instruction(output_language)}
 
 {LEVEL_RULES[level]}
 

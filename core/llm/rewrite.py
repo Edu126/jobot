@@ -142,12 +142,19 @@ def rewrite_resume(
             lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
             editable_sections = {"experience": lines}
 
+    # Output language comes from user settings — a Colombian user with
+    # a Spanish resume applying to a multinational Bogotá office may
+    # explicitly want English tailored output (or vice versa). Setting
+    # is toggled in Profile; we read it at each rewrite call.
+    from core.settings import get_output_language
+
     prompt = build_rewrite_prompt(
         parsed_sections=editable_sections,
         contact_summary=contact_summary,
         job_description=job_description,
         level=level,
         company_context=company_context,
+        output_language=get_output_language(),
     )
 
     response = client.generate_json(prompt)

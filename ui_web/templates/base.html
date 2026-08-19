@@ -619,6 +619,16 @@
      `pb-16 lg:pb-0` above so content isn't clipped by this bar. #}
   {% include "partials/mobile_nav.html" %}
 
+  {# First-visit geography banner — shown until the user provides a
+     home country. Without this, non-Canada users (Sara in Spain, sister
+     in Colombia) hit a hardcoded Ottawa default on every search.
+     Submits via HTMX to /profile/geo-quick-set which HX-Refreshes; on
+     next render `get_setting('home_country')` is set → banner hidden.
+     Kept in base.html so it appears from any first visit landing page. #}
+  {% if not get_setting('home_country') %}
+  {% include "partials/geo_first_visit_banner.html" %}
+  {% endif %}
+
   {# Mobile job-detail bottom sheet — controlled by
      Alpine.store('selectedJob').mobileOpen. Rendered once from base so
      any page that uses the selectedJob pattern (results, top matches)
