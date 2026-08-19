@@ -86,6 +86,7 @@
 
   {# Modal — centered card. Backdrop-click and Escape both dismiss. #}
   <div x-show="open" x-cloak
+       style="display:none;"
        class="fixed inset-0 z-[110] flex items-center justify-center p-4"
        @keydown.escape.window="close()">
     <div class="absolute inset-0 bg-black/40"

@@ -1,20 +1,15 @@
 {# Contact verify block — parsed vs user-confirmed. Standalone fragment so
    the POST /profile/resume/{id}/contact endpoint can re-render just this
-   piece after save (hx-swap outerHTML on #contact-verify).
-
-   View mode: 5 fields in a compact grid, pencil icon toggles edit mode.
-   Edit mode: same grid becomes inputs, Save/Cancel row at the bottom.
-   Local x-data — doesn't need the page-level x-data since it's fully
-   self-contained (own editing state). #}
+   piece after save (hx-swap outerHTML on #contact-verify). #}
 <div id="contact-verify" class="card-quiet" x-data="{ editing: false }">
   <div class="flex items-baseline justify-between gap-3 flex-wrap">
     <div>
-      <div class="text-label">Contact info</div>
-      <h2 class="text-title mt-1">What recruiters will see</h2>
+      <div class="text-label">{{ _('profile.contact.label') }}</div>
+      <h2 class="text-title mt-1">{{ _('profile.contact.title') }}</h2>
     </div>
     <button type="button" x-show="!editing" @click="editing = true"
             class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1">
-      <i class="ph-thin ph-pencil-simple i-4"></i>Edit
+      <i class="ph-thin ph-pencil-simple i-4"></i>{{ _('profile.contact.edit') }}
     </button>
   </div>
 
@@ -22,21 +17,21 @@
 
   {# ─── View mode ─── #}
   <div x-show="!editing" class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-    {% for field_key, field_label, icon in [
-      ('name', 'Name', 'ph-user'),
-      ('email', 'Email', 'ph-envelope-simple'),
-      ('phone', 'Phone', 'ph-phone'),
-      ('location', 'Location', 'ph-map-pin'),
-      ('linkedin', 'LinkedIn', 'ph-linkedin-logo'),
+    {% for field_key, label_key, icon in [
+      ('name', 'profile.contact.name', 'ph-user'),
+      ('email', 'profile.contact.email', 'ph-envelope-simple'),
+      ('phone', 'profile.contact.phone', 'ph-phone'),
+      ('location', 'profile.contact.location', 'ph-map-pin'),
+      ('linkedin', 'profile.contact.linkedin', 'ph-linkedin-logo'),
     ] %}
     <div class="flex items-start gap-2">
       <i class="ph-thin {{ icon }} i-4 text-body-muted mt-0.5 shrink-0"></i>
       <div class="min-w-0">
-        <div class="text-xs text-body-muted">{{ field_label }}</div>
+        <div class="text-xs text-body-muted">{{ _(label_key) }}</div>
         {% if contact.get(field_key) %}
           <div class="text-sm truncate">{{ contact.get(field_key) }}</div>
         {% else %}
-          <div class="text-sm text-warning">Missing — add it</div>
+          <div class="text-sm text-warning">{{ _('profile.contact.missing') }}</div>
         {% endif %}
       </div>
     </div>
@@ -51,37 +46,37 @@
         class="mt-4">
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <label class="block">
-        <span class="text-xs text-body-muted">Name</span>
+        <span class="text-xs text-body-muted">{{ _('profile.contact.name') }}</span>
         <input type="text" name="name" value="{{ contact.get('name', '') }}"
                class="input input-bordered input-sm w-full mt-1">
       </label>
       <label class="block">
-        <span class="text-xs text-body-muted">Email</span>
+        <span class="text-xs text-body-muted">{{ _('profile.contact.email') }}</span>
         <input type="email" name="email" value="{{ contact.get('email', '') }}"
                class="input input-bordered input-sm w-full mt-1">
       </label>
       <label class="block">
-        <span class="text-xs text-body-muted">Phone</span>
+        <span class="text-xs text-body-muted">{{ _('profile.contact.phone') }}</span>
         <input type="text" name="phone" value="{{ contact.get('phone', '') }}"
                class="input input-bordered input-sm w-full mt-1">
       </label>
       <label class="block">
-        <span class="text-xs text-body-muted">Location</span>
+        <span class="text-xs text-body-muted">{{ _('profile.contact.location') }}</span>
         <input type="text" name="location" value="{{ contact.get('location', '') }}"
-               placeholder="City, region, country"
+               placeholder="{{ _('profile.contact.location_placeholder') }}"
                class="input input-bordered input-sm w-full mt-1">
       </label>
       <label class="block sm:col-span-2">
-        <span class="text-xs text-body-muted">LinkedIn</span>
+        <span class="text-xs text-body-muted">{{ _('profile.contact.linkedin') }}</span>
         <input type="text" name="linkedin" value="{{ contact.get('linkedin', '') }}"
-               placeholder="linkedin.com/in/yourname"
+               placeholder="{{ _('profile.contact.linkedin_placeholder') }}"
                class="input input-bordered input-sm w-full mt-1">
       </label>
     </div>
     <div class="mt-4 flex items-center gap-2">
-      <button type="submit" class="btn btn-sm btn-primary">Save</button>
+      <button type="submit" class="btn btn-sm btn-primary">{{ _('profile.contact.save') }}</button>
       <button type="button" @click="editing = false"
-              class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content">Cancel</button>
+              class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content">{{ _('profile.contact.cancel') }}</button>
     </div>
   </form>
 </div>

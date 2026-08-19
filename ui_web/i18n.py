@@ -260,6 +260,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.contact.phone": "Phone",
         "profile.contact.location": "Location",
         "profile.contact.linkedin": "LinkedIn",
+        "profile.contact.edit": "Edit",
+        "profile.contact.save": "Save",
+        "profile.contact.cancel": "Cancel",
+        "profile.contact.location_placeholder": "City, region, country",
+        "profile.contact.linkedin_placeholder": "linkedin.com/in/yourname",
         # Feedback widget
         "feedback.open": "Send feedback",
         "feedback.title": "Something not working?",
@@ -425,6 +430,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.contact.phone": "Teléfono",
         "profile.contact.location": "Ubicación",
         "profile.contact.linkedin": "LinkedIn",
+        "profile.contact.edit": "Editar",
+        "profile.contact.save": "Guardar",
+        "profile.contact.cancel": "Cancelar",
+        "profile.contact.location_placeholder": "Ciudad, región, país",
+        "profile.contact.linkedin_placeholder": "linkedin.com/in/tunombre",
         # Feedback widget
         "feedback.open": "Enviar comentarios",
         "feedback.title": "¿Algo no funciona?",
