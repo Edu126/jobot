@@ -112,19 +112,31 @@ def check_and_charge(model: str = "any") -> None:
 
 def record_tokens(model: str, tokens_in: int, tokens_out: int) -> None:
     """After a successful call, add the token counts to the identity's
-    row for the day. Best-effort — silent if no identity in context or
-    if the row somehow doesn't exist (check_and_charge should have
-    created it)."""
+    per-model row for the day. Best-effort — silent if no identity in
+    context.
+
+    Note the split with `check_and_charge`: charging writes into a
+    `(identity, "any", day)` bucket (the cap is aggregate across the
+    fallback chain), but tokens land in a `(identity, <model>, day)`
+    row so per-model detail survives. `get_usage_today` sums both
+    without double-counting since calls only live on "any" and tokens
+    only live on the specific-model rows.
+
+    Uses UPSERT because the per-model row won't exist yet on the first
+    successful call — check_and_charge only touched the "any" row.
+    """
     identity = current_identity()
     if not identity or (tokens_in <= 0 and tokens_out <= 0):
         return
     day = datetime.utcnow().strftime("%Y-%m-%d")
     with db.tx() as conn:
         conn.execute(
-            "UPDATE gemini_usage "
-            "SET tokens_in = tokens_in + ?, tokens_out = tokens_out + ? "
-            "WHERE identity = ? AND model = ? AND day = ?",
-            (int(tokens_in), int(tokens_out), identity, model, day),
+            "INSERT INTO gemini_usage (identity, model, day, calls, tokens_in, tokens_out) "
+            "VALUES (?, ?, ?, 0, ?, ?) "
+            "ON CONFLICT(identity, model, day) DO UPDATE SET "
+            "  tokens_in = tokens_in + excluded.tokens_in, "
+            "  tokens_out = tokens_out + excluded.tokens_out",
+            (identity, model, day, int(tokens_in), int(tokens_out)),
         )
 
 
