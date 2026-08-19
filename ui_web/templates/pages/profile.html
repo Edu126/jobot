@@ -226,8 +226,8 @@
                 <input type="radio" name="ui_language" value="{{ code }}"
                        {% if settings_ctx.ui_language == code %}checked{% endif %}
                        class="peer sr-only">
-                <div class="border border-base-300 rounded-lg px-3 py-2 text-center text-sm
-                            peer-checked:border-primary peer-checked:bg-primary/5
+                <div class="border-2 border-base-300 rounded-lg px-3 py-2 text-center text-sm
+                            peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-content
                             peer-checked:font-semibold transition-colors">
                   {{ label }}
                 </div>
@@ -247,8 +247,8 @@
                 <input type="radio" name="output_language" value="{{ code }}"
                        {% if settings_ctx.output_language == code %}checked{% endif %}
                        class="peer sr-only">
-                <div class="border border-base-300 rounded-lg px-3 py-2 text-center text-sm
-                            peer-checked:border-primary peer-checked:bg-primary/5
+                <div class="border-2 border-base-300 rounded-lg px-3 py-2 text-center text-sm
+                            peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-content
                             peer-checked:font-semibold transition-colors">
                   {{ label }}
                 </div>

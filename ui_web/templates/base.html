@@ -562,10 +562,16 @@
         <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">{{ _('nav.profile') }}</a>
       </nav>
 
-      {# Desktop-only "local" pill #}
-      <div class="hidden sm:block">
-        <span class="pill"><span class="pill-dot live"></span>local</span>
-      </div>
+      {# Settings gear — desktop top-right. Replaces the old "local" pill
+       which was inaccurate now that the app is hosted (not local, not
+       single-user, not $0). Links straight to Profile → Language tab,
+       which is where geo + language settings live. #}
+      <a href="/profile"
+         class="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors {% if active_tab == 'profile' %}text-base-content{% else %}text-base-content/50{% endif %}"
+         title="{{ _('nav.settings') }}"
+         aria-label="{{ _('nav.settings') }}">
+        <i class="ph-thin ph-gear" style="font-size:1.25rem;"></i>
+      </a>
 
       {# Mobile hamburger — visible below sm #}
       <button class="sm:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors"
@@ -593,9 +599,6 @@
           {{ _(label_key) }}
         </a>
         {% endfor %}
-        <div class="px-3 pt-2">
-          <span class="pill"><span class="pill-dot live"></span>local</span>
-        </div>
       </nav>
     </div>
   </header>
@@ -606,7 +609,7 @@
 
   <footer class="max-w-7xl mx-auto px-6 py-6 w-full">
     <div class="flex items-center justify-between text-xs text-base-content/40">
-      <p>Local · single-user · $0/month</p>
+      <p>Jobot · <span x-text="new Date().getFullYear()"></span></p>
       <div class="flex gap-5">
         <a href="/healthz" class="hover:text-base-content transition-colors">Status</a>
         <a href="/docs" class="hover:text-base-content transition-colors">API</a>

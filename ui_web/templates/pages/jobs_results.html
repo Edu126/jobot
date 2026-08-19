@@ -78,19 +78,19 @@
 
 {# ── Header ── #}
 <div class="mb-6">
-  <a href="/jobs" class="text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer inline-flex items-center gap-1"><i class="ph-thin ph-arrow-left i-4"></i>Back to search</a>
+  <a href="/jobs" class="text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer inline-flex items-center gap-1"><i class="ph-thin ph-arrow-left i-4"></i>{{ _('nav.back_to_search') }}</a>
   <div class="flex items-start justify-between gap-4 mt-3">
     <div class="min-w-0">
       <h1 class="text-display truncate">{{ label }}</h1>
       {% if is_fresh_view %}
       <div class="text-xs text-body-muted mt-1 inline-flex items-center gap-1.5">
         <span style="width:6px;height:6px;border-radius:50%;background:hsl(140 60% 45%);display:inline-block;"></span>
-        Fresh view — <a href="/jobs/results/{{ cache_key }}" class="underline hover:text-base-content">switch to full list</a>
+        {{ _('results.fresh_view') }} — <a href="/jobs/results/{{ cache_key }}" class="underline hover:text-base-content">{{ _('results.switch_to_full') }}</a>
       </div>
       {% elif total_new_since_expand > 0 %}
       <div class="text-xs text-body-muted mt-1">
-        {{ total_new_since_expand }} new since your last expand ·
-        <a href="/jobs/results/{{ cache_key }}?view=fresh" class="underline hover:text-base-content">view just those</a>
+        {{ _('results.new_since_expand', n=total_new_since_expand) }} ·
+        <a href="/jobs/results/{{ cache_key }}?view=fresh" class="underline hover:text-base-content">{{ _('results.view_just_those') }}</a>
       </div>
       {% endif %}
     </div>
@@ -105,9 +105,9 @@
           class="inline-flex shrink-0">
       <button type="submit"
               class="btn btn-sm btn-outline whitespace-nowrap"
-              title="Deeper scrape on this same query. Opens in a new tab with only fresh/unviewed jobs by default.">
+              title="{{ _('action.expand_search.tooltip') }}">
         <i class="ph-thin ph-arrows-out"></i>
-        Expand search
+        {{ _('action.expand_search') }}
       </button>
     </form>
   </div>
@@ -131,10 +131,10 @@
     {# Primary line — the one number that always matters. #}
     <div class="text-metric-sm">
       <span x-text="$store.filters.visibleCount(jobs)">{{ total_jobs }}</span>
-      <span class="text-base-content/30 font-normal text-base">of {{ total_jobs }} visible</span>
+      <span class="text-base-content/30 font-normal text-base">{{ _('results.of_visible', total=total_jobs) }}</span>
       <span x-show="pendingScoreCount > 0 && !isFreshView"
             x-cloak
-            class="text-base font-normal text-body-muted ml-2">· ranking the rest</span>
+            class="text-base font-normal text-body-muted ml-2">· {{ _('results.ranking_rest') }}</span>
     </div>
 
     {# Secondary line — either scoring progress or filter/view summary. #}
@@ -142,31 +142,24 @@
       {% if is_fresh_view %}
         {# Fresh-view breakdown: 3 groups, 1 visible by default. #}
         <span>
-          {{ total_new_since_expand }} new since expand
-          {% if total_unviewed_from_before > 0 %}· {{ total_unviewed_from_before }} unviewed from before{% endif %}
+          {{ _('results.new_since_expand_short', n=total_new_since_expand) }}
+          {% if total_unviewed_from_before > 0 %}· {{ _('results.unviewed_from_before', n=total_unviewed_from_before) }}{% endif %}
           {% if total_viewed > 0 %}
-            · {{ total_viewed }} already viewed
+            · {{ _('results.already_viewed', n=total_viewed) }}
             <button type="button"
                     class="underline hover:text-base-content ml-0.5"
-                    @click="$store.filters.hideViewed = false">show</button>
+                    @click="$store.filters.hideViewed = false">{{ _('action.show') }}</button>
           {% endif %}
         </span>
       {% else %}
         {# All-view secondary: switches between scoring progress and filter summary. #}
-        <span x-show="pendingScoreCount > 0" x-cloak>
-          <span x-text="totalJobs - pendingScoreCount"></span> ranked ·
-          <span x-text="pendingScoreCount"></span> still evaluating
-        </span>
+        <span x-show="pendingScoreCount > 0" x-cloak
+              x-html="`<span>${totalJobs - pendingScoreCount}</span> {{ _('results.ranked') }} · <span>${pendingScoreCount}</span> {{ _('results.still_evaluating') }}`"></span>
         <span x-show="pendingScoreCount === 0" x-cloak>
-          <span x-show="$store.filters.minScore >= 60">
-            Filtered to score ≥ 60 ·
-            <span x-text="jobs.filter(j => j.score < 60).length"></span> hidden ·
-            <button type="button"
-                    class="underline hover:text-base-content"
-                    @click="$store.filters.minScore = 0">show all</button>
-          </span>
+          <span x-show="$store.filters.minScore >= 60"
+                x-html="`{{ _('results.filtered_score_60') }} · <span>${jobs.filter(j => j.score < 60).length}</span> {{ _('results.hidden') }} · <button type='button' class='underline hover:text-base-content' onclick='Alpine.store(&quot;filters&quot;).minScore = 0'>{{ _('action.show_all') }}</button>`"></span>
           <span x-show="$store.filters.minScore < 60">
-            All ranked · sorted by fit
+            {{ _('results.all_ranked_sorted') }}
           </span>
         </span>
       {% endif %}
@@ -185,18 +178,18 @@
 
     {# Secondary status line: fetched-at + scoring health notes. Compact. #}
     <div class="text-xs text-body-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-      <span>Fetched {{ fetched_at | humanize }}</span>
+      <span>{{ _('results.fetched') }} {{ fetched_at | humanize }}</span>
       {% if quota_exhausted %}
-        <span style="color: hsl(28 75% 32%);">·  Scoring paused until tomorrow</span>
+        <span style="color: hsl(28 75% 32%);">·  {{ _('results.scoring_paused') }}</span>
       {% elif not has_resume %}
-        <span>· Upload a resume on <a href="/profile" class="underline">Profile</a> to rank these</span>
+        <span>· {{ _('results.upload_resume_prompt') }} <a href="/profile" class="underline">{{ _('nav.profile') }}</a></span>
       {% elif not has_api_key %}
-        <span>· Add a Gemini key on <a href="/profile" class="underline">Profile</a> to rank these</span>
+        <span>· {{ _('results.add_key_prompt') }} <a href="/profile" class="underline">{{ _('nav.profile') }}</a></span>
       {% endif %}
     </div>
     {% if quota_exhausted and exhausted_models %}
       <div class="mt-2 text-xs text-body-muted">
-        Models tried today: {{ exhausted_models | join(', ') }}. Cached scores still visible.
+        {{ _('results.models_tried_today', models=exhausted_models|join(', ')) }}
       </div>
     {% elif scoring_error %}
       <div class="mt-2 text-sm text-error/80">{{ scoring_error }}</div>
@@ -209,7 +202,7 @@
   <div class="flex flex-wrap items-center gap-6">
     <div class="flex-1 min-w-[200px]">
       <label class="text-label block mb-2">
-        Min score:
+        {{ _('filters.min_score') }}:
         <span class="text-base-content font-semibold tabular-nums" x-text="$store.filters.minScore"></span>
       </label>
       <input type="range" min="0" max="100" step="5"
@@ -218,29 +211,29 @@
     </div>
     <label class="flex items-center gap-2 cursor-pointer select-none">
       <input type="checkbox" x-model="$store.filters.hideFrench" class="checkbox checkbox-sm">
-      <span class="text-sm">Hide French job postings</span>
+      <span class="text-sm">{{ _('filters.hide_french') }}</span>
     </label>
     <label class="flex items-center gap-2 cursor-pointer select-none"
-           title="Only jobs first seen in the last 48 hours">
+           title="{{ _('filters.only_new.tooltip') }}">
       <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
-      <span class="text-sm inline-flex items-center gap-1"><i class="ph-fill ph-sparkle i-4" style="color: oklch(var(--a));"></i>Only new</span>
+      <span class="text-sm inline-flex items-center gap-1"><i class="ph-fill ph-sparkle i-4" style="color: oklch(var(--a));"></i>{{ _('filters.only_new') }}</span>
     </label>
     <label class="flex items-center gap-2 cursor-pointer select-none"
-           title="Hide jobs you've already spent time reading">
+           title="{{ _('filters.hide_viewed.tooltip') }}">
       <input type="checkbox" x-model="$store.filters.hideViewed" class="checkbox checkbox-sm">
-      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-eye-slash i-4"></i>Hide viewed</span>
+      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-eye-slash i-4"></i>{{ _('filters.hide_viewed') }}</span>
     </label>
     <label class="flex items-center gap-2 cursor-pointer select-none"
-           title="Hide jobs you've swiped away as 'not interested'">
+           title="{{ _('filters.hide_dismissed.tooltip') }}">
       <input type="checkbox" x-model="$store.filters.hideDismissed" class="checkbox checkbox-sm">
-      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-x-circle i-4"></i>Hide dismissed</span>
+      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-x-circle i-4"></i>{{ _('filters.hide_dismissed') }}</span>
     </label>
     <div>
-      <label class="text-label block mb-1">Remote</label>
+      <label class="text-label block mb-1">{{ _('filters.remote') }}</label>
       <select x-model="$store.filters.remoteFilter" class="select select-bordered select-sm cursor-pointer">
-        <option value="any">Any</option>
-        <option value="remote">Remote only</option>
-        <option value="onsite">On-site only</option>
+        <option value="any">{{ _('filters.remote.any') }}</option>
+        <option value="remote">{{ _('filters.remote.remote') }}</option>
+        <option value="onsite">{{ _('filters.remote.onsite') }}</option>
       </select>
     </div>
   </div>
@@ -255,16 +248,16 @@
       {% include "partials/job_card.html" %}
     {% else %}
       <div class="card-quiet text-center py-12">
-        <div class="text-body-muted">No jobs in this search.</div>
+        <div class="text-body-muted">{{ _('results.no_jobs') }}</div>
       </div>
     {% endfor %}
     <div x-show="$store.filters.visibleCount(jobs) === 0 && jobs.length > 0"
          x-cloak
          class="card-quiet text-center py-8">
-      <div class="text-body-muted text-sm">All {{ total_jobs }} jobs hidden by current filters.</div>
+      <div class="text-body-muted text-sm">{{ _('results.all_hidden', n=total_jobs) }}</div>
       <button class="mt-2 text-sm text-primary hover:underline cursor-pointer"
               @click="$store.filters.minScore = 0; $store.filters.hideFrench = false; $store.filters.remoteFilter = 'any'; $store.filters.hideViewed = false;">
-        Reset filters
+        {{ _('action.reset_filters') }}
       </button>
     </div>
   </div>
@@ -279,7 +272,7 @@
          style="max-height: calc(100vh - 6rem);">
       <div id="job-detail-pane" class="card-quiet min-h-[300px]">
         <div class="text-body-muted text-sm text-center py-16">
-          Click a job on the left to see full details here.
+          {{ _('results.click_prompt') }}
         </div>
       </div>
     </div>

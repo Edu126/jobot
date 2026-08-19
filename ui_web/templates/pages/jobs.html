@@ -55,8 +55,8 @@
       </div>
       <span class="hidden md:inline text-xs text-body-muted"
             x-text="mode === 'search'
-                    ? 'Cast a wide net — up to 3 titles at once'
-                    : 'Paste a specific job link — deep-analyze one'"></span>
+                    ? '{{ _('jobs.mode.broad_desc') }}'
+                    : '{{ _('jobs.mode.targeted_desc') }}'"></span>
     </div>
 
     {# ─── PANEL A: broad search ─── #}
@@ -64,7 +64,7 @@
          x-data="{
            ...longOp({{ MULTI_STAGES }}, 'Search'),
            queries: [{value: ''}],
-           locationValue: 'Ottawa, Ontario, Canada',
+           locationValue: '{{ (get_setting("home_city") or "Ottawa, Ontario, Canada") | replace("'", "\\'") }}',
            /* Single string tracks which typeahead is open: '' | 'loc' | 'q-N'.
               Simpler than a reactive object with dynamic keys — no Alpine
               reactivity gotchas with property-add-after-init. */
@@ -324,9 +324,9 @@
 {% if recent %}
 <section class="mb-8" x-data="{ expanded: false }">
   <div class="flex items-baseline justify-between mb-3">
-    <div class="text-label">Recent searches</div>
+    <div class="text-label">{{ _('jobs.recent.title') }}</div>
     {% if recent %}
-    <span class="text-xs text-base-content/50">{{ recent | length }} cached</span>
+    <span class="text-xs text-base-content/50">{{ _('jobs.recent.cached', n=recent|length) }}</span>
     {% endif %}
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -342,8 +342,8 @@
   </div>
   <button @click="expanded = !expanded"
           class="text-sm text-base-content/60 hover:text-base-content cursor-pointer pt-2 inline-flex items-center gap-1">
-    <template x-if="!expanded"><span><i class="ph-thin ph-caret-down i-3"></i> Show {{ recent | length - 6 }} more</span></template>
-    <template x-if="expanded"><span><i class="ph-thin ph-caret-up i-3"></i> Show less</span></template>
+    <template x-if="!expanded"><span><i class="ph-thin ph-caret-down i-3"></i> {{ _('action.show_more', n=recent|length - 6) }}</span></template>
+    <template x-if="expanded"><span><i class="ph-thin ph-caret-up i-3"></i> {{ _('action.show_less') }}</span></template>
   </button>
   {% endif %}
 </section>
@@ -365,39 +365,39 @@
   <div class="flex items-baseline justify-between mb-4 flex-wrap gap-3">
     <div>
       <div class="flex items-center gap-2">
-        <h2 class="text-title label-dot">Top matches for you</h2>
+        <h2 class="text-title label-dot">{{ _('jobs.top_matches.title') }}</h2>
         <span class="pill pill-accent inline-flex items-center gap-1">
-          <i class="ph-thin ph-star i-3"></i> curated
+          <i class="ph-thin ph-star i-3"></i> {{ _('jobs.top_matches.curated') }}
         </span>
       </div>
       <p class="text-sm text-body-muted mt-1">
-        Best-scoring jobs across your {{ cache_count }} recent search{{ '' if cache_count == 1 else 'es' }}. Click any to see full details.
+        {{ _('jobs.top_matches.subtitle', n=cache_count) }}
       </p>
     </div>
     <div class="flex items-center gap-4 flex-wrap">
       <label class="flex items-center gap-2 cursor-pointer select-none"
-             title="Only jobs first seen in the last 48 hours">
+             title="{{ _('filters.only_new.tooltip') }}">
         <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
         <span class="text-sm inline-flex items-center gap-1">
-          <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i> Only new
+          <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i> {{ _('filters.only_new') }}
         </span>
       </label>
       <div>
-        <label class="text-label block mb-0.5">Added</label>
+        <label class="text-label block mb-0.5">{{ _('filters.added') }}</label>
         <select class="select select-bordered select-sm cursor-pointer"
                 x-model.number="$store.filters.maxAgeDays"
                 @change="$store.filters.maxAgeDays = $event.target.value === '' ? null : Number($event.target.value)">
-          <option value="">All</option>
-          <option value="1">Last 24 h</option>
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
+          <option value="">{{ _('filters.added.all') }}</option>
+          <option value="1">{{ _('filters.added.24h') }}</option>
+          <option value="7">{{ _('filters.added.7d') }}</option>
+          <option value="30">{{ _('filters.added.30d') }}</option>
         </select>
       </div>
       <div class="text-right">
-        <div class="text-label">Showing</div>
+        <div class="text-label">{{ _('filters.showing') }}</div>
         <div class="text-metric-sm mt-1">
           <span x-text="$store.filters.visibleCount(jobs)">{{ top_matches | length }}</span>
-          <span class="text-base-content/30 font-normal text-base"> matches</span>
+          <span class="text-base-content/30 font-normal text-base"> {{ _('filters.matches') }}</span>
         </div>
       </div>
     </div>
@@ -412,10 +412,10 @@
       <div x-show="$store.filters.visibleCount(jobs) === 0 && jobs.length > 0"
            x-cloak
            class="card-quiet text-center py-6">
-        <div class="text-body-muted text-sm">No matches with current filters.</div>
+        <div class="text-body-muted text-sm">{{ _('filters.no_matches') }}</div>
         <button class="mt-2 text-sm text-primary hover:underline cursor-pointer"
                 @click="$store.filters.maxAgeDays = null; $store.filters.onlyNew = false;">
-          Reset
+          {{ _('action.reset') }}
         </button>
       </div>
     </div>
