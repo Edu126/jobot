@@ -21,10 +21,8 @@
       <i class="ph-thin ph-globe-hemisphere-west text-xl shrink-0 mt-0.5"
          style="color: oklch(var(--p));"></i>
       <div class="flex-1 min-w-0 text-sm">
-        <div class="font-semibold">{{ _('geo.banner.title') if _('geo.banner.title') != 'geo.banner.title' else 'Where are you searching from?' }}</div>
-        <div class="text-body-muted text-xs mt-0.5">
-          {{ _('geo.banner.subtitle') if _('geo.banner.subtitle') != 'geo.banner.subtitle' else "Tell us your home country and city so we default your searches to the right region — otherwise we assume Ottawa, Canada." }}
-        </div>
+        <div class="font-semibold">{{ _('geo.banner.title') }}</div>
+        <div class="text-body-muted text-xs mt-0.5">{{ _('geo.banner.subtitle') }}</div>
       </div>
     </div>
     <form hx-post="/profile/geo-quick-set"
@@ -33,7 +31,7 @@
           class="flex flex-col md:flex-row gap-2 items-stretch">
       <select name="home_country" required
               class="select select-bordered select-sm md:w-52 cursor-pointer">
-        <option value="" disabled selected>Country…</option>
+        <option value="" disabled selected>{{ _('geo.banner.country_placeholder') }}</option>
         <option value="Canada">Canada</option>
         <option value="United States">United States</option>
         <option value="United Kingdom">United Kingdom</option>
@@ -46,7 +44,7 @@
         <option value="Germany">Deutschland / Germany</option>
       </select>
       <input type="text" name="home_city" required
-             placeholder="City (e.g. Bogotá, Madrid, Toronto)"
+             placeholder="{{ _('profile.settings.city_placeholder') }}"
              autocomplete="off"
              class="input input-bordered input-sm md:flex-1">
       <button type="submit" class="btn btn-primary btn-sm cursor-pointer whitespace-nowrap">

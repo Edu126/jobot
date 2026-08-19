@@ -21,7 +21,7 @@
 {# Root x-data — modal state + section toggles. Kept at page level so
    the modal can be positioned as a sibling of the card that opened it. #}
 <div class="space-y-6"
-     x-data="{ atsModal: false, resumeModal: {{ 'true' if just_regenerated else 'false' }}, showReplace: false, showOlder: false, settingsTab: 'notifications' }"
+     x-data="{ atsModal: false, resumeModal: {{ 'true' if just_regenerated else 'false' }}, showReplace: false, showOlder: false, settingsTab: 'language', showLocationEditor: false }"
      x-init="{% if just_regenerated %}$store.toast.show('Resume re-parsed cleanly', 'success'); history.replaceState({}, '', '/profile');{% endif %}"
      @keydown.escape.window="atsModal = false; resumeModal = false">
 
@@ -201,10 +201,106 @@
        auth ships and we introduce an admin role, restore the API-key
        tab behind an is_admin gate. #}
       <div class="seg-tabs mb-5">
+        <button type="button" @click="settingsTab = 'language'"
+                :class="settingsTab === 'language' ? 'seg-tab seg-tab--active' : 'seg-tab'">
+          <i class="ph-thin ph-globe-hemisphere-west i-4"></i>{{ _('profile.tab.language') }}
+        </button>
         <button type="button" @click="settingsTab = 'notifications'"
                 :class="settingsTab === 'notifications' ? 'seg-tab seg-tab--active' : 'seg-tab'">
-          <i class="ph-thin ph-bell i-4"></i>Notifications
+          <i class="ph-thin ph-bell i-4"></i>{{ _('profile.tab.notifications') }}
         </button>
+      </div>
+
+      {# ─── Tab: Language + geography settings ───
+       The two user-facing language knobs (UI + Output) plus the home
+       country/city with an inline editor. Home fields feed the search
+       defaults in core/jobs/search.py; the language fields feed both
+       template `_()` calls (UI) and prompt language directives (Output). #}
+      <div x-show="settingsTab === 'language'" x-cloak>
+        <form hx-post="/profile/settings/language" class="space-y-4">
+          <div>
+            <div class="text-label mb-2">{{ _('profile.settings.ui_language') }}</div>
+            <div class="flex gap-2">
+              {% for code, label in [('en', 'English'), ('es', 'Español')] %}
+              <label class="flex-1 cursor-pointer">
+                <input type="radio" name="ui_language" value="{{ code }}"
+                       {% if settings_ctx.ui_language == code %}checked{% endif %}
+                       class="peer sr-only">
+                <div class="border border-base-300 rounded-lg px-3 py-2 text-center text-sm
+                            peer-checked:border-primary peer-checked:bg-primary/5
+                            peer-checked:font-semibold transition-colors">
+                  {{ label }}
+                </div>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div>
+            <div class="text-label mb-2">{{ _('profile.settings.output_language') }}</div>
+            <div class="text-xs text-body-muted mb-2">
+              {{ _('profile.settings.output_language.hint') }}
+            </div>
+            <div class="flex gap-2">
+              {% for code, label in [('en', 'English'), ('es', 'Español')] %}
+              <label class="flex-1 cursor-pointer">
+                <input type="radio" name="output_language" value="{{ code }}"
+                       {% if settings_ctx.output_language == code %}checked{% endif %}
+                       class="peer sr-only">
+                <div class="border border-base-300 rounded-lg px-3 py-2 text-center text-sm
+                            peer-checked:border-primary peer-checked:bg-primary/5
+                            peer-checked:font-semibold transition-colors">
+                  {{ label }}
+                </div>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-sm cursor-pointer">
+            {{ _('action.save') }}
+          </button>
+        </form>
+
+        {# Home location — display + inline edit. Populated once via the
+         first-visit banner; user can revisit here to change city or country. #}
+        <div class="pt-4 mt-4 border-t border-base-300">
+          <div class="flex items-baseline justify-between mb-2">
+            <div class="text-label">{{ _('profile.settings.home_location') }}</div>
+            <button type="button" @click="showLocationEditor = !showLocationEditor"
+                    class="text-xs text-primary hover:underline cursor-pointer">
+              <span x-text="showLocationEditor ? '{{ _('action.cancel') }}' : '{{ _('action.change') }}'"></span>
+            </button>
+          </div>
+          <div x-show="!showLocationEditor" class="text-sm">
+            {% if settings_ctx.home_city or settings_ctx.home_country %}
+              {{ settings_ctx.home_city or _('profile.settings.no_city') }}
+              {% if settings_ctx.home_country %}<span class="text-base-content/30 mx-1">·</span>{{ settings_ctx.home_country }}{% endif %}
+            {% else %}
+              <span class="text-body-muted">{{ _('profile.settings.no_location') }}</span>
+            {% endif %}
+          </div>
+          <div x-show="showLocationEditor" x-cloak x-collapse class="mt-2">
+            <form hx-post="/profile/geo-quick-set"
+                  class="flex flex-col sm:flex-row gap-2 items-stretch">
+              <select name="home_country" required
+                      class="select select-bordered select-sm sm:w-52 cursor-pointer">
+                <option value="" disabled {% if not settings_ctx.home_country %}selected{% endif %}>Country…</option>
+                {% for c in ['Canada','United States','United Kingdom','Spain','Colombia','Mexico','Argentina','Chile','France','Germany'] %}
+                <option value="{{ c }}" {% if settings_ctx.home_country == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+              </select>
+              <input type="text" name="home_city" required
+                     value="{{ settings_ctx.home_city }}"
+                     placeholder="{{ _('profile.settings.city_placeholder') }}"
+                     autocomplete="off"
+                     class="input input-bordered input-sm sm:flex-1">
+              <button type="submit" class="btn btn-primary btn-sm cursor-pointer whitespace-nowrap">
+                {{ _('action.save') }}
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
 
       {# ─── Tab: API key + usage quota (hidden — admin-only surface).

@@ -7,7 +7,9 @@ Currently holds:
 - `tailored_history[job_id]` — list of past Gemini-tailored runs for a
   job, newest last. Capped at MAX_TAILOR_HISTORY so we don't blow up
   memory over long sessions. Each entry:
-      {"tailored": dict, "at": iso_string, "level": "conservative|balanced|aggressive"}
+      {"tailored": dict, "at": iso_string,
+       "level": "conservative|balanced|aggressive",
+       "language": "en|es"}
 - `geocode_cache[query]` — 24h Photon typeahead cache.
 
 **Removed in PR 2:** `search_tasks`. Background multi-search + Expand
@@ -32,11 +34,19 @@ geocode_cache: dict[str, dict[str, Any]] = {}
 
 
 def record_tailor(job_id: str, tailored: dict[str, Any]) -> int:
-    """Append a new tailor run for this job. Returns the index of the new run."""
+    """Append a new tailor run for this job. Returns the index of the new run.
+
+    Language is captured from user settings at the time of the call — a
+    user who tailors twice with different Output-language settings gets
+    two coexisting versions in history (one EN, one ES), both visible
+    in the tailor drawer's past-runs list with a language chip.
+    """
+    from core.settings import get_output_language
     entry = {
         "tailored": tailored,
         "at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "level": tailored.get("tailoring_level", "?"),
+        "language": get_output_language(),
     }
     hist = tailored_history.setdefault(job_id, [])
     hist.append(entry)
@@ -57,10 +67,28 @@ def get_tailored(job_id: str, run_index: int = -1) -> dict[str, Any] | None:
         return None
 
 
+def get_tailored_language(job_id: str, run_index: int = -1) -> str:
+    """Language the specified run was generated in ('en' | 'es' | '')."""
+    hist = tailored_history.get(job_id)
+    if not hist:
+        return ""
+    try:
+        return hist[run_index].get("language", "") or ""
+    except IndexError:
+        return ""
+
+
 def list_runs(job_id: str) -> list[dict[str, str]]:
-    """Return {index, at, level} for each past run of this job (newest first)."""
+    """Return {index, at, level, language} for each past run of this
+    job (newest first). Language surfaces the (EN)/(ES) tag in the
+    tailor drawer's past-runs list."""
     hist = tailored_history.get(job_id, [])
     return [
-        {"index": i, "at": e["at"], "level": e["level"]}
+        {
+            "index": i,
+            "at": e["at"],
+            "level": e["level"],
+            "language": e.get("language", ""),
+        }
         for i, e in enumerate(hist)
     ][::-1]

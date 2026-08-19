@@ -557,9 +557,9 @@
          has a Kanban mode that IS the applications board. /applications
          still redirects to /journey#apps so old bookmarks don't break. #}
       <nav class="hidden sm:flex items-center gap-8">
-        <a href="/jobs" class="nav-tab {% if active_tab == 'jobs' %}active{% endif %}">Jobs</a>
-        <a href="/journey" class="nav-tab {% if active_tab == 'journey' %}active{% endif %}">Journey</a>
-        <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">Profile</a>
+        <a href="/jobs" class="nav-tab {% if active_tab == 'jobs' %}active{% endif %}">{{ _('nav.jobs') }}</a>
+        <a href="/journey" class="nav-tab {% if active_tab == 'journey' %}active{% endif %}">{{ _('nav.journey') }}</a>
+        <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">{{ _('nav.profile') }}</a>
       </nav>
 
       {# Desktop-only "local" pill #}
@@ -583,14 +583,14 @@
     <div class="sm:hidden border-t border-base-300 bg-base-100"
          x-show="mobileOpen" x-cloak x-collapse>
       <nav class="flex flex-col px-4 py-3 gap-1">
-        {% for label, href, key in [
-          ('Jobs', '/jobs', 'jobs'),
-          ('Journey', '/journey', 'journey'),
-          ('Profile', '/profile', 'profile'),
+        {% for label_key, href, key in [
+          ('nav.jobs', '/jobs', 'jobs'),
+          ('nav.journey', '/journey', 'journey'),
+          ('nav.profile', '/profile', 'profile'),
         ] %}
         <a href="{{ href }}"
            class="py-2 px-3 rounded-lg text-base {% if active_tab == key %}bg-base-200 font-semibold{% else %}text-base-content/70 hover:bg-base-200/60{% endif %}">
-          {{ label }}
+          {{ _(label_key) }}
         </a>
         {% endfor %}
         <div class="px-3 pt-2">

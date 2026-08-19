@@ -97,6 +97,17 @@ async def profile_page(request: Request, just_regenerated: int = 0):
         for m, count in request_counts_today().items()
     ]
 
+    # Language + geography settings (Day 2 sprint work). Passed so the
+    # Language tab's radios render with the current values checked and
+    # the Home location row shows the user's actual data.
+    from core import settings
+    settings_ctx = {
+        "ui_language": settings.get_ui_language(request.headers.get("accept-language", "")),
+        "output_language": settings.get_output_language(),
+        "home_country": settings.get("home_country", ""),
+        "home_city": settings.get("home_city", ""),
+    }
+
     return templates.TemplateResponse(
         request,
         "pages/profile.html",
@@ -112,6 +123,7 @@ async def profile_page(request: Request, just_regenerated: int = 0):
             "saved_searches": db.list_saved_searches(),
             "jobot_version": current_version(),
             "just_regenerated": bool(just_regenerated),
+            "settings_ctx": settings_ctx,
         },
     )
 
@@ -430,6 +442,28 @@ async def update_api_key(request: Request, api_key: str = Form(...)):
     # Update in-process env var so this request's downstream calls see the new key.
     os.environ["GOOGLE_API_KEY"] = key
 
+    return Response(status_code=200, headers={"HX-Refresh": "true"})
+
+
+@router.post("/profile/settings/language")
+async def update_language_settings(
+    request: Request,
+    ui_language: str = Form(...),
+    output_language: str = Form(...),
+):
+    """Persist the two user-facing language toggles from Profile.
+
+    Both are validated against `SUPPORTED_LANGUAGES` — anything else is
+    silently coerced to the default so a bad form submission can't wedge
+    the app into an unsupported language. HX-Refresh so the new UI
+    language renders immediately."""
+    from core import settings
+    if ui_language not in settings.SUPPORTED_LANGUAGES:
+        ui_language = settings.DEFAULT_LANGUAGE
+    if output_language not in settings.SUPPORTED_LANGUAGES:
+        output_language = ui_language
+    settings.set("ui_language", ui_language)
+    settings.set("output_language", output_language)
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 

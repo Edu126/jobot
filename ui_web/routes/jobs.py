@@ -60,7 +60,7 @@ from core.resume.writer import render_cover_letter_docx, render_docx
 from .. import state
 from ..deps import slugify, templates
 from ..ratelimit import limiter
-from ..state import get_tailored, list_runs, record_tailor
+from ..state import get_tailored, get_tailored_language, list_runs, record_tailor
 
 
 router = APIRouter(tags=["jobs"])
@@ -1896,6 +1896,12 @@ async def jobs_tailor_download(job_id: str, run: int = -1):
     if position_part:
         pieces.append(position_part)
     pieces.append(slugify(level))
+    # Language suffix so a user with both EN + ES versions can tell
+    # them apart at download time without opening either. Skips the
+    # suffix for old (pre-i18n) runs that lack a language stamp.
+    lang = get_tailored_language(job_id, run)
+    if lang:
+        pieces.append(lang)
     filename = "_".join(pieces) + ".docx"
 
     events.track(events.TAILOR_RESUME_DOWNLOAD, job_id=job_id, level=str(level), run=run)
@@ -1954,6 +1960,9 @@ async def jobs_tailor_cover_letter_download(job_id: str, run: int = -1):
     position_part = slugify(job.get("title", ""))
     pieces = [p for p in [name_part, company_part, position_part] if p]
     pieces.append("cover-letter")
+    lang = get_tailored_language(job_id, run)
+    if lang:
+        pieces.append(lang)
     filename = "_".join(pieces) + ".docx"
 
     events.track(events.TAILOR_CL_DOWNLOAD, job_id=job_id, run=run)

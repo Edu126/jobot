@@ -11,10 +11,10 @@
      role="navigation"
      aria-label="Main">
   <div class="grid grid-cols-3 h-14">
-    {% for label, href, key, icon in [
-      ('Jobs',    '/jobs',    'jobs',    'ph-magnifying-glass'),
-      ('Journey', '/journey', 'journey', 'ph-compass'),
-      ('Profile', '/profile', 'profile', 'ph-user'),
+    {% for label_key, href, key, icon in [
+      ('nav.jobs',    '/jobs',    'jobs',    'ph-magnifying-glass'),
+      ('nav.journey', '/journey', 'journey', 'ph-compass'),
+      ('nav.profile', '/profile', 'profile', 'ph-user'),
     ] %}
     <a href="{{ href }}"
        class="flex flex-col items-center justify-center gap-0.5 transition-colors {% if active_tab == key %}font-semibold{% else %}text-base-content/60 hover:text-base-content{% endif %}"
@@ -22,7 +22,7 @@
        aria-current="{{ 'page' if active_tab == key else 'false' }}">
       <i class="{% if active_tab == key %}ph-fill{% else %}ph-thin{% endif %} {{ icon }}"
          style="font-size: 1.35rem; line-height: 1;"></i>
-      <span style="font-size: 10px; line-height: 1; letter-spacing: 0.02em;">{{ label }}</span>
+      <span style="font-size: 10px; line-height: 1; letter-spacing: 0.02em;">{{ _(label_key) }}</span>
     </a>
     {% endfor %}
   </div>

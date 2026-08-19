@@ -123,6 +123,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.open_posting": "Open posting",
         "action.show_description": "Show description",
         "action.apply_on": "Apply on {company}",
+        "action.view_on": "View on {site}",
         # Jobs page — top-level copy
         "jobs.title": "Jobs",
         "jobs.subtitle": "Search job boards, see AI-scored matches with reasoning, curate what to apply to.",
@@ -131,6 +132,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.tab.individual": "Individual",
         "jobs.tab.individual_full": "Individual Job Review",
         "jobs.form.add_another": "+ Add another job ({n}/3)",
+        "jobs.form.add_another_short": "Add another job",
+        "action.analyze": "Analyze",
         "jobs.form.location_placeholder": "City, region, country",
         "jobs.form.job_placeholder_first": "Job title (e.g. Revit specialist)",
         "jobs.form.job_placeholder_more": "Another job title (e.g. BIM Modeler)",
@@ -157,10 +160,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "toast.could_not_dismiss": "Couldn't dismiss — try again",
         "toast.undo_failed": "Undo failed — try again",
         # Profile — settings block
+        "profile.tab.language": "Language",
+        "profile.tab.notifications": "Notifications",
         "profile.settings.ui_language": "Interface language",
         "profile.settings.output_language": "Language for generated resumes & cover letters",
+        "profile.settings.output_language.hint": "Applies to tailored resumes and cover letters. You can keep your resume in one language and generate output in another.",
         "profile.settings.home_country": "Home country",
         "profile.settings.home_city": "Home city",
+        "profile.settings.home_location": "Home location",
+        "profile.settings.no_location": "Not set — every search defaults to Ottawa, Canada.",
+        "profile.settings.no_city": "City not set",
+        "profile.settings.city_placeholder": "City (e.g. Bogotá, Madrid, Toronto)",
+        # Common actions
+        "action.change": "Change",
+        "action.view": "View →",
+        # Geography first-visit banner
+        "geo.banner.title": "Where are you searching from?",
+        "geo.banner.subtitle": "Tell us your home country and city so we default your searches to the right region — otherwise we assume Ottawa, Canada.",
+        "geo.banner.country_placeholder": "Country…",
     },
     "es": {
         # Navegación
@@ -181,6 +198,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.open_posting": "Ver oferta",
         "action.show_description": "Ver descripción",
         "action.apply_on": "Aplicar en {company}",
+        "action.view_on": "Ver en {site}",
         # Página de empleos
         "jobs.title": "Empleos",
         "jobs.subtitle": "Busca ofertas, revisa coincidencias puntuadas por IA con reasoning, y decide a cuáles postular.",
@@ -189,6 +207,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.tab.individual": "Individual",
         "jobs.tab.individual_full": "Revisión de oferta puntual",
         "jobs.form.add_another": "+ Agregar otro puesto ({n}/3)",
+        "jobs.form.add_another_short": "Agregar otro puesto",
+        "action.analyze": "Analizar",
         "jobs.form.location_placeholder": "Ciudad, región, país",
         "jobs.form.job_placeholder_first": "Puesto (ej. Especialista en Revit)",
         "jobs.form.job_placeholder_more": "Otro puesto (ej. Modelador BIM)",
@@ -215,9 +235,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "toast.could_not_dismiss": "No se pudo descartar — intenta de nuevo",
         "toast.undo_failed": "No se pudo deshacer — intenta de nuevo",
         # Perfil
+        "profile.tab.language": "Idioma",
+        "profile.tab.notifications": "Notificaciones",
         "profile.settings.ui_language": "Idioma de la interfaz",
         "profile.settings.output_language": "Idioma para currículums y cartas generadas",
+        "profile.settings.output_language.hint": "Se aplica a currículums adaptados y cartas de presentación. Puedes mantener tu currículum en un idioma y generar el resultado en otro.",
         "profile.settings.home_country": "País",
         "profile.settings.home_city": "Ciudad",
+        "profile.settings.home_location": "Ubicación",
+        "profile.settings.no_location": "Sin definir — cada búsqueda usa Ottawa, Canadá por defecto.",
+        "profile.settings.no_city": "Ciudad sin definir",
+        "profile.settings.city_placeholder": "Ciudad (ej. Bogotá, Madrid, Toronto)",
+        # Acciones
+        "action.change": "Cambiar",
+        "action.view": "Ver →",
+        # Banner de bienvenida (geografía)
+        "geo.banner.title": "¿Desde dónde buscas empleo?",
+        "geo.banner.subtitle": "Cuéntanos tu país y ciudad para que las búsquedas usen la región correcta por defecto — de lo contrario asumimos Ottawa, Canadá.",
+        "geo.banner.country_placeholder": "País…",
     },
 }

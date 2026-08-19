@@ -17,17 +17,23 @@
   </div>
 </div>
 
-{# Past runs — clickable to view without re-generating #}
+{# Past runs — clickable to view without re-generating. Language chip
+   surfaces which language this specific run was generated in — a user
+   who tailored in Spanish then in English keeps both versions and can
+   swap between them from this list. #}
 {% for r in runs %}
 <button class="w-full flex items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2 hover:border-base-content/30 hover:bg-base-200/50 transition-colors text-left cursor-pointer mb-1.5"
         hx-get="/jobs/tailor/{{ job.id }}/view/{{ r.index }}"
         hx-target="#tailor-result-{{ job.id }}"
         hx-swap="innerHTML">
-  <div class="flex items-center gap-2 text-sm">
+  <div class="flex items-center gap-2 text-sm min-w-0">
     <span class="font-medium">{{ r.level | title }}</span>
+    {% if r.language %}
+    <span class="text-xs uppercase tracking-wide text-base-content/50 font-mono">{{ r.language }}</span>
+    {% endif %}
     <span class="text-base-content/40">·</span>
-    <span class="text-body-muted text-xs">{{ r.at | humanize }}</span>
+    <span class="text-body-muted text-xs truncate">{{ r.at | humanize }}</span>
   </div>
-  <span class="text-xs text-base-content/40">View →</span>
+  <span class="text-xs text-base-content/40 shrink-0">{{ _('action.view') }}</span>
 </button>
 {% endfor %}

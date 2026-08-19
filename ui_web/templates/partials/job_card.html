@@ -55,26 +55,26 @@
             <span class="chip inline-flex items-center gap-1"
                   style="background: hsl(140 40% 96%); border-color: hsl(140 30% 82%); color: hsl(140 50% 25%);"
                   title="Added by your last Expand search">
-              <i class="ph-thin ph-arrows-out i-3"></i>Fresh
+              <i class="ph-thin ph-arrows-out i-3"></i>{{ _('chip.fresh') }}
             </span>
             {% endif %}
             {% if job._is_new %}
             <span class="chip chip-accent inline-flex items-center gap-1" title="First seen in the last 48 hours">
-              <i class="ph-fill ph-sparkle i-3"></i>New
+              <i class="ph-fill ph-sparkle i-3"></i>{{ _('chip.new') }}
             </span>
             {% endif %}
             {% if job._is_viewed %}
             <span class="chip inline-flex items-center gap-1 text-base-content/50"
                   style="background: hsl(0 0% 96%); border-color: hsl(0 0% 88%);"
                   title="You spent time reading this before">
-              <i class="ph-thin ph-eye i-3"></i>Viewed
+              <i class="ph-thin ph-eye i-3"></i>{{ _('chip.viewed') }}
             </span>
             {% endif %}
             {% if job._is_dismissed %}
             <span class="chip inline-flex items-center gap-1"
                   style="background: hsl(0 40% 96%); border-color: hsl(0 30% 88%); color: hsl(0 50% 45%);"
                   title="You dismissed this — swipe again or toggle 'Show dismissed' to restore">
-              <i class="ph-thin ph-x-circle i-3"></i>Dismissed
+              <i class="ph-thin ph-x-circle i-3"></i>{{ _('chip.dismissed') }}
             </span>
             {% endif %}
             {% if job._source_label %}
@@ -89,7 +89,7 @@
             {% endif %}
             {% if job.is_remote %}
             <span class="chip chip-neutral inline-flex items-center gap-1">
-              <i class="ph-thin ph-house i-3"></i>Remote
+              <i class="ph-thin ph-house i-3"></i>{{ _('chip.remote') }}
             </span>
             {% endif %}
             {% if job.min_salary or job.max_salary %}
@@ -128,14 +128,14 @@
         <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
            class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
            title="Direct link to the company's career page">
-          Apply on {{ job.company }} <i class="ph-thin ph-arrow-square-out i-4"></i>
+          {{ _('action.apply_on', company=job.company) }} <i class="ph-thin ph-arrow-square-out i-4"></i>
         </a>
         {% endif %}
         {% if job.job_url %}
         <a href="{{ job.job_url }}" target="_blank" rel="noopener"
            class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
-          {% if job.job_url_direct and job.job_url_direct != job.job_url %}View on {{ job.site or 'board' }}
-          {% else %}Open posting{% endif %}
+          {% if job.job_url_direct and job.job_url_direct != job.job_url %}{{ _('action.view_on', site=(job.site or 'board')) }}
+          {% else %}{{ _('action.open_posting') }}{% endif %}
           <i class="ph-thin ph-arrow-square-out i-4"></i>
         </a>
         {% endif %}
@@ -144,7 +144,7 @@
                 hx-target="#tailor-drawer-body"
                 hx-swap="innerHTML"
                 @click="$store.tailor.openFor('{{ job.id }}')">
-          Tailor
+          {{ _('action.tailor') }}
         </button>
         {% if job.description %}
         {# Lazy-load the description via HTMX rather than rendering it inline.
@@ -160,7 +160,7 @@
                 hx-target="closest article"
                 hx-swap="beforeend"
                 hx-trigger="click once"
-                onclick="this.style.display='none'">Show description</button>
+                onclick="this.style.display='none'">{{ _('action.show_description') }}</button>
         {% endif %}
       </div>
     </div>

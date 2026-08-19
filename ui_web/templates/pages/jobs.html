@@ -9,10 +9,8 @@
 {% block content %}
 
 <div class="mb-6 space-y-2">
-  <h1 class="text-display">Jobs</h1>
-  <p class="text-body-muted">
-    Search job boards, see AI-scored matches with reasoning, curate what to apply to.
-  </p>
+  <h1 class="text-display">{{ _('jobs.title') }}</h1>
+  <p class="text-body-muted">{{ _('jobs.subtitle') }}</p>
 </div>
 
 {% if not has_resume or not has_api_key %}
@@ -45,12 +43,14 @@
         <button type="button" @click="mode = 'search'"
                 :class="mode === 'search' ? 'seg-tab seg-tab--active' : 'seg-tab'">
           <i class="ph-thin ph-magnifying-glass i-4"></i>
-          <span>Broad<span class="hidden md:inline"> search</span></span>
+          <span class="md:hidden">{{ _('jobs.tab.broad') }}</span>
+          <span class="hidden md:inline">{{ _('jobs.tab.broad_full') }}</span>
         </button>
         <button type="button" @click="mode = 'targeted'"
                 :class="mode === 'targeted' ? 'seg-tab seg-tab--active' : 'seg-tab'">
           <i class="ph-thin ph-crosshair-simple i-4"></i>
-          <span>Individual<span class="hidden md:inline"> Job Review</span></span>
+          <span class="md:hidden">{{ _('jobs.tab.individual') }}</span>
+          <span class="hidden md:inline">{{ _('jobs.tab.individual_full') }}</span>
         </button>
       </div>
       <span class="hidden md:inline text-xs text-body-muted"
@@ -188,7 +188,7 @@
             <div class="typeahead-wrap flex-1">
               <input type="text" name="queries"
                      x-model="queries[idx].value"
-                     :placeholder="idx === 0 ? 'Job title (e.g. Revit specialist)' : 'Another job title (e.g. BIM Modeler)'"
+                     :placeholder="idx === 0 ? '{{ _('jobs.form.job_placeholder_first') }}' : '{{ _('jobs.form.job_placeholder_more') }}'"
                      required
                      :disabled="running"
                      autocomplete="off"
@@ -224,7 +224,7 @@
                   x-show="queries.length < 3 && !running"
                   class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
                   style="min-height: 44px;">
-            + Add another job (<span x-text="queries.length"></span>/3)
+            <span x-text="`+ {{ _('jobs.form.add_another_short') }} (${queries.length}/3)`"></span>
           </button>
           <span x-show="queries.length >= 3 && !running" class="text-xs text-body-muted">
             Max 3 queries per run (rate-limit safety).
@@ -236,7 +236,7 @@
         <div class="mt-3 typeahead-wrap">
           <input type="text" name="location"
                  x-model="locationValue"
-                 placeholder="City, region, country"
+                 placeholder="{{ _('jobs.form.location_placeholder') }}"
                  :disabled="running"
                  autocomplete="off"
                  spellcheck="false"
@@ -275,7 +275,9 @@
         <button type="submit"
                 :disabled="running"
                 class="btn btn-primary cursor-pointer w-full md:w-auto md:min-w-[10rem] mt-4">
-          <span x-text="queries.length > 1 ? `Run ${queries.length} searches` : 'Run search'"></span>
+          <span x-text="queries.length > 1
+                        ? `{{ _('action.run_n_searches', n='__N__') }}`.replace('__N__', queries.length)
+                        : '{{ _('action.run_search') }}'"></span>
         </button>
 
         <div x-show="queries.length > 1" x-cloak class="text-xs text-body-muted mt-2">
@@ -305,7 +307,7 @@
           <button type="submit"
                   :disabled="running"
                   class="btn btn-primary cursor-pointer w-full md:w-auto md:min-w-[8rem]">
-            Analyze
+            {{ _('action.analyze') }}
           </button>
         </div>
         <div class="text-xs text-body-muted mt-2">
