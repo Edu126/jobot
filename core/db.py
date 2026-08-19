@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -234,6 +234,25 @@ CREATE TABLE IF NOT EXISTS dismissed_jobs (
     dismissed_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dismissed_jobs_at ON dismissed_jobs(dismissed_at);
+
+-- v11: user feedback captured via the floating widget in base.html.
+-- Every submission carries the free-text message, optional screenshot
+-- of the page at the moment of feedback, the page URL / UA for
+-- context, and the rate-limit identity (sid: cookie or IP) so the
+-- BI agent can attribute themes per user.
+--
+-- Screenshots persist as PNGs under data/feedback/{id}.png; the DB
+-- keeps only the path pointer to keep the table small.
+CREATE TABLE IF NOT EXISTS feedback (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    message         TEXT NOT NULL,
+    screenshot_path TEXT,
+    page_url        TEXT,
+    user_agent      TEXT,
+    identity        TEXT,
+    submitted_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_submitted ON feedback(submitted_at);
 """
 
 
@@ -551,6 +570,53 @@ def unmark_dismissed(job_id: str, path: Path = DB_PATH) -> None:
     """Undo dismissal. Used by the toast Undo button after a swipe-left."""
     with tx(path) as conn:
         conn.execute("DELETE FROM dismissed_jobs WHERE job_id = ?", (job_id,))
+
+
+def save_feedback(
+    *,
+    message: str,
+    page_url: str = "",
+    user_agent: str = "",
+    identity: str = "",
+    screenshot_bytes: Optional[bytes] = None,
+    path: Path = DB_PATH,
+) -> int:
+    """Persist a feedback submission. Screenshot bytes are written to a
+    file next to the DB; only the relative path is stored on the row.
+
+    Returns the new feedback id."""
+    with tx(path) as conn:
+        cur = conn.execute(
+            "INSERT INTO feedback (message, page_url, user_agent, identity, submitted_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (message.strip(), page_url, user_agent, identity, _now()),
+        )
+        new_id = int(cur.lastrowid)
+
+    if screenshot_bytes:
+        shot_dir = path.parent / "feedback"
+        shot_dir.mkdir(parents=True, exist_ok=True)
+        shot_path = shot_dir / f"{new_id}.png"
+        shot_path.write_bytes(screenshot_bytes)
+        with tx(path) as conn:
+            conn.execute(
+                "UPDATE feedback SET screenshot_path = ? WHERE id = ?",
+                (f"feedback/{new_id}.png", new_id),
+            )
+    return new_id
+
+
+def list_feedback(limit: int = 50, path: Path = DB_PATH) -> list[dict]:
+    """Most recent feedback first. For the BI agent + a future admin
+    review view."""
+    with connect(path) as conn:
+        rows = conn.execute(
+            "SELECT id, message, screenshot_path, page_url, user_agent, "
+            "identity, submitted_at FROM feedback "
+            "ORDER BY submitted_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_dismissed_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str]:

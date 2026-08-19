@@ -1,0 +1,156 @@
+{# Feedback capture — floating button top-left + modal.
+
+   Two entry points to the modal:
+     1. Click the floating button (always visible).
+     2. A one-shot gentle pulse after 10 min of active session — draws
+        the eye to the button without opening the modal automatically.
+        Dismissed either by clicking it or after ~5s of pulsing.
+
+   Screenshot is captured client-side via html2canvas (lazy-loaded from
+   CDN on first modal open) so the user doesn't need to grant screen
+   permissions. PNG dataURL is posted to /feedback along with the
+   message; server decodes + stores.
+
+   Everything is Alpine + HTMX — no framework additions. #}
+<div x-data="{
+       open: false,
+       pulsing: false,
+       submitting: false,
+       includeShot: true,
+       shotDataUrl: '',
+       shotError: '',
+       async openModal() {
+         this.open = true;
+         this.pulsing = false;
+         sessionStorage.setItem('feedback_nudged', '1');
+         if (this.includeShot) await this.captureShot();
+       },
+       async captureShot() {
+         this.shotError = '';
+         this.shotDataUrl = '';
+         try {
+           if (!window.html2canvas) {
+             await new Promise((resolve, reject) => {
+               const s = document.createElement('script');
+               s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+               s.onload = resolve;
+               s.onerror = reject;
+               document.head.appendChild(s);
+             });
+           }
+           /* Capture the visible viewport (not the whole scroll height —
+              cheaper + more relevant to what the user is seeing right now). */
+           const canvas = await html2canvas(document.body, {
+             width: window.innerWidth,
+             height: window.innerHeight,
+             x: window.scrollX,
+             y: window.scrollY,
+             scale: 1,
+             logging: false,
+             useCORS: true,
+           });
+           this.shotDataUrl = canvas.toDataURL('image/png');
+         } catch (e) {
+           this.shotError = 'Couldn\\'t capture screen — you can still send the message.';
+         }
+       },
+       close() {
+         this.open = false;
+         this.shotDataUrl = '';
+         this.shotError = '';
+       },
+     }"
+     x-init="
+       /* One-shot pulse after 10 min if user hasn't opened yet. */
+       if (!sessionStorage.getItem('feedback_nudged')) {
+         setTimeout(() => {
+           if (!open && !sessionStorage.getItem('feedback_nudged')) {
+             pulsing = true;
+             setTimeout(() => { pulsing = false; }, 5000);
+           }
+         }, 10 * 60 * 1000);
+       }
+     ">
+
+  {# Floating button — top-left, above other content. Aesthetic:
+     matches the app's hairline card style (thin border, white bg, soft
+     shadow), not DaisyUI's default filled button — the user asked for
+     something 'esteticamente bien'. Pulse anim reuses geo-banner-pulse. #}
+  <button type="button"
+          @click="openModal()"
+          :class="pulsing ? 'feedback-fab feedback-fab--pulse' : 'feedback-fab'"
+          aria-label="{{ _('feedback.open') }}"
+          title="{{ _('feedback.open') }}">
+    <i class="ph-thin ph-lightbulb" style="font-size: 1.25rem; color: oklch(var(--p));"></i>
+  </button>
+
+  {# Modal — centered card. Backdrop-click and Escape both dismiss. #}
+  <div x-show="open" x-cloak
+       class="fixed inset-0 z-[110] flex items-center justify-center p-4"
+       @keydown.escape.window="close()">
+    <div class="absolute inset-0 bg-black/40"
+         @click="close()"
+         x-transition:enter="transition-opacity duration-150"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"></div>
+    <div class="relative bg-base-100 rounded-xl shadow-2xl w-full max-w-md p-5"
+         style="border: 1px solid hsl(0 0% 88%);"
+         x-transition:enter="transition duration-200 ease-out"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100">
+
+      <div class="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <div class="font-semibold text-base">{{ _('feedback.title') }}</div>
+          <div class="text-xs text-body-muted mt-0.5">{{ _('feedback.subtitle') }}</div>
+        </div>
+        <button type="button"
+                @click="close()"
+                aria-label="Close"
+                class="text-base-content/40 hover:text-base-content cursor-pointer shrink-0"
+                style="min-width:32px; min-height:32px; display:inline-flex; align-items:center; justify-content:center;">
+          <i class="ph-thin ph-x i-4"></i>
+        </button>
+      </div>
+
+      <form hx-post="/feedback"
+            hx-target="#feedback-result"
+            hx-swap="innerHTML"
+            @htmx:after-request="if ($event.detail.successful) { setTimeout(() => close(), 1500); }">
+        <textarea name="message"
+                  required
+                  rows="4"
+                  maxlength="4000"
+                  placeholder="{{ _('feedback.placeholder') }}"
+                  class="textarea textarea-bordered w-full text-sm"></textarea>
+
+        <label class="mt-3 flex items-start gap-2 cursor-pointer select-none">
+          <input type="checkbox"
+                 x-model="includeShot"
+                 @change="if (includeShot) captureShot(); else shotDataUrl = ''"
+                 class="checkbox checkbox-sm mt-0.5">
+          <div class="text-xs">
+            <div>{{ _('feedback.include_screenshot') }}</div>
+            <div class="text-body-muted" x-show="shotDataUrl" x-cloak>{{ _('feedback.screenshot_ready') }}</div>
+            <div class="text-warning" x-show="shotError" x-cloak x-text="shotError"></div>
+          </div>
+        </label>
+
+        {# Hidden fields: screenshot data URL + browser context. #}
+        <input type="hidden" name="screenshot" :value="includeShot ? shotDataUrl : ''">
+        <input type="hidden" name="page_url" :value="window.location.href">
+        <input type="hidden" name="user_agent" :value="navigator.userAgent">
+
+        <div class="flex items-center gap-2 mt-4">
+          <button type="submit"
+                  :disabled="submitting"
+                  @click="submitting = true; setTimeout(() => submitting = false, 2000)"
+                  class="btn btn-primary btn-sm cursor-pointer">
+            {{ _('feedback.send') }}
+          </button>
+          <div id="feedback-result" class="text-sm"></div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

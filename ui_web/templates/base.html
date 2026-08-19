@@ -622,6 +622,11 @@
      `pb-16 lg:pb-0` above so content isn't clipped by this bar. #}
   {% include "partials/mobile_nav.html" %}
 
+  {# Feedback widget — floating button top-left + modal + screenshot.
+     Always available; gentle one-shot pulse after 10 min of active
+     session if the user hasn't clicked yet. #}
+  {% include "partials/feedback_widget.html" %}
+
   {# First-visit geography banner — shown until the user provides a
      home country. Without this, non-Canada users (Sara in Spain, sister
      in Colombia) hit a hardcoded Ottawa default on every search.

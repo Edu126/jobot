@@ -14,8 +14,8 @@
    ══════════════════════════════════════════════════════════════════ #}
 
 <div class="mb-10">
-  <h1 class="text-display">Profile</h1>
-  <p class="text-body-muted text-lg mt-2">Your resume, scored.</p>
+  <h1 class="text-display">{{ _('profile.title') }}</h1>
+  <p class="text-body-muted text-lg mt-2">{{ _('profile.subtitle') }}</p>
 </div>
 
 {# Root x-data — modal state + section toggles. Kept at page level so
@@ -31,18 +31,18 @@
     {# ═══ LEFT: Current resume with inline ATS chip ═══ #}
     <section class="card-quiet">
       {% if current %}
-        <div class="text-label">Current resume</div>
+        <div class="text-label">{{ _('profile.resume.current') }}</div>
         <h2 class="text-title mt-1 truncate">{{ current.filename }}</h2>
         <div class="mt-2 flex items-center gap-2 flex-wrap">
           <div class="pill pill-success inline-flex items-center gap-1.5">
-            <span class="pill-dot live"></span>Active
+            <span class="pill-dot live"></span>{{ _('profile.resume.active') }}
           </div>
           <span class="text-sm text-body-muted">
-            {{ current.parsed.stats.word_count }} words · ~{{ current.parsed.stats.page_estimate }}p · {{ current.parsed.stats.bullet_count }} bullets
+            {{ _('profile.resume.stats', words=current.parsed.stats.word_count, pages=current.parsed.stats.page_estimate, bullets=current.parsed.stats.bullet_count) }}
           </span>
         </div>
         <div class="text-xs text-body-muted mt-1">
-          Uploaded {{ current.uploaded_at | humanize }}
+          {{ _('profile.resume.uploaded') }} {{ current.uploaded_at | humanize }}
         </div>
 
         {# AI first read — role label + one-sentence gut check. Lazy-loads
@@ -57,11 +57,11 @@
         {# ATS chip — one row: score / verdict / See report link ── #}
         {% if ats_report %}
           {% if ats_report.score >= 80 %}
-            {% set _score_color = 'oklch(var(--su))' %}{% set _pill = 'pill-success' %}{% set _label = 'Good' %}
+            {% set _score_color = 'oklch(var(--su))' %}{% set _pill = 'pill-success' %}{% set _label = _('profile.ats.good') %}
           {% elif ats_report.score >= 60 %}
-            {% set _score_color = 'oklch(var(--wa) / 0.85)' %}{% set _pill = 'pill-warn' %}{% set _label = 'Needs work' %}
+            {% set _score_color = 'oklch(var(--wa) / 0.85)' %}{% set _pill = 'pill-warn' %}{% set _label = _('profile.ats.needs_work') %}
           {% else %}
-            {% set _score_color = 'oklch(var(--er))' %}{% set _pill = 'pill-danger' %}{% set _label = 'Serious issues' %}
+            {% set _score_color = 'oklch(var(--er))' %}{% set _pill = 'pill-danger' %}{% set _label = _('profile.ats.serious') %}
           {% endif %}
         <div class="mt-4 pt-4 border-t border-base-300/70 flex items-center gap-3 flex-wrap">
           <span class="text-label">ATS</span>
@@ -71,11 +71,11 @@
           <div class="ml-auto flex items-center gap-4">
             <button @click="resumeModal = true"
                     class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1">
-              <i class="ph-thin ph-eye i-3"></i>View resume
+              <i class="ph-thin ph-eye i-3"></i>{{ _('profile.action.view_resume') }}
             </button>
             <button @click="atsModal = true"
                     class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1">
-              See report <i class="ph-thin ph-arrow-right i-3"></i>
+              {{ _('profile.action.see_report') }} <i class="ph-thin ph-arrow-right i-3"></i>
             </button>
           </div>
         </div>
@@ -85,18 +85,18 @@
         <div class="flex items-center gap-2 mt-4 pt-4 border-t border-base-300/70 flex-wrap">
           <a href="/profile/resume/{{ current.id }}/download"
              class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
-            <i class="ph-thin ph-download-simple i-4"></i>Download
+            <i class="ph-thin ph-download-simple i-4"></i>{{ _('profile.action.download') }}
           </a>
           <button @click="showReplace = !showReplace; if (showReplace) showOlder = false"
                   class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
-            <i class="ph-thin ph-arrows-clockwise i-4"></i>Replace
+            <i class="ph-thin ph-arrows-clockwise i-4"></i>{{ _('profile.action.replace') }}
             <i class="ph-thin i-3" :class="showReplace ? 'ph-caret-up' : 'ph-caret-down'"></i>
           </button>
           {% if older_resumes %}
           <button @click="showOlder = !showOlder; if (showOlder) showReplace = false"
                   class="text-xs text-body-muted hover:text-base-content cursor-pointer ml-auto inline-flex items-center gap-1">
             <i class="ph-thin ph-clock-counter-clockwise i-3"></i>
-            {{ older_resumes|length }} older version{{ 's' if older_resumes|length > 1 }}
+            {{ _('profile.older_versions', n=older_resumes|length) }}
             <i class="ph-thin i-3" :class="showOlder ? 'ph-caret-up' : 'ph-caret-down'"></i>
           </button>
           {% endif %}
@@ -104,7 +104,7 @@
 
         {# Upload form — folded under Replace ── #}
         <div x-show="showReplace" x-cloak x-collapse class="mt-4 pt-4 border-t border-base-300/70">
-          <div class="text-label mb-2">Upload a new version</div>
+          <div class="text-label mb-2">{{ _('profile.upload.new_version') }}</div>
           <form hx-post="/profile/resume/upload"
                 hx-encoding="multipart/form-data"
                 hx-target="#upload-status"

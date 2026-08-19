@@ -1,58 +1,59 @@
-{# First-visit geography setup banner.
+{# First-visit geography setup banner — compact + attention-pulse.
 
    Shown from base.html when `settings.home_country` is empty. Submitting
    the form (HTMX POST /profile/geo-quick-set) persists both fields and
-   HX-Refreshes, at which point this partial's conditional in base.html
-   is false and the banner disappears.
+   HX-Refreshes → conditional in base.html flips false → banner gone.
 
-   Positioned as a fixed strip above the mobile bottom nav on small
-   screens, and inline at the top of the content column on desktop.
-   Non-dismissible until submitted — the whole point is that without
-   country + city, every search hits a wrong default.
+   Design: intentionally smaller than the first iteration (user flagged
+   as too big) but with a subtle pulsing dot on the leading edge to draw
+   the eye without being loud. Single row on desktop; wraps to 2 rows on
+   mobile with the CTA staying full-width. Non-dismissible until saved —
+   without country + city every search hits a wrong default.
 
    Country options mirror the keys in
-   `core.jobs.search._COUNTRY_TO_INDEED`. Add to both when opening a new
-   locale.
+   `core.jobs.search._COUNTRY_TO_INDEED`. Add to both when opening a
+   new locale.
 #}
-<div class="fixed left-0 right-0 z-40 lg:sticky lg:top-16 bg-base-100 border-b border-base-300 shadow-sm"
-     style="top: 4rem; bottom: auto; padding-bottom: env(safe-area-inset-bottom);">
-  <div class="max-w-3xl mx-auto px-4 py-3">
-    <div class="flex items-start gap-3 mb-2">
-      <i class="ph-thin ph-globe-hemisphere-west text-xl shrink-0 mt-0.5"
-         style="color: oklch(var(--p));"></i>
-      <div class="flex-1 min-w-0 text-sm">
-        <div class="font-semibold">{{ _('geo.banner.title') }}</div>
-        <div class="text-body-muted text-xs mt-0.5">{{ _('geo.banner.subtitle') }}</div>
+<div class="fixed left-0 right-0 z-40 lg:sticky lg:top-16 bg-base-100 border-b border-base-300"
+     style="top: 4rem; padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+  <div class="max-w-4xl mx-auto px-3 py-2 flex flex-col md:flex-row md:items-center gap-2">
+    <div class="flex items-center gap-2 md:shrink-0">
+      {# Pulsing dot — one of the few places motion earns its keep. Anchors
+         the eye to the banner without shouting. Respects reduced-motion. #}
+      <span class="geo-banner-pulse shrink-0" aria-hidden="true"></span>
+      <div class="text-sm min-w-0">
+        <span class="font-semibold">{{ _('geo.banner.title') }}</span>
+        <span class="hidden md:inline text-body-muted"> · {{ _('geo.banner.subtitle_short') }}</span>
       </div>
     </div>
     <form hx-post="/profile/geo-quick-set"
           hx-target="this"
           hx-swap="none"
-          class="flex flex-col md:flex-row gap-2 items-stretch">
+          class="flex flex-col sm:flex-row gap-1.5 md:ml-auto md:flex-1 md:max-w-md">
       <select name="home_country" required
-              class="select select-bordered select-sm md:w-52 cursor-pointer">
+              class="select select-bordered select-xs sm:select-sm md:w-40 cursor-pointer">
         <option value="" disabled selected>{{ _('geo.banner.country_placeholder') }}</option>
         <option value="Canada">Canada</option>
         <option value="United States">United States</option>
         <option value="United Kingdom">United Kingdom</option>
-        <option value="Spain">España / Spain</option>
+        <option value="Spain">España</option>
         <option value="Colombia">Colombia</option>
-        <option value="Mexico">México / Mexico</option>
+        <option value="Mexico">México</option>
         <option value="Argentina">Argentina</option>
         <option value="Chile">Chile</option>
         <option value="France">France</option>
-        <option value="Germany">Deutschland / Germany</option>
+        <option value="Germany">Deutschland</option>
       </select>
       <input type="text" name="home_city" required
              placeholder="{{ _('profile.settings.city_placeholder') }}"
              autocomplete="off"
-             class="input input-bordered input-sm md:flex-1">
-      <button type="submit" class="btn btn-primary btn-sm cursor-pointer whitespace-nowrap">
+             class="input input-bordered input-xs sm:input-sm md:flex-1">
+      <button type="submit" class="btn btn-primary btn-xs sm:btn-sm cursor-pointer whitespace-nowrap">
         {{ _('action.save') }}
       </button>
     </form>
   </div>
 </div>
-{# Push content down so the fixed banner doesn't cover the top of the
-   page. Only needed until the banner is dismissed. #}
-<div class="h-32 lg:h-0" aria-hidden="true"></div>
+{# Content spacer so the fixed banner doesn't cover the top of the page.
+   Only takes effect until the user dismisses the banner. #}
+<div class="h-24 md:h-14 lg:h-0" aria-hidden="true"></div>

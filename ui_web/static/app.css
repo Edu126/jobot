@@ -342,6 +342,64 @@ html, body {
   overflow-x: hidden;
   max-width: 100%;
 }
+
+/* Attention pulse for the first-visit geography banner leading dot.
+   Small enough to notice, subtle enough to not annoy. Respects
+   prefers-reduced-motion for accessibility. */
+.geo-banner-pulse {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: oklch(var(--p));
+  box-shadow: 0 0 0 0 oklch(var(--p) / 0.5);
+  animation: geo-pulse 2s ease-out infinite;
+}
+@keyframes geo-pulse {
+  0%   { box-shadow: 0 0 0 0 oklch(var(--p) / 0.55); }
+  70%  { box-shadow: 0 0 0 10px oklch(var(--p) / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(var(--p) / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .geo-banner-pulse { animation: none; }
+}
+
+/* Floating feedback button — top-left. Hairline aesthetic matching the
+   card-quiet system: white bg, thin border, soft shadow, no filled
+   color. Reveals a subtle pulse (once per session, after 10 min) to
+   draw the eye when the user hasn't clicked it. */
+.feedback-fab {
+  position: fixed;
+  top: calc(4.5rem + env(safe-area-inset-top));
+  left: 1rem;
+  z-index: 45;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: white;
+  border: 1px solid hsl(0 0% 88%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+}
+.feedback-fab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+.feedback-fab--pulse {
+  animation: feedback-pulse 1.4s ease-out 3;
+}
+@keyframes feedback-pulse {
+  0%   { box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 0 0 0 oklch(var(--p) / 0.4); }
+  70%  { box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 0 0 14px oklch(var(--p) / 0); }
+  100% { box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 0 0 0 oklch(var(--p) / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feedback-fab--pulse { animation: none; }
+}
 .score-badge .score-num {
   font-size: 1.25rem;
   line-height: 1;
