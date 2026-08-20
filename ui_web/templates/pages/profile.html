@@ -22,7 +22,7 @@
    the modal can be positioned as a sibling of the card that opened it. #}
 <div class="space-y-6"
      x-data="{ atsModal: false, resumeModal: {{ 'true' if just_regenerated else 'false' }}, showReplace: false, showOlder: false, settingsTab: 'language', showLocationEditor: false }"
-     x-init="{% if just_regenerated %}$store.toast.show('Resume re-parsed cleanly', 'success'); history.replaceState({}, '', '/profile');{% endif %}"
+     x-init="{% if just_regenerated %}$store.toast.show('{{ _('profile.resume.reparsed_toast') }}', 'success'); history.replaceState({}, '', '/profile');{% endif %}"
      @keydown.escape.window="atsModal = false; resumeModal = false">
 
   {# ─── HERO ROW — resume + inline score  |  settings hub ─── #}
@@ -38,7 +38,11 @@
             <span class="pill-dot live"></span>{{ _('profile.resume.active') }}
           </div>
           <span class="text-sm text-body-muted">
-            {{ _('profile.resume.stats', words=current.parsed.stats.word_count, pages=current.parsed.stats.page_estimate, bullets=current.parsed.stats.bullet_count) }}
+            {% if current.parsed.stats.page_estimate == 1 %}
+              {{ _('profile.resume.stats_1page', words=current.parsed.stats.word_count) }}
+            {% else %}
+              {{ _('profile.resume.stats_npages', words=current.parsed.stats.word_count, pages=current.parsed.stats.page_estimate) }}
+            {% endif %}
           </span>
         </div>
         <div class="text-xs text-body-muted mt-1">
@@ -225,12 +229,10 @@
               <label class="flex-1 cursor-pointer">
                 <input type="radio" name="ui_language" value="{{ code }}"
                        {% if settings_ctx.ui_language == code %}checked{% endif %}
-                       class="peer sr-only">
-                <div class="border-2 border-base-300 rounded-lg px-3 py-2 text-center text-sm
-                            peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-content
-                            peer-checked:font-semibold transition-colors">
-                  {{ label }}
-                </div>
+                       class="lang-pill__input sr-only">
+                <span class="lang-pill">
+                  <i class="ph-thin ph-check lang-pill__check"></i>{{ label }}
+                </span>
               </label>
               {% endfor %}
             </div>
@@ -246,12 +248,10 @@
               <label class="flex-1 cursor-pointer">
                 <input type="radio" name="output_language" value="{{ code }}"
                        {% if settings_ctx.output_language == code %}checked{% endif %}
-                       class="peer sr-only">
-                <div class="border-2 border-base-300 rounded-lg px-3 py-2 text-center text-sm
-                            peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-content
-                            peer-checked:font-semibold transition-colors">
-                  {{ label }}
-                </div>
+                       class="lang-pill__input sr-only">
+                <span class="lang-pill">
+                  <i class="ph-thin ph-check lang-pill__check"></i>{{ label }}
+                </span>
               </label>
               {% endfor %}
             </div>
@@ -400,32 +400,31 @@
 
       {# ─── Tab: Notifications ─── #}
       <div x-show="settingsTab === 'notifications'" x-cloak>
-        <div class="text-label mb-2">Browser notifications</div>
+        <div class="text-label mb-2">{{ _('profile.notif.title') }}</div>
         <p class="text-sm text-body-muted mb-3">
-          Get a system alert when long tasks (bulk runs, tailoring) finish and you're on another tab.
-          Tab title + in-app toast always work — this is the OS-level layer.
+          {{ _('profile.notif.explainer') }}
         </p>
         <template x-if="$store.notif.permission === 'unsupported'">
-          <div class="pill pill-neutral">Not supported in this browser</div>
+          <div class="pill pill-neutral">{{ _('profile.notif.unsupported') }}</div>
         </template>
         <template x-if="$store.notif.permission === 'denied'">
           <div>
-            <div class="pill pill-danger">Blocked</div>
+            <div class="pill pill-danger">{{ _('profile.notif.blocked') }}</div>
             <div class="text-xs text-body-muted mt-2">
-              You (or your browser) blocked notifications for this site. Re-enable via the lock icon in the address bar.
+              {{ _('profile.notif.blocked_help') }}
             </div>
           </div>
         </template>
         <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && $store.notif.enabled">
           <div class="flex items-center gap-3">
-            <div class="pill pill-success"><span class="pill-dot live"></span>Enabled</div>
-            <button @click="$store.notif.disable(); $store.toast.show('Notifications disabled')"
-                    class="text-sm text-body-muted hover:text-base-content cursor-pointer">Turn off</button>
+            <div class="pill pill-success"><span class="pill-dot live"></span>{{ _('profile.notif.enabled') }}</div>
+            <button @click="$store.notif.disable(); $store.toast.show('{{ _('profile.notif.disabled_toast') }}')"
+                    class="text-sm text-body-muted hover:text-base-content cursor-pointer">{{ _('profile.notif.turn_off') }}</button>
           </div>
         </template>
         <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && !$store.notif.enabled">
-          <button @click="$store.notif.enable().then(p => $store.toast.show(p === 'granted' ? 'Notifications enabled' : 'Permission denied', p === 'granted' ? 'success' : 'info'))"
-                  class="btn btn-primary btn-sm cursor-pointer">Enable notifications</button>
+          <button @click="$store.notif.enable().then(p => $store.toast.show(p === 'granted' ? '{{ _('profile.notif.enabled_toast') }}' : '{{ _('profile.notif.permission_denied_toast') }}', p === 'granted' ? 'success' : 'info'))"
+                  class="btn btn-primary btn-sm cursor-pointer">{{ _('profile.notif.enable') }}</button>
         </template>
       </div>
     </section>
@@ -527,7 +526,7 @@
           {% if preview_report.anomaly_count == 0 %}
             <span class="inline-flex items-center gap-1.5">
               <i class="ph-thin ph-check-circle i-4" style="color: oklch(var(--su));"></i>
-              Resume looks clean.
+              {{ _('profile.resume.looks_clean') }}
             </span>
           {% else %}
             <span class="inline-flex items-center gap-1.5 text-warning">

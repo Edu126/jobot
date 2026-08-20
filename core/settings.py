@@ -131,8 +131,18 @@ def language_instruction(lang: str) -> str:
     content, not generated text.
     """
     label = {"en": "English", "es": "Spanish"}.get(lang, "English")
+    # LatAm register anchor for ES output. Users are in Colombia / Mexico /
+    # LATAM; the default "Spanish" reads as Spain register to Gemini and
+    # produces vosotros / candidatura / sueles. The extra sentence pushes
+    # it toward the register a Colombian professional actually uses.
+    register = (
+        " Use Latin American Spanish register (NOT Spain): prefer "
+        "\"postulación\" over \"candidatura\", \"acostumbras\" over \"sueles\", "
+        "\"currículum\" over \"currículo\"; avoid vosotros; avoid \"vale\" as filler."
+        if lang == "es" else ""
+    )
     return (
-        f"IMPORTANT: Respond in {label}. Every string value in the JSON "
+        f"IMPORTANT: Respond in {label}.{register} Every string value in the JSON "
         f"response — descriptions, reasoning, bullet points, headers, "
         f"everything the user will see — must be in {label}. Field NAMES "
         f"and the JSON structure stay in English regardless."

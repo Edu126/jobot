@@ -1416,3 +1416,62 @@ html { scroll-behavior: smooth; }
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
+
+/* ────────────────────────────────────────────────────────────────
+   .lang-pill — accessible radio-pill for language / preference
+   toggles. Replaces the peer-checked bold-only affordance the user
+   flagged in the 2026-08-20 retro pass. Now: filled bg + solid
+   ring + checkmark when active, muted stroke when not.
+   Usage:
+     <label class="cursor-pointer flex-1">
+       <input type="radio" name="x" value="y" class="lang-pill__input peer sr-only">
+       <span class="lang-pill">
+         <i class="ph-thin ph-check lang-pill__check"></i>Label
+       </span>
+     </label>
+   Works without Tailwind's peer-checked variant chaining — relies
+   only on the base sibling combinator, which is stable everywhere.
+   ──────────────────────────────────────────────────────────────── */
+.lang-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1.5px solid oklch(var(--b3));
+  background: oklch(var(--b1));
+  color: oklch(var(--bc) / 0.62);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease-out;
+}
+.lang-pill:hover {
+  border-color: oklch(var(--bc) / 0.35);
+  color: oklch(var(--bc) / 0.85);
+}
+.lang-pill__check {
+  font-size: 1rem;
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  transition: opacity 0.12s ease-out, width 0.12s ease-out;
+}
+/* Active state — sibling combinator on the hidden radio input. */
+.lang-pill__input:checked + .lang-pill {
+  border-color: oklch(var(--p));
+  background: oklch(var(--p));
+  color: oklch(var(--pc));
+  font-weight: 600;
+  box-shadow: 0 2px 6px oklch(var(--p) / 0.25);
+}
+.lang-pill__input:checked + .lang-pill .lang-pill__check {
+  opacity: 1;
+  width: 1rem;
+}
+.lang-pill__input:focus-visible + .lang-pill {
+  outline: 2px solid oklch(var(--p));
+  outline-offset: 2px;
+}

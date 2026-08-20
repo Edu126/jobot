@@ -52,6 +52,11 @@ extracted text and split it into the standard resume sections. Do NOT
 rewrite, summarize, translate, or invent content — only reorganize what's
 there into the correct sections.
 
+PRESERVE ORIGINAL LANGUAGE. If the resume is in Spanish, return Spanish.
+If it's in English, return English. If it mixes languages, keep each
+piece in its own language. NEVER translate — this is passthrough
+reorganization, not localization.
+
 Return JSON with this exact shape (all keys optional, omit if the resume
 truly has no content for that section):
 {{

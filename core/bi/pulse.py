@@ -410,14 +410,11 @@ def build_prompt(signals: dict) -> str:
     the same `generate_json` fallback chain (retry, quota-aware model
     hopping) works; the caller unwraps to plain markdown before persist.
 
-    Language: the markdown body honors the user's output-language
-    setting via `language_instruction`. JSON field names stay English.
+    Language: admin-only surface — EN only. `/admin/pulse` is read by
+    the operator, not the user, and the fixed English H2 headings would
+    conflict with an ES body (documented in the retro pass). Skip
+    `language_instruction` entirely.
     """
-    # Import here so this module stays importable in test / no-app
-    # contexts (tests/test_pulse_signals.py doesn't need settings).
-    from core.settings import get_output_language, language_instruction
-
-    lang_line = language_instruction(get_output_language())
     signals_json = json.dumps(signals, ensure_ascii=False, indent=2, default=str)
 
     delta_line = (
@@ -429,9 +426,7 @@ def build_prompt(signals: dict) -> str:
         else "- Omit the **Δ from last week** section: no prior report exists yet."
     )
 
-    return f"""{lang_line}
-
-You are the BI analyst for a personal job-search app used by a handful of real users. You have one week of raw signals (below, as JSON) and must produce a concise weekly pulse report as markdown.
+    return f"""You are the BI analyst for a personal job-search app used by a handful of real users. You have one week of raw signals (below, as JSON) and must produce a concise weekly pulse report as markdown in English (this is an admin-only surface).
 
 RESPONSE FORMAT — respond with valid JSON:
 {{"markdown": "<the full report as a markdown string>"}}
