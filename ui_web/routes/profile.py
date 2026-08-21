@@ -184,7 +184,10 @@ def _get_or_generate_suggestions(force: bool = False) -> tuple[list[str], Option
         return [], "Resume text is empty — try re-uploading.", None
 
     from core import settings as app_settings
-    lang_line = app_settings.language_instruction(app_settings.get_ui_language())
+    # get_output_language() honors the user's explicit output-language pref
+    # (EN UI + ES output resumes is a real config). Was get_ui_language()
+    # from the initial patch; corrected in /simplify pass.
+    lang_line = app_settings.language_instruction(app_settings.get_output_language())
 
     prompt = f"""{lang_line}
 
@@ -228,6 +231,14 @@ SECTION_SUGGESTIONS_MAX = 3
 _EVIDENCE_MIN_CHARS = 6         # snippets shorter than this are too weak to check
 _EVIDENCE_MAX_CHARS = 200       # snippets longer than this are the model regurgitating
 
+# Module-level compiled patterns for the grounding hot path (used up to
+# 2 attempts × up to 3 evidence snippets per AI-summary call). Python's
+# `re` module caches patterns internally, but a hand-hoisted constant
+# skips the cache dict lookup on every call.
+_WS_RE = re.compile(r"\s+")
+_DIGIT_RE = re.compile(r"\d")
+_TOKEN_RE = re.compile(r"\b[A-Za-z][\w-]{2,}\b")
+
 
 # ── Response schema — Pydantic v2 ─────────────────────────────
 # Rewritten 2026-08-20 after a hallucination burn: the model wrote
@@ -263,7 +274,7 @@ def _normalize_for_grounding(s: str) -> str:
     PDF line-breaks and extra spaces don't cause false negatives,
     strict enough that fabricated content ("art gallery") won't
     accidentally match."""
-    return re.sub(r"\s+", " ", s.lower().strip())
+    return _WS_RE.sub(" ", s.lower().strip())
 
 
 def _looks_specific(impression: str) -> bool:
@@ -275,10 +286,12 @@ def _looks_specific(impression: str) -> bool:
     if not impression:
         return False
     # Any digit → almost certainly a specific claim (years, counts).
-    if re.search(r"\d", impression):
+    if _DIGIT_RE.search(impression):
         return True
-    tokens = re.findall(r"\b[A-Za-z][\w-]{2,}\b", impression)
-    # Capitalised words not at position 0 → proper noun candidates
+    tokens = _TOKEN_RE.findall(impression)
+    # Capitalised words not at position 0 → proper noun candidates.
+    # Skip the common start-of-clause stop-words in case a prompt tweak
+    # ever produces "I have..." / "The candidate..." style openers.
     for i, t in enumerate(tokens):
         if i == 0:
             continue
@@ -287,14 +300,16 @@ def _looks_specific(impression: str) -> bool:
     return False
 
 
-def _validate_grounded(summary: _ResumeSummaryLLM, resume_text: str) -> bool:
-    """Every evidence snippet MUST appear (normalized) in the resume
-    text. If the impression looks specific but has no evidence, that
-    also fails — a specific claim without a citation is exactly the
-    art-gallery pattern.
+def _validate_grounded(
+    summary: _ResumeSummaryLLM, resume_norm: str
+) -> bool:
+    """Every evidence snippet MUST appear in the (already-normalized)
+    resume text. If the impression looks specific but has no evidence,
+    that also fails — a specific claim without a citation is exactly
+    the art-gallery pattern.
 
-    Returns True if the summary is trustworthy; False otherwise."""
-    resume_norm = _normalize_for_grounding(resume_text)
+    Takes the ALREADY-normalized resume so callers can reuse one
+    normalization across retries (see `_grounded_or_none`)."""
     for snippet in summary.first_impression_evidence:
         snip = (snippet or "").strip()
         if not snip:
@@ -320,11 +335,13 @@ def _grounded_or_none(
     lying one. No user-visible retry button; the server owns quality."""
     from core.llm.gemini import GeminiClient, GeminiError
     client = GeminiClient(api_key=api_key)
-    for attempt in range(2):
+    # Normalize once — the resume text doesn't change between attempts.
+    resume_norm = _normalize_for_grounding(resume_text)
+    for _attempt in range(2):
         try:
             raw = client.generate_json(prompt)
             summary = _ResumeSummaryLLM.model_validate(raw)
-            if _validate_grounded(summary, resume_text):
+            if _validate_grounded(summary, resume_norm):
                 return summary
         except (pydantic.ValidationError, GeminiError):
             pass
@@ -373,7 +390,9 @@ def _maybe_generate_ai_summary(resume_id: int) -> Optional[dict]:
         location = (parsed.get("contact") or {}).get("location", "")
 
         from core import settings as app_settings
-        lang_line = app_settings.language_instruction(app_settings.get_ui_language())
+        # See note above (suggestions path): output_language is the correct
+        # resolver for LLM-generated text.
+        lang_line = app_settings.language_instruction(app_settings.get_output_language())
 
         prompt = f"""{lang_line}
 
@@ -964,11 +983,15 @@ async def profile_insights_clear(request: Request):
 # client can render a modal but the server is the enforcement point.
 
 # Case-insensitive; accepts either language + a few common variants.
-_DELETE_ALL_PHRASES = {"delete all", "borrartodo", "borrar todo", "eliminar todo"}
-_RESET_STATS_PHRASES = {"reset stats", "reset", "reiniciar", "reiniciar stats", "reiniciar estadisticas", "reiniciar estadísticas"}
+# Single source of truth in ui_web/deps.py so the client-side Alpine
+# check in profile.html is driven from the same list (no drift).
+from ..deps import DANGER_DELETE_PHRASES, DANGER_RESET_PHRASES
+
+_DELETE_ALL_PHRASES = frozenset(DANGER_DELETE_PHRASES)
+_RESET_STATS_PHRASES = frozenset(DANGER_RESET_PHRASES)
 
 
-def _matches(phrase: str, allowed: set[str]) -> bool:
+def _matches(phrase: str, allowed: frozenset[str]) -> bool:
     return (phrase or "").strip().lower() in allowed
 
 

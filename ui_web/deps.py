@@ -67,6 +67,58 @@ def _settings_ctx() -> dict:
 
 templates.env.globals["settings_ctx"] = _settings_ctx
 
+
+# Single source of truth for the feedback-widget image cap.
+# Consumed server-side by ui_web/routes/feedback.py (rejects payloads
+# above this) AND client-side by partials/feedback_widget.html (shows a
+# "too large" error before we ever POST). Was previously two independent
+# constants — they can't drift now.
+MAX_FEEDBACK_BYTES = 2 * 1024 * 1024   # 2 MB
+
+templates.env.globals["MAX_FEEDBACK_BYTES"] = MAX_FEEDBACK_BYTES
+
+
+# Danger-zone typed-confirmation phrases. The server (`ui_web/routes/
+# profile.py`) is the enforcement point; the client-side Alpine check
+# in profile.html is UX-only (button enable/disable), driven from this
+# same list via a Jinja global so adding a new locale variant means
+# editing ONE place.
+DANGER_DELETE_PHRASES = ("delete all", "borrartodo", "borrar todo", "eliminar todo")
+DANGER_RESET_PHRASES = (
+    "reset stats", "reset", "reiniciar",
+    "reiniciar stats", "reiniciar estadisticas", "reiniciar estadísticas",
+)
+
+templates.env.globals["DANGER_DELETE_PHRASES"] = DANGER_DELETE_PHRASES
+templates.env.globals["DANGER_RESET_PHRASES"] = DANGER_RESET_PHRASES
+
+
+# ATS score → tier resolver. Single source of truth so the ATS chip
+# (profile card) and the ATS modal header (report) can't drift after
+# threshold changes. Was duplicated as two parallel {% if %} cascades
+# in profile.html; extracted 2026-08-21 /simplify pass. Thresholds
+# match the 4-tier scheme introduced in PR D.
+_ATS_TIERS = (
+    (90, "excellent", "oklch(var(--su))",           "pill-success"),
+    (70, "good",      "oklch(var(--su))",           "pill-success"),
+    (50, "almost_there", "oklch(var(--wa) / 0.85)", "pill-warn"),
+    (0,  "poor",      "oklch(var(--er))",           "pill-danger"),
+)
+
+
+def ats_tier(score: int) -> dict:
+    """Return `{label_key, color, pill}` for a 0-100 ATS score. The
+    `label_key` is an i18n key suffix; caller does `_('profile.ats.' + t.label_key)`."""
+    for threshold, key, color, pill in _ATS_TIERS:
+        if score >= threshold:
+            return {"label_key": key, "color": color, "pill": pill}
+    # Unreachable — the 0-threshold row catches everything — but keeps
+    # the type checker happy and the intent explicit.
+    return {"label_key": "poor", "color": "oklch(var(--er))", "pill": "pill-danger"}
+
+
+templates.env.globals["ats_tier"] = ats_tier
+
 # Jinja filters — mirror what the Streamlit UI uses so templates read the same.
 templates.env.filters["humanize"] = humanize
 

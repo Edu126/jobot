@@ -121,7 +121,9 @@
   // "couldn't capture screen" error state) with a native file picker.
   // See feedback_simplicity_over_escape_hatches memory.
   window.feedbackWidget = function () {
-    const MAX_BYTES = 2 * 1024 * 1024;   // 2 MB — matches user's ask
+    // Single source of truth: injected from the server so client + server
+    // can never drift. See ui_web/deps.py:MAX_FEEDBACK_BYTES.
+    const MAX_BYTES = {{ MAX_FEEDBACK_BYTES }};
 
     return {
       open: false,

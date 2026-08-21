@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import logging
 import re
+from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, Response
@@ -24,22 +25,43 @@ from fastapi.responses import HTMLResponse, Response
 from core import db
 
 from ..ratelimit import get_identity, limiter
+from ..deps import MAX_FEEDBACK_BYTES
 
 
 router = APIRouter(tags=["feedback"])
 _LOG = logging.getLogger(__name__)
 
-# Image payload cap. Client also validates at 2 MB; this is server-side
-# defense-in-depth against a hand-crafted request. Bumped from 3 → 2 MB
-# to match the client cap after we switched to file-upload (2026-08-21).
-_MAX_SHOT_BYTES = 2 * 1024 * 1024
+# Message payload cap. The image cap lives in ui_web/deps.py so a single
+# constant flows to both the server-side check here and the client-side
+# check in the Jinja partial (via a Jinja global). Reworked in the
+# 2026-08-21 /simplify pass to remove the drift risk of two independent
+# 2 MB constants.
 _MAX_MSG_LEN = 4000
 
 # `data:image/<subtype>;base64,` — any recognisable image mime is fine.
 # Was PNG-only in the html2canvas era; widened when we swapped to
 # native file upload (2026-08-21) so users can send jpg/webp/etc.
 _DATA_URL_RE = re.compile(r"^data:image/([a-zA-Z0-9.+-]+);base64,(.+)$", re.DOTALL)
-_ALLOWED_SUBTYPES = {"png", "jpeg", "jpg", "webp", "gif"}
+
+# Single canonical form per format. `jpeg` incoming mime is folded to
+# `jpg` before the allowlist check so the equivalence lives in one
+# place (was previously encoded in three: allowlist, extension
+# normalization, and mime_map). Extension is stored on disk + used
+# to derive the response Content-Type in get_screenshot.
+_MIME_BY_EXT = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+}
+_ALLOWED_EXTS = frozenset(_MIME_BY_EXT)
+
+
+def _subtype_to_ext(subtype: str) -> str | None:
+    """Fold incoming mime subtype to our canonical file extension.
+    `jpeg → jpg`; anything unknown returns None."""
+    ext = "jpg" if subtype == "jpeg" else subtype
+    return ext if ext in _ALLOWED_EXTS else None
 
 
 @router.post("/feedback")
@@ -73,13 +95,13 @@ async def submit_feedback(
     if screenshot:
         m = _DATA_URL_RE.match(screenshot)
         if m:
-            subtype = m.group(1).lower()
-            if subtype in _ALLOWED_SUBTYPES:
+            ext = _subtype_to_ext(m.group(1).lower())
+            if ext is not None:
                 try:
                     candidate = base64.b64decode(m.group(2), validate=True)
-                    if len(candidate) <= _MAX_SHOT_BYTES:
+                    if len(candidate) <= MAX_FEEDBACK_BYTES:
                         shot_bytes = candidate
-                        shot_ext = "jpg" if subtype == "jpeg" else subtype
+                        shot_ext = ext
                     else:
                         _LOG.info(
                             "feedback: rejected oversized image (%d bytes)",
@@ -117,13 +139,14 @@ async def get_screenshot(fid: int):
         row = dict(r) if r else None
     if not row or not row.get("screenshot_path"):
         return Response(status_code=404)
-    from pathlib import Path
     p = db.DB_PATH.parent / row["screenshot_path"]
     if not p.exists():
         return Response(status_code=404)
-    # Derive mime from the stored path's suffix. Was PNG-hardcoded;
-    # widened when we swapped to user file upload (2026-08-21).
+    # Derive mime from the stored path's suffix using the same canonical
+    # map that governed the write. `jpg → image/jpeg`, `png → image/png`,
+    # etc. Anything unknown falls back to png (the historical default).
     ext = p.suffix.lstrip(".").lower() or "png"
-    mime_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
-                "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
-    return Response(content=p.read_bytes(), media_type=mime_map.get(ext, "image/png"))
+    return Response(
+        content=p.read_bytes(),
+        media_type=_MIME_BY_EXT.get(ext, "image/png"),
+    )

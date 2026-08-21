@@ -26,6 +26,7 @@ from ui_web.routes.profile import (  # noqa: E402
     _ResumeSummaryLLM,
     _validate_grounded,
     _looks_specific,
+    _normalize_for_grounding,
 )
 
 
@@ -61,12 +62,17 @@ def _mk(imp: str, ev: list[str]) -> _ResumeSummaryLLM:
 
 
 def main() -> int:
+    # _validate_grounded now takes the pre-normalized resume text (the
+    # normalization is hoisted out of the loop for reuse across retries).
+    # Compute once here so test fixtures pass what production passes.
+    RESUME_NORM = _normalize_for_grounding(RESUME)
+
     # 1. GOOD — impression cites specific facts, evidence is verbatim.
     good = _mk(
         "Solid B2B marketing background with measurable pipeline growth at Acme Corp.",
         ["Marketing Manager at Acme Corp", "Grew MQL pipeline 40%"],
     )
-    _assert(_validate_grounded(good, RESUME),
+    _assert(_validate_grounded(good, RESUME_NORM),
             "grounded impression + verbatim evidence should PASS")
 
     # 2. BAD — the art-gallery pattern. Specific claim about a thing not in resume.
@@ -74,7 +80,7 @@ def main() -> int:
         "Big multinational brands here, but the sudden pivot to art gallery work feels totally random.",
         ["art gallery work"],   # this snippet is nowhere in the resume
     )
-    _assert(not _validate_grounded(bad_art_gallery, RESUME),
+    _assert(not _validate_grounded(bad_art_gallery, RESUME_NORM),
             "art-gallery hallucination MUST fail grounding")
 
     # 3. BAD — specific-looking impression with NO evidence at all.
@@ -82,7 +88,7 @@ def main() -> int:
         "Impressive tenure at Acme Corp with a technical marketing focus.",
         [],
     )
-    _assert(not _validate_grounded(bad_no_evidence, RESUME),
+    _assert(not _validate_grounded(bad_no_evidence, RESUME_NORM),
             "specific claim with zero evidence MUST fail")
 
     # 4. GOOD — generic impression, no evidence needed.
@@ -90,7 +96,7 @@ def main() -> int:
         "solid mid-career resume, no red flags",
         [],
     )
-    _assert(_validate_grounded(good_generic, RESUME),
+    _assert(_validate_grounded(good_generic, RESUME_NORM),
             "generic impression with empty evidence should PASS")
 
     # 5. BAD — evidence exists but doesn't appear in resume (paraphrased).
@@ -98,7 +104,7 @@ def main() -> int:
         "Grew pipeline 40 percent year over year at Acme Corp.",
         ["Grew pipeline by forty percent yearly at Acme"],   # paraphrase
     )
-    _assert(not _validate_grounded(bad_paraphrase, RESUME),
+    _assert(not _validate_grounded(bad_paraphrase, RESUME_NORM),
             "paraphrased evidence (not verbatim) MUST fail")
 
     # 6. BAD — evidence snippet too short (below _EVIDENCE_MIN_CHARS).
@@ -106,7 +112,7 @@ def main() -> int:
         "Marketing Manager at Acme.",
         ["Acme"],   # 4 chars < 6-char minimum
     )
-    _assert(not _validate_grounded(bad_short, RESUME),
+    _assert(not _validate_grounded(bad_short, RESUME_NORM),
             "sub-minimum evidence snippet MUST fail")
 
     # 7. BAD — evidence snippet too long (regurgitation).
@@ -114,7 +120,7 @@ def main() -> int:
         "Extensive experience.",
         [RESUME],   # entire resume as evidence — regurgitation
     )
-    _assert(not _validate_grounded(bad_long, RESUME),
+    _assert(not _validate_grounded(bad_long, RESUME_NORM),
             "over-max evidence snippet MUST fail")
 
     # 8. Whitespace tolerance — resume has line breaks; evidence with a
@@ -123,7 +129,7 @@ def main() -> int:
         "Board-facing analytics work at Widgets SA.",
         ["Owned attribution modeling and quarterly board reporting"],
     )
-    _assert(_validate_grounded(tolerant, RESUME),
+    _assert(_validate_grounded(tolerant, RESUME_NORM),
             "whitespace-tolerant match should PASS")
 
     # 9. _looks_specific heuristic — sanity check.

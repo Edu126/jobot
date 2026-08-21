@@ -607,7 +607,13 @@ def save_feedback(
     html2canvas for a native file picker — the user's file could be
     any image type.
 
-    Returns the new feedback id."""
+    Returns the new feedback id.
+
+    Both the INSERT and the screenshot_path UPDATE run inside ONE
+    transaction (was two, /simplify pass 2026-08-21). Bonus: if the
+    file write raises after the INSERT, the whole tx rolls back — no
+    orphan row pointing at a non-existent file.
+    """
     with tx(path) as conn:
         cur = conn.execute(
             "INSERT INTO feedback (message, page_url, user_agent, identity, submitted_at) "
@@ -616,16 +622,15 @@ def save_feedback(
         )
         new_id = int(cur.lastrowid)
 
-    if screenshot_bytes:
-        shot_dir = path.parent / "feedback"
-        shot_dir.mkdir(parents=True, exist_ok=True)
-        ext = (screenshot_ext or "png").lstrip(".").lower() or "png"
-        shot_path = shot_dir / f"{new_id}.{ext}"
-        shot_path.write_bytes(screenshot_bytes)
-        with tx(path) as conn:
+        if screenshot_bytes:
+            shot_dir = path.parent / "feedback"
+            shot_dir.mkdir(parents=True, exist_ok=True)
+            ext = (screenshot_ext or "png").lstrip(".").lower() or "png"
+            rel_path = f"feedback/{new_id}.{ext}"
+            (shot_dir / f"{new_id}.{ext}").write_bytes(screenshot_bytes)
             conn.execute(
                 "UPDATE feedback SET screenshot_path = ? WHERE id = ?",
-                (f"feedback/{new_id}.{ext}", new_id),
+                (rel_path, new_id),
             )
     return new_id
 

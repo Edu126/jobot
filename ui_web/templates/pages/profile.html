@@ -64,23 +64,15 @@
 
         {# ATS chip — one row: score / verdict / See report link ── #}
         {% if ats_report %}
-          {# 4-tier ATS labels (2026-08-20 retro): poor / almost there /
-             good / excellent. Previous 3-tier scheme called 100/100
-             "good" — user flagged as wrong. #}
-          {% if ats_report.score >= 90 %}
-            {% set _score_color = 'oklch(var(--su))' %}{% set _pill = 'pill-success' %}{% set _label = _('profile.ats.excellent') %}
-          {% elif ats_report.score >= 70 %}
-            {% set _score_color = 'oklch(var(--su))' %}{% set _pill = 'pill-success' %}{% set _label = _('profile.ats.good') %}
-          {% elif ats_report.score >= 50 %}
-            {% set _score_color = 'oklch(var(--wa) / 0.85)' %}{% set _pill = 'pill-warn' %}{% set _label = _('profile.ats.almost_there') %}
-          {% else %}
-            {% set _score_color = 'oklch(var(--er))' %}{% set _pill = 'pill-danger' %}{% set _label = _('profile.ats.poor') %}
-          {% endif %}
+          {# 4-tier ATS labels (poor / almost there / good / excellent).
+             Tier resolution + thresholds live in ui_web/deps.py:ats_tier
+             so this chip and the modal below can't drift. #}
+          {% set _tier = ats_tier(ats_report.score) %}
         <div class="mt-4 pt-4 border-t border-base-300/70 flex items-center gap-3 flex-wrap">
           <span class="text-label">ATS</span>
-          <span style="font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; color: {{ _score_color }}; font-variant-numeric: tabular-nums;">{{ ats_report.score }}</span>
+          <span style="font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; color: {{ _tier.color }}; font-variant-numeric: tabular-nums;">{{ ats_report.score }}</span>
           <span class="text-sm text-base-content/40">/100</span>
-          <div class="pill {{ _pill }}">{{ _label }}</div>
+          <div class="pill {{ _tier.pill }}">{{ _('profile.ats.' + _tier.label_key) }}</div>
           <div class="ml-auto flex items-center gap-4">
             <button @click="resumeModal = true"
                     class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1">
@@ -216,20 +208,24 @@
   {% set _lang = current_ui_language() %}
   {% set _delete_phrase = 'borrartodo' if _lang == 'es' else 'delete all' %}
   {% set _reset_phrase = 'reiniciar' if _lang == 'es' else 'reset stats' %}
+  {# Phrase lists injected from the server (ui_web/deps.py) so client-
+     side check + server-side check share ONE source. Adding a new
+     accepted phrase means editing deps.py only. #}
+  {% set _delete_phrases_json = DANGER_DELETE_PHRASES | list | tojson %}
+  {% set _reset_phrases_json = DANGER_RESET_PHRASES | list | tojson %}
   <section class="card-quiet mt-6"
            x-data="{
              deleteAllModal: false,
              resetStatsModal: false,
              deleteAllPhrase: '',
              resetStatsPhrase: '',
+             DELETE_PHRASES: {{ _delete_phrases_json }},
+             RESET_PHRASES: {{ _reset_phrases_json }},
              deleteAllOk() {
-               const p = this.deleteAllPhrase.trim().toLowerCase();
-               return ['delete all', 'borrartodo', 'borrar todo', 'eliminar todo'].includes(p);
+               return this.DELETE_PHRASES.includes(this.deleteAllPhrase.trim().toLowerCase());
              },
              resetStatsOk() {
-               const p = this.resetStatsPhrase.trim().toLowerCase();
-               return ['reset stats', 'reset', 'reiniciar', 'reiniciar stats',
-                       'reiniciar estadisticas', 'reiniciar estadísticas'].includes(p);
+               return this.RESET_PHRASES.includes(this.resetStatsPhrase.trim().toLowerCase());
              },
            }">
     <div class="text-label mb-2 inline-flex items-center gap-1.5">
@@ -264,7 +260,8 @@
           {{ _('profile.danger.reset_stats.explainer') }}
         </p>
         <label class="block text-sm mb-1">{{ _('profile.danger.type_to_confirm', phrase=_reset_phrase) | safe }}</label>
-        <input type="text" x-model="resetStatsPhrase"
+        <input id="reset-stats-input"
+               type="text" x-model="resetStatsPhrase"
                autocomplete="off"
                class="input input-bordered input-sm w-full font-mono"
                placeholder="{{ _reset_phrase }}">
@@ -272,13 +269,13 @@
         <div class="flex items-center gap-2 mt-4">
           <button type="button"
                   hx-post="/profile/data/reset-stats"
-                  hx-vals='js:{confirmation: document.querySelector("[x-model=\"resetStatsPhrase\"]").value}'
+                  hx-vals='js:{confirmation: document.getElementById("reset-stats-input").value}'
                   hx-target="#reset-stats-result"
                   hx-swap="innerHTML"
                   :disabled="!resetStatsOk()"
                   class="btn btn-sm btn-primary cursor-pointer"
                   :class="!resetStatsOk() ? 'opacity-40 cursor-not-allowed' : ''">
-            {{ _('profile.danger.confirm') }}
+            {{ _('profile.danger.confirm_reset') }}
           </button>
           <button type="button" @click="resetStatsModal = false"
                   class="btn btn-sm btn-ghost cursor-pointer">
@@ -302,7 +299,8 @@
           {{ _('profile.danger.delete_all.explainer') }}
         </p>
         <label class="block text-sm mb-1">{{ _('profile.danger.type_to_confirm', phrase=_delete_phrase) | safe }}</label>
-        <input type="text" x-model="deleteAllPhrase"
+        <input id="delete-all-input"
+               type="text" x-model="deleteAllPhrase"
                autocomplete="off"
                class="input input-bordered input-sm w-full font-mono"
                placeholder="{{ _delete_phrase }}">
@@ -310,7 +308,7 @@
         <div class="flex items-center gap-2 mt-4">
           <button type="button"
                   hx-post="/profile/data/delete-all"
-                  hx-vals='js:{confirmation: document.querySelector("[x-model=\"deleteAllPhrase\"]").value}'
+                  hx-vals='js:{confirmation: document.getElementById("delete-all-input").value}'
                   hx-target="#delete-all-result"
                   hx-swap="innerHTML"
                   :disabled="!deleteAllOk()"
@@ -484,18 +482,10 @@
       <div class="modal-panel__body space-y-5">
         {# Score summary at the top of the modal #}
         <div class="flex items-baseline gap-2">
-          {% if ats_report.score >= 90 %}
-            {% set _c = 'oklch(var(--su))' %}{% set _p = 'pill-success' %}{% set _l = _('profile.ats.excellent') %}
-          {% elif ats_report.score >= 70 %}
-            {% set _c = 'oklch(var(--su))' %}{% set _p = 'pill-success' %}{% set _l = _('profile.ats.good') %}
-          {% elif ats_report.score >= 50 %}
-            {% set _c = 'oklch(var(--wa) / 0.85)' %}{% set _p = 'pill-warn' %}{% set _l = _('profile.ats.almost_there') %}
-          {% else %}
-            {% set _c = 'oklch(var(--er))' %}{% set _p = 'pill-danger' %}{% set _l = _('profile.ats.poor') %}
-          {% endif %}
-          <span style="font-size: 2.75rem; font-weight: 700; letter-spacing: -0.03em; color: {{ _c }}; font-variant-numeric: tabular-nums; line-height: 1;">{{ ats_report.score }}</span>
+          {% set _tier = ats_tier(ats_report.score) %}
+          <span style="font-size: 2.75rem; font-weight: 700; letter-spacing: -0.03em; color: {{ _tier.color }}; font-variant-numeric: tabular-nums; line-height: 1;">{{ ats_report.score }}</span>
           <span class="text-lg font-medium text-base-content/30">/ 100</span>
-          <div class="pill {{ _p }} ml-3 self-center">{{ _l }}</div>
+          <div class="pill {{ _tier.pill }} ml-3 self-center">{{ _('profile.ats.' + _tier.label_key) }}</div>
         </div>
 
         {% set criticals = ats_report.issues | selectattr("severity", "equalto", "critical") | list %}
