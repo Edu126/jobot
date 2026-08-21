@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from datetime import date
 from pathlib import Path
 from typing import Optional
 
+import pydantic
 from dotenv import set_key
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
@@ -223,6 +225,111 @@ Return JSON: {{"queries": ["query 1", "query 2", ...]}}
 
 
 SECTION_SUGGESTIONS_MAX = 3
+_EVIDENCE_MIN_CHARS = 6         # snippets shorter than this are too weak to check
+_EVIDENCE_MAX_CHARS = 200       # snippets longer than this are the model regurgitating
+
+
+# ── Response schema — Pydantic v2 ─────────────────────────────
+# Rewritten 2026-08-20 after a hallucination burn: the model wrote
+# "sudden pivot to art gallery work" for a resume with no art or
+# gallery content. Users can't fix that by clicking a button; the
+# only real defense is a structured contract that forces the model
+# to CITE the resume, then we verify the citations. See
+# `_grounded_or_none` below.
+
+class _SectionSuggestion(pydantic.BaseModel):
+    section: str
+    reason: str
+
+
+class _ResumeSummaryLLM(pydantic.BaseModel):
+    """Shape of the raw JSON we ask Gemini for. We NEVER trust these
+    fields on face value — `_validate_grounded` cross-checks the
+    evidence snippets against the actual resume text before we
+    persist or render anything."""
+    role_label: str
+    first_impression: str
+    # Verbatim snippets from the resume that back specific claims in
+    # first_impression. Empty list is allowed only if first_impression
+    # itself is generic (no specific claim to defend); a specific-claim
+    # impression with empty evidence fails validation.
+    first_impression_evidence: list[str] = pydantic.Field(default_factory=list)
+    section_suggestions: list[_SectionSuggestion] = pydantic.Field(default_factory=list)
+
+
+def _normalize_for_grounding(s: str) -> str:
+    """Collapse whitespace + lowercase. Substring match against this
+    normalized form is our grounding test — tolerant enough that
+    PDF line-breaks and extra spaces don't cause false negatives,
+    strict enough that fabricated content ("art gallery") won't
+    accidentally match."""
+    return re.sub(r"\s+", " ", s.lower().strip())
+
+
+def _looks_specific(impression: str) -> bool:
+    """Heuristic: does the impression make a specific claim that needs
+    evidence? Capitalised words that aren't sentence starts (proper
+    nouns), numbers, or industry/domain terms are red flags for
+    "needs citation". Generic phrasings like 'solid mid-career resume'
+    pass without evidence."""
+    if not impression:
+        return False
+    # Any digit → almost certainly a specific claim (years, counts).
+    if re.search(r"\d", impression):
+        return True
+    tokens = re.findall(r"\b[A-Za-z][\w-]{2,}\b", impression)
+    # Capitalised words not at position 0 → proper noun candidates
+    for i, t in enumerate(tokens):
+        if i == 0:
+            continue
+        if t[0].isupper() and t.lower() not in {"i", "the", "a", "an"}:
+            return True
+    return False
+
+
+def _validate_grounded(summary: _ResumeSummaryLLM, resume_text: str) -> bool:
+    """Every evidence snippet MUST appear (normalized) in the resume
+    text. If the impression looks specific but has no evidence, that
+    also fails — a specific claim without a citation is exactly the
+    art-gallery pattern.
+
+    Returns True if the summary is trustworthy; False otherwise."""
+    resume_norm = _normalize_for_grounding(resume_text)
+    for snippet in summary.first_impression_evidence:
+        snip = (snippet or "").strip()
+        if not snip:
+            continue   # empty snippets are ignored, not counted against
+        if len(snip) < _EVIDENCE_MIN_CHARS or len(snip) > _EVIDENCE_MAX_CHARS:
+            return False
+        if _normalize_for_grounding(snip) not in resume_norm:
+            return False
+    # Specific claim + no evidence at all → un-grounded.
+    if not summary.first_impression_evidence and _looks_specific(summary.first_impression):
+        return False
+    return True
+
+
+def _grounded_or_none(
+    prompt: str,
+    api_key: str,
+    resume_text: str,
+) -> Optional[_ResumeSummaryLLM]:
+    """One Gemini call → Pydantic validation → grounding check.
+    Retries ONCE silently on invalid/un-grounded response. Returns
+    None if still bad — the caller renders no summary rather than a
+    lying one. No user-visible retry button; the server owns quality."""
+    from core.llm.gemini import GeminiClient, GeminiError
+    client = GeminiClient(api_key=api_key)
+    for attempt in range(2):
+        try:
+            raw = client.generate_json(prompt)
+            summary = _ResumeSummaryLLM.model_validate(raw)
+            if _validate_grounded(summary, resume_text):
+                return summary
+        except (pydantic.ValidationError, GeminiError):
+            pass
+        # Loop retries once. On the second failure, fall through.
+    return None
 
 
 def _maybe_generate_ai_summary(resume_id: int) -> Optional[dict]:
@@ -233,10 +340,13 @@ def _maybe_generate_ai_summary(resume_id: int) -> Optional[dict]:
     upload response stays instant and the fragment's own spinner covers the
     1-3s Gemini round-trip.
 
-    Skipped (returns None) if a summary is already cached for this
-    resume_id (then returns the cached one instead), if there's no API
-    key, or on any failure — this must never raise, the block just doesn't
-    render when it can't produce a summary.
+    Cached by resume_id — a new upload gets a new id and thus a fresh
+    generation. On failure to produce a grounded summary (after one
+    silent retry), returns None; the fragment renders nothing rather
+    than a hallucinated summary. There is DELIBERATELY no user-facing
+    regenerate button — regenerate patterns train users to distrust
+    output + invite quota-burning spam. Quality lives in the prompt
+    contract + Pydantic validation, not in a "try again" affordance.
     """
     cached = db.get_resume_ai_summary(resume_id)
     if cached:
@@ -270,7 +380,7 @@ def _maybe_generate_ai_summary(resume_id: int) -> Optional[dict]:
 You are a experienced colleague — not a career coach, not an HR
 department — glancing at someone's resume and telling them straight what
 you think. You'll get their resume text and two facts: which standard
-resume sections they already have, and which they don't. Do THREE things:
+resume sections they already have, and which they don't. Do FOUR things:
 
 1. role_label: In 2-5 words, name the FIELD their experience is in (e.g.
    "civil construction coordination", "B2B sales", "BI / data analytics").
@@ -287,15 +397,17 @@ resume sections they already have, and which they don't. Do THREE things:
    Write like you're texting a friend a quick honest take, not writing
    ad copy.
 
-   ANTI-HALLUCINATION RULE (hard): only reference roles, companies,
-   industries, technologies, or details that are LITERALLY present in
-   the resume text below. Do not infer a "pivot to X" or a "background
-   in Y" unless the resume plainly says so. If nothing specific stands
-   out, say something generic-but-true ("solid mid-career resume,
-   no red flags") rather than inventing a narrative arc. Real user
-   burn: model wrote "sudden pivot to art gallery work" for a resume
-   with zero art or gallery content (2026-08-20). If you cannot ground
-   an observation in specific resume text, do not make it.
+   ANTI-HALLUCINATION RULE (HARD, enforced by the server): every
+   specific claim in first_impression MUST be backed by a verbatim
+   snippet from the resume in `first_impression_evidence`. If you
+   cannot quote the resume verbatim to support a claim, do not make
+   it. If nothing specific stands out, say something generic-but-true
+   ("solid mid-career resume, no red flags") and leave
+   first_impression_evidence empty. Real user burn: model wrote
+   "sudden pivot to art gallery work" for a resume with zero art or
+   gallery content (2026-08-20). The server now REJECTS impressions
+   whose evidence snippets do not appear in the resume — no summary
+   renders in that case. Get it right or say something generic.
 
    Banned English words/phrases (instant AI-slop tell, never use
    them): leverage, robust, seamless, dynamic, passionate, results-driven,
@@ -308,7 +420,14 @@ resume sections they already have, and which they don't. Do THREE things:
    is genuinely impressive, say so plainly ("this is solid" / "está
    sólido") — don't dress it up.
 
-3. section_suggestions: Of the MISSING sections listed below, which (if
+3. first_impression_evidence: 0-3 short verbatim snippets from the
+   resume text below that back the specific claims in your impression.
+   Copy them EXACTLY — including capitalisation and punctuation — so
+   the server can verify with substring match. Each snippet: 6-200
+   chars. If your impression is generic (no specific claim), return
+   an empty list.
+
+4. section_suggestions: Of the MISSING sections listed below, which (if
    any) are actually worth this specific candidate adding? Be selective —
    most resumes don't need most of these. Consider their apparent field
    and, if the location suggests it, the Ottawa/Montreal bilingual job
@@ -335,28 +454,28 @@ Return JSON:
 {{
   "role_label": "...",
   "first_impression": "...",
+  "first_impression_evidence": ["verbatim snippet 1", "verbatim snippet 2"],
   "section_suggestions": [{{"section": "languages", "reason": "..."}}]
 }}
 """
-        client = GeminiClient(api_key=api_key)
-        raw = client.generate_json(prompt)
+        summary = _grounded_or_none(prompt, api_key, resume_text)
+        if summary is None:
+            # Two attempts came back un-grounded. Don't cache anything;
+            # don't render anything. Better silence than a lie.
+            return None
 
-        role_label = str(raw.get("role_label", "")).strip()[:60]
-        first_impression = str(raw.get("first_impression", "")).strip()[:280]
+        role_label = summary.role_label.strip()[:60]
+        first_impression = summary.first_impression.strip()[:280]
 
         missing_keys = {k for k, _ in missing}
-        suggestions_raw = raw.get("section_suggestions", [])
         suggestions: list[dict] = []
-        if isinstance(suggestions_raw, list):
-            for item in suggestions_raw:
-                if not isinstance(item, dict):
-                    continue
-                key = str(item.get("section", "")).strip().lower()
-                reason = str(item.get("reason", "")).strip()[:160]
-                if key in missing_keys and reason:
-                    suggestions.append({"section": key, "reason": reason})
-                if len(suggestions) >= SECTION_SUGGESTIONS_MAX:
-                    break
+        for item in summary.section_suggestions:
+            key = item.section.strip().lower()
+            reason = item.reason.strip()[:160]
+            if key in missing_keys and reason:
+                suggestions.append({"section": key, "reason": reason})
+            if len(suggestions) >= SECTION_SUGGESTIONS_MAX:
+                break
 
         db.save_resume_ai_summary(
             resume_id,
@@ -391,33 +510,19 @@ async def get_ai_summary(request: Request):
     )
 
 
-@router.post("/profile/ai-summary/regenerate")
-async def regenerate_ai_summary(request: Request):
-    """Invalidate the cached AI summary for the current resume + regenerate.
-
-    Added 2026-08-20 after a real hallucination burn: the cached
-    summary claimed the user had "a pivot to art gallery work" for a
-    resume with zero art/gallery content. The prompt has been
-    hardened against that class of hallucination, but existing cached
-    rows still hold the old bad text — this button gives the user a
-    self-service path to clear + re-ask under the fixed prompt.
-    """
-    current = db.get_current_resume()
-    if not current:
-        return HTMLResponse("", status_code=200)
-    resume_id = int(current["id"])
-    # Invalidate the cache row so _maybe_generate_ai_summary regenerates.
-    with db.tx() as conn:
-        conn.execute("DELETE FROM resume_ai_summary WHERE resume_id = ?", (resume_id,))
-    summary = _maybe_generate_ai_summary(resume_id)
-    if not summary:
-        return HTMLResponse(
-            '<div class="text-sm text-error">Could not regenerate — try again in a moment.</div>',
-            status_code=200,
-        )
-    return templates.TemplateResponse(
-        request, "partials/ai_summary.html", {"summary": summary},
-    )
+# NOTE (2026-08-20): the short-lived POST /profile/ai-summary/regenerate
+# endpoint was DELETED. A user-facing regenerate button trains users to
+# distrust the output ("click if you don't like it"), invites quota-
+# burning spam clicks, and papers over the real problem: an ungrounded
+# prompt. Quality lives in `_grounded_or_none` above (Pydantic contract
+# + verbatim-evidence check + one silent server-side retry). If a
+# summary is un-grounded twice, no summary renders — better than a
+# lie the user has to bat away.
+#
+# If you ever need to invalidate a cached hallucination for a specific
+# user in an incident, do it from SSH:
+#   fly ssh console -a <app> -C "sqlite3 /data/jobot.db 'DELETE FROM resume_ai_summary WHERE resume_id = X'"
+# Then the next Profile visit regenerates under the hardened prompt.
 
 
 @router.get("/profile/suggest-queries")
