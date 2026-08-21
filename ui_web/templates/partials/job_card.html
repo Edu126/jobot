@@ -55,9 +55,8 @@
             {# Green + filled check = "you tracked this one." Replaces
                New/Viewed since those are irrelevant once you've applied. #}
             <span class="chip inline-flex items-center gap-1"
-                  style="background: oklch(var(--su) / 0.14); border-color: oklch(var(--su) / 0.42); color: oklch(var(--su));"
-                  title="{{ _('action.applied_title') }}">
-              <i class="ph-fill ph-check-circle i-3"></i>{{ _('action.applied') }}
+                  style="background: oklch(var(--su) / 0.14); border-color: oklch(var(--su) / 0.42); color: oklch(var(--su));">
+              <i class="ph-fill ph-paper-plane-tilt i-3"></i>{{ _('action.applied') }}
             </span>
             {% else %}
               {% if job._is_new_since_expand %}

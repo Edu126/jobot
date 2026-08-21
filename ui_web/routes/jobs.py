@@ -1646,12 +1646,8 @@ async def jobs_unsave(request: Request, job_id: str):
 
 @router.post("/jobs/mark-applied/{job_id}")
 async def jobs_mark_applied(request: Request, job_id: str):
-    """One-click "I applied to this."
-
-    Bypasses the save-first-then-change-status flow that was making
-    Mehran skip application tracking entirely (2026-08-21 feedback):
-    the pulse report kept showing 0 applied because the affordance
-    lived on the Journey page, not next to the job.
+    """One-click "I applied to this." First half of the toggle;
+    `/jobs/unmark-applied` is the other half.
 
     Idempotent + non-destructive:
       - Missing application row → INSERT with status='applied'.
@@ -1661,6 +1657,10 @@ async def jobs_mark_applied(request: Request, job_id: str):
     State survives scrape cycles because `applications` has
     UNIQUE(job_id), so the "Applied" badge shows next time the same
     job re-surfaces in a later search — no double-marking risk.
+
+    Returns both the button re-render AND an out-of-band swap for
+    the header slot (heart ↔ applied badge are mutually exclusive
+    per user IA — 2026-08-21).
     """
     job = db.get_job(job_id)
     if not job:
@@ -1672,12 +1672,41 @@ async def jobs_mark_applied(request: Request, job_id: str):
     )
     events.track(events.APP_STATUS_CHANGED,
                  job_id=job_id, from_status="", to_status="applied")
-    # Re-render the button as the "Applied ✓" pill.
     return templates.TemplateResponse(
         request,
-        "partials/applied_action.html",
+        "partials/applied_toggle_response.html",
         {"job_id": job_id, "is_applied": True},
     )
+
+
+@router.post("/jobs/unmark-applied/{job_id}")
+async def jobs_unmark_applied(request: Request, job_id: str):
+    """Reverse of mark-applied. Toggle back to un-applied so a
+    misclick can be undone. Same guard as jobs_unsave: only fires
+    when the app is EXACTLY in 'applied' — interviewing/offer are
+    preserved (deleting them would erase real progress)."""
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    removed = db.unmark_job_applied(job_id)
+    if removed:
+        events.track(events.APP_STATUS_CHANGED,
+                     job_id=job_id, from_status="applied", to_status="")
+    # Always re-render as un-applied — if the row was preserved
+    # (interviewing/offer), the header badge stays green anyway
+    # because get_applied_job_ids catches those statuses too.
+    return templates.TemplateResponse(
+        request,
+        "partials/applied_toggle_response.html",
+        {"job_id": job_id, "is_applied": not removed and _is_still_applied(job_id)},
+    )
+
+
+def _is_still_applied(job_id: str) -> bool:
+    """Post-unmark helper: was the row preserved because it's past
+    'applied' (interviewing/offer)? If so, keep the badge green."""
+    row = db.get_application_by_job(job_id)
+    return bool(row and row["status"] in ("applied", "interviewing", "offer"))
 
 
 # ─────────────────────────────────────────────────────────────

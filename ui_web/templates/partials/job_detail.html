@@ -26,19 +26,15 @@
         {% if ai %} · {{ ai.verdict | title }}{% endif %}
       </div>
     </div>
-    <div class="shrink-0 flex items-center gap-2">
-      {% if job._is_applied %}
-      {# Applied badge in the header — mirrors the small-card pill so
-         the user sees "you already marked this applied" at a glance
-         when re-visiting a detail pane. #}
-      <span class="pill pill-success inline-flex items-center gap-1"
-            title="{{ _('action.applied_title') }}">
-        <i class="ph-fill ph-check-circle i-3"></i>{{ _('action.applied') }}
-      </span>
-      {% endif %}
-      <div id="save-action-{{ job.id }}">
-        {% include "partials/save_action.html" %}
-      </div>
+    {# Single header slot. save_action.html handles ALL states:
+       - Not saved → outline heart
+       - Interested → filled red heart
+       - Applied → green plane pill, clickable → /journey#apps
+       - Interviewing/Offer/Rejected → semantic pill
+       Heart ↔ Applied are mutually exclusive by construction (both
+       come out of the same partial based on _app_status). #}
+    <div id="save-action-{{ job.id }}" class="shrink-0">
+      {% include "partials/save_action.html" %}
     </div>
   </div>
 
@@ -70,11 +66,14 @@
   {% endif %}
 
   {# ── Actions ──
-     When the board exposes a direct company URL AND it differs from the
-     board post, we surface BOTH: the board link (for context / seeing the
-     posting in its native UI) and the direct 'Apply on {company}' link
-     (which skips the board's Apply wall and goes straight to their ATS).
-     Saves 1-2 clicks per application in practice. #}
+     Layout (2026-08-21): Open / Apply-on-company / Tailor grouped on
+     the LEFT (external-navigation + tailoring cluster); Mark-as-applied
+     pushed to the far RIGHT via ml-auto (tracking cluster). Prevents
+     the "sandwich" of Tailor's solid green primary between two ghost
+     buttons that was throwing the visual weight off. When the row
+     wraps on narrow viewports, ml-auto still keeps mark-applied on
+     the right edge of its wrap line — deliberate.
+     #}
   <div class="flex items-center gap-2 flex-wrap pt-3 border-t border-base-300">
     {% if job.job_url_direct and job.job_url_direct != job.job_url %}
     <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
@@ -87,7 +86,7 @@
     <a href="{{ job.job_url }}" target="_blank" rel="noopener"
        class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
       {% if job.job_url_direct and job.job_url_direct != job.job_url %}View on {{ job.site or 'board' }}
-      {% else %}Open posting{% endif %}
+      {% else %}{{ _('action.open_posting') }}{% endif %}
       <i class="ph-thin ph-arrow-square-out i-4"></i>
     </a>
     {% endif %}
@@ -99,13 +98,15 @@
       {{ _('action.tailor') }}
     </button>
 
-    {# Mark-as-applied — one-click state change. Non-destructive: if
-       the user already promoted the app past "applied" (interviewing /
-       offer), the button just no-ops server-side. Added 2026-08-21 to
-       close the tracking gap Mehran surfaced (0 applied on pulse). #}
-    {% with job_id=job.id, is_applied=job._is_applied %}
-      {% include "partials/applied_action.html" %}
-    {% endwith %}
+    {# Mark-as-applied — toggle. Pushed right via ml-auto on the
+       wrapper span. Non-destructive: click once to mark, click the
+       resulting "Applied" state to unmark (only if status is exactly
+       'applied' — interviewing/offer are preserved server-side). #}
+    <span class="ml-auto">
+      {% with job_id=job.id, is_applied=job._is_applied %}
+        {% include "partials/applied_action.html" %}
+      {% endwith %}
+    </span>
   </div>
 
   {# ── Full JD (rendered with structure — headers, lists, bold) ── #}

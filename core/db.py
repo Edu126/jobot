@@ -800,6 +800,33 @@ def mark_job_applied(
         return int(cur.lastrowid)
 
 
+def unmark_job_applied(job_id: str, path: Path = DB_PATH) -> bool:
+    """Reverse of `mark_job_applied` — the "click Applied again to
+    undo" toggle case. Only fires when status is EXACTLY 'applied'
+    (raw mark, no interview progress); statuses past that
+    (interviewing / offer) are preserved so an accidental toggle
+    can't blow away real interview stage.
+
+    Returns True if a row was removed, False if the toggle no-op'd
+    (nothing to remove, or the app has progressed past 'applied').
+
+    Deletes the row rather than downgrading to 'interested' because:
+      - Users click Mark as Applied when they applied, period. If
+        they undo it, they mean "I didn't apply" — not "I'm
+        interested."
+      - Same pattern as jobs_unsave (which deletes when status ==
+        'interested'). Consistent toggle semantics across the app.
+    """
+    with tx(path) as conn:
+        row = conn.execute(
+            "SELECT id, status FROM applications WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        if not row or row["status"] != "applied":
+            return False
+        conn.execute("DELETE FROM applications WHERE id = ?", (int(row["id"]),))
+        return True
+
+
 def update_application(
     app_id: int,
     *,

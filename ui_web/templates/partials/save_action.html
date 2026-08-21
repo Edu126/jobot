@@ -38,19 +38,22 @@
     </svg>
   </button>
 {% else %}
-  {# Semantic pill class + Phosphor icon per status. Offer wears the
-     salmon celebration tint — the funnel's "win" moment finally uses the
-     accent color the design system has been holding for value moments. #}
+  {# Semantic pill class + Phosphor icon per status. Applied went from
+     pill-neutral (gray) → pill-success (green) 2026-08-21 so the
+     mark-as-applied action gets a visible "yes, tracked" affordance.
+     Offer wears the salmon celebration tint — the funnel's "win"
+     moment finally uses the accent color the design system has been
+     holding for value moments. #}
   {% set _map = {
-    'applied':      ('pill-neutral',     'ph-paper-plane-tilt', 'Applied'),
+    'applied':      ('pill-success',     'ph-paper-plane-tilt', _('action.applied')),
     'interviewing': ('pill-info',        'ph-chat-circle',      'Interviewing'),
     'offer':        ('pill-celebration', 'ph-sparkle',          'Offer'),
     'rejected':     ('pill-danger',      'ph-x-circle',         'Rejected'),
     'withdrawn':    ('pill-neutral',     'ph-sign-out',         'Withdrawn'),
   }[status] %}
-  <a href="/applications"
+  <a href="/journey#apps"
      class="pill {{ _map[0] }} hover:opacity-80 transition-opacity cursor-pointer inline-flex items-center gap-1.5"
-     title="View on Applications tab — click to open">
+     title="{{ _('action.view_in_applied') }}">
     <i class="ph-thin {{ _map[1] }} i-4"></i>{{ _map[2] }}
   </a>
 {% endif %}

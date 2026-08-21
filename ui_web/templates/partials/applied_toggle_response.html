@@ -1,0 +1,21 @@
+{# Response for /jobs/mark-applied and /jobs/unmark-applied.
+
+   Returns TWO fragments in one payload so a single HTMX swap
+   updates both:
+     1. The bottom action-bar button (primary hx-target).
+     2. The header save-action slot — heart ↔ green plane badge are
+        mutually exclusive per user IA (2026-08-21). HTMX picks this
+        up via hx-swap-oob="true".
+
+   Requires `job_id` + `is_applied` in scope. Rendered by the two
+   toggle endpoints in ui_web/routes/jobs.py. The included
+   save_action.html reads `current_status` (falls back to
+   `job._app_status`), so we pass a synthetic status here.
+   #}
+{% include "partials/applied_action.html" %}
+
+<div id="save-action-{{ job_id }}" hx-swap-oob="true" class="shrink-0">
+  {% with current_status=('applied' if is_applied else None), jid=job_id, job={'id': job_id, '_app_status': ('applied' if is_applied else None)} %}
+    {% include "partials/save_action.html" %}
+  {% endwith %}
+</div>
