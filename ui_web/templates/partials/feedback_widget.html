@@ -1,83 +1,25 @@
-{# Feedback capture — floating button top-left + modal.
+{# Feedback capture — floating pill (bottom-right) + modal.
 
    Two entry points to the modal:
      1. Click the floating button (always visible).
      2. A one-shot gentle pulse after 10 min of active session — draws
         the eye to the button without opening the modal automatically.
-        Dismissed either by clicking it or after ~5s of pulsing.
 
    Screenshot is captured client-side via html2canvas (lazy-loaded from
    CDN on first modal open) so the user doesn't need to grant screen
    permissions. PNG dataURL is posted to /feedback along with the
    message; server decodes + stores.
 
-   Everything is Alpine + HTMX — no framework additions. #}
-<div x-data="{
-       open: false,
-       pulsing: false,
-       submitting: false,
-       includeShot: true,
-       shotDataUrl: '',
-       shotError: '',
-       openModal() {
-         /* Show the modal IMMEDIATELY — don't await the html2canvas
-            CDN load. If we await, a slow CDN blocks the visible open
-            and the user sees "click did nothing" (real user report,
-            2026-08-20 batch #4). Screenshot is a nice-to-have; the
-            modal is the primary path. */
-         this.open = true;
-         this.pulsing = false;
-         sessionStorage.setItem('feedback_nudged', '1');
-         if (this.includeShot) {
-           this.captureShot().catch(() => { /* handled inside */ });
-         }
-       },
-       async captureShot() {
-         this.shotError = '';
-         this.shotDataUrl = '';
-         try {
-           if (!window.html2canvas) {
-             await new Promise((resolve, reject) => {
-               const s = document.createElement('script');
-               s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
-               s.onload = resolve;
-               s.onerror = reject;
-               document.head.appendChild(s);
-             });
-           }
-           /* Capture the visible viewport (not the whole scroll height —
-              cheaper + more relevant to what the user is seeing right now). */
-           const canvas = await html2canvas(document.body, {
-             width: window.innerWidth,
-             height: window.innerHeight,
-             x: window.scrollX,
-             y: window.scrollY,
-             scale: 1,
-             logging: false,
-             useCORS: true,
-           });
-           this.shotDataUrl = canvas.toDataURL('image/png');
-         } catch (e) {
-           this.shotError = 'Couldn\\'t capture screen — you can still send the message.';
-         }
-       },
-       close() {
-         this.open = false;
-         this.shotDataUrl = '';
-         this.shotError = '';
-       },
-     }"
-     x-init="
-       /* One-shot pulse after 10 min if user hasn't opened yet. */
-       if (!sessionStorage.getItem('feedback_nudged')) {
-         setTimeout(() => {
-           if (!open && !sessionStorage.getItem('feedback_nudged')) {
-             pulsing = true;
-             setTimeout(() => { pulsing = false; }, 5000);
-           }
-         }, 10 * 60 * 1000);
-       }
-     ">
+   The Alpine component is defined as a GLOBAL function
+   (`feedbackWidget()` in the <script> below) instead of inline JSON in
+   x-data. Two reasons:
+     - Inline multi-line strings with escaped quotes (\'Couldn\\\'t\')
+       trip up both HTML attribute parsing and html2canvas's DOM-to-
+       canvas rendering; user saw the attribute value leak as visible
+       text in the screenshot preview (2026-08-20).
+     - Easier to reason about + debug in DevTools.
+   #}
+<div x-data="feedbackWidget()" x-init="init()">
 
   {# Floating action button — bottom-right (user asked "abajo" +
      visible label, 2026-08-20). Pill shape with icon + text so it's
@@ -162,3 +104,78 @@
     </div>
   </div>
 </div>
+
+<script>
+  // Feedback widget component — extracted from inline x-data (2026-08-20).
+  // Keeps the DOM attribute tiny (`x-data="feedbackWidget()"`) so nothing
+  // leaks into visible text if html2canvas or the HTML parser stumbles.
+  window.feedbackWidget = function () {
+    return {
+      open: false,
+      pulsing: false,
+      submitting: false,
+      includeShot: true,
+      shotDataUrl: '',
+      shotError: '',
+
+      init() {
+        // One-shot pulse after 10 minutes if the user hasn't opened yet.
+        if (sessionStorage.getItem('feedback_nudged')) return;
+        setTimeout(() => {
+          if (this.open) return;
+          if (sessionStorage.getItem('feedback_nudged')) return;
+          this.pulsing = true;
+          setTimeout(() => { this.pulsing = false; }, 5000);
+        }, 10 * 60 * 1000);
+      },
+
+      openModal() {
+        // Show the modal immediately — do not await the html2canvas
+        // CDN load. Awaiting made the click look inert on slow networks
+        // (real user report). Screenshot is a nice-to-have.
+        this.open = true;
+        this.pulsing = false;
+        sessionStorage.setItem('feedback_nudged', '1');
+        if (this.includeShot) {
+          this.captureShot().catch(() => { /* handled inside */ });
+        }
+      },
+
+      async captureShot() {
+        this.shotError = '';
+        this.shotDataUrl = '';
+        try {
+          if (!window.html2canvas) {
+            await new Promise((resolve, reject) => {
+              const s = document.createElement('script');
+              s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+              s.onload = resolve;
+              s.onerror = reject;
+              document.head.appendChild(s);
+            });
+          }
+          // Capture the visible viewport (not the whole scroll height —
+          // cheaper + more relevant to what the user is seeing right now).
+          const canvas = await html2canvas(document.body, {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            x: window.scrollX,
+            y: window.scrollY,
+            scale: 1,
+            logging: false,
+            useCORS: true,
+          });
+          this.shotDataUrl = canvas.toDataURL('image/png');
+        } catch (e) {
+          this.shotError = "Couldn't capture screen — you can still send the message.";
+        }
+      },
+
+      close() {
+        this.open = false;
+        this.shotDataUrl = '';
+        this.shotError = '';
+      },
+    };
+  };
+</script>

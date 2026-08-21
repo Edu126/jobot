@@ -345,6 +345,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.danger.type_to_confirm": "Type <strong>{phrase}</strong> to confirm.",
         "profile.danger.confirm": "Reset stats",
         "profile.danger.confirm_delete": "Yes, delete everything",
+        # AI summary regenerate
+        "profile.ai_summary.regenerate": "Regenerate",
     },
     "es": {
         # Navegación
@@ -587,5 +589,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.danger.type_to_confirm": "Escribe <strong>{phrase}</strong> para confirmar.",
         "profile.danger.confirm": "Reiniciar",
         "profile.danger.confirm_delete": "Sí, borrar todo",
+        # Resumen IA — regenerar
+        "profile.ai_summary.regenerate": "Regenerar",
     },
 }

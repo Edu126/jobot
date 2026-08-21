@@ -13,6 +13,18 @@
     "{{ summary.first_impression }}"
   </div>
   {% endif %}
+  {# Regenerate — clears the cached summary and re-asks Gemini under
+     the current prompt. Added 2026-08-20 as the self-service escape
+     hatch for a hallucinated cached read. #}
+  <button type="button"
+          hx-post="/profile/ai-summary/regenerate"
+          hx-target="#ai-summary"
+          hx-swap="innerHTML"
+          hx-indicator="#ai-summary-spin"
+          class="text-xs text-body-muted hover:text-primary cursor-pointer inline-flex items-center gap-1 mt-1 self-start">
+    <i class="ph-thin ph-arrow-clockwise i-3"></i>{{ _('profile.ai_summary.regenerate') }}
+    <span id="ai-summary-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+  </button>
 </div>
 
 {% if summary.suggestions %}

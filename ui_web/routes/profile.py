@@ -285,7 +285,19 @@ resume sections they already have, and which they don't. Do THREE things:
    NOT force a "here's what's good, but here's what's weak" sandwich
    every time — that pattern reads as a template, not an opinion.
    Write like you're texting a friend a quick honest take, not writing
-   ad copy. Banned English words/phrases (instant AI-slop tell, never use
+   ad copy.
+
+   ANTI-HALLUCINATION RULE (hard): only reference roles, companies,
+   industries, technologies, or details that are LITERALLY present in
+   the resume text below. Do not infer a "pivot to X" or a "background
+   in Y" unless the resume plainly says so. If nothing specific stands
+   out, say something generic-but-true ("solid mid-career resume,
+   no red flags") rather than inventing a narrative arc. Real user
+   burn: model wrote "sudden pivot to art gallery work" for a resume
+   with zero art or gallery content (2026-08-20). If you cannot ground
+   an observation in specific resume text, do not make it.
+
+   Banned English words/phrases (instant AI-slop tell, never use
    them): leverage, robust, seamless, dynamic, passionate, results-driven,
    metric-driven, spearhead, utilize, synergy, cutting-edge, elevate,
    unlock, game-changer, "stands out", "speaks volumes", em-dash chains.
@@ -374,6 +386,35 @@ async def get_ai_summary(request: Request):
     summary = _maybe_generate_ai_summary(int(current["id"]))
     if not summary:
         return HTMLResponse("", status_code=200)
+    return templates.TemplateResponse(
+        request, "partials/ai_summary.html", {"summary": summary},
+    )
+
+
+@router.post("/profile/ai-summary/regenerate")
+async def regenerate_ai_summary(request: Request):
+    """Invalidate the cached AI summary for the current resume + regenerate.
+
+    Added 2026-08-20 after a real hallucination burn: the cached
+    summary claimed the user had "a pivot to art gallery work" for a
+    resume with zero art/gallery content. The prompt has been
+    hardened against that class of hallucination, but existing cached
+    rows still hold the old bad text — this button gives the user a
+    self-service path to clear + re-ask under the fixed prompt.
+    """
+    current = db.get_current_resume()
+    if not current:
+        return HTMLResponse("", status_code=200)
+    resume_id = int(current["id"])
+    # Invalidate the cache row so _maybe_generate_ai_summary regenerates.
+    with db.tx() as conn:
+        conn.execute("DELETE FROM resume_ai_summary WHERE resume_id = ?", (resume_id,))
+    summary = _maybe_generate_ai_summary(resume_id)
+    if not summary:
+        return HTMLResponse(
+            '<div class="text-sm text-error">Could not regenerate — try again in a moment.</div>',
+            status_code=200,
+        )
     return templates.TemplateResponse(
         request, "partials/ai_summary.html", {"summary": summary},
     )
