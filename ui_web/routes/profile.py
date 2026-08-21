@@ -97,16 +97,11 @@ async def profile_page(request: Request, just_regenerated: int = 0):
         for m, count in request_counts_today().items()
     ]
 
-    # Language + geography settings (Day 2 sprint work). Passed so the
-    # Language tab's radios render with the current values checked and
-    # the Home location row shows the user's actual data.
-    from core import settings
-    settings_ctx = {
-        "ui_language": settings.get_ui_language(request.headers.get("accept-language", "")),
-        "output_language": settings.get_output_language(),
-        "home_country": settings.get("home_country", ""),
-        "home_city": settings.get("home_city", ""),
-    }
+    # Language + geography settings used to be threaded through here
+    # (the Settings section that lived inside profile.html). Moved to
+    # the floating settings panel in 2026-08-20 PR C — the panel reads
+    # settings via the `settings_ctx()` Jinja global, so no per-route
+    # pass-through needed anymore.
 
     return templates.TemplateResponse(
         request,
@@ -123,7 +118,6 @@ async def profile_page(request: Request, just_regenerated: int = 0):
             "saved_searches": db.list_saved_searches(),
             "jobot_version": current_version(),
             "just_regenerated": bool(just_regenerated),
-            "settings_ctx": settings_ctx,
         },
     )
 
@@ -810,4 +804,82 @@ async def profile_insights_clear(request: Request):
         f'<div class="pill pill-success inline-flex items-center gap-1.5">'
         f'<i class="ph-thin ph-trash i-3"></i>Cleared {n} events</div>',
         status_code=200,
+    )
+
+
+# ─── Data destruction ─────────────────────────────────────────────
+# Two tiered actions requested in the 2026-08-20 retro:
+#   1. "Reset stats for the journey board" — wipes events only
+#      (analytics starts over; resume/applications preserved).
+#   2. "Delete all my data" — nukes everything user-generated except
+#      the meta table (schema_version + language settings kept so
+#      the app boots into the same language after the wipe).
+# Both require a typed confirmation phrase in the POST body — the
+# client can render a modal but the server is the enforcement point.
+
+# Case-insensitive; accepts either language + a few common variants.
+_DELETE_ALL_PHRASES = {"delete all", "borrartodo", "borrar todo", "eliminar todo"}
+_RESET_STATS_PHRASES = {"reset stats", "reset", "reiniciar", "reiniciar stats", "reiniciar estadisticas", "reiniciar estadísticas"}
+
+
+def _matches(phrase: str, allowed: set[str]) -> bool:
+    return (phrase or "").strip().lower() in allowed
+
+
+@router.post("/profile/data/reset-stats")
+async def data_reset_stats(request: Request, confirmation: str = Form("")):
+    """Wipe events (analytics only). Resume, applications, scores,
+    settings — all preserved. Requires typed confirmation."""
+    if not _matches(confirmation, _RESET_STATS_PHRASES):
+        return HTMLResponse(
+            '<div class="text-error text-sm">Confirmation phrase did not match.</div>',
+            status_code=200,
+        )
+    n = events.clear_all()
+    return HTMLResponse(
+        f'<div class="pill pill-success inline-flex items-center gap-1.5">'
+        f'<i class="ph-thin ph-arrow-counter-clockwise i-3"></i>Reset — {n} events cleared</div>',
+        status_code=200,
+        headers={"HX-Refresh": "true"},
+    )
+
+
+@router.post("/profile/data/delete-all")
+async def data_delete_all(request: Request, confirmation: str = Form("")):
+    """Nuke every user-generated row across the DB. Preserves the
+    meta table (schema_version + language prefs) so the app boots
+    into a coherent state after. Requires typed confirmation."""
+    if not _matches(confirmation, _DELETE_ALL_PHRASES):
+        return HTMLResponse(
+            '<div class="text-error text-sm">Confirmation phrase did not match.</div>',
+            status_code=200,
+        )
+    with db.tx() as conn:
+        # Order matters where FKs are enforced with CASCADE — child
+        # tables first, then parents. SQLite's `ON DELETE CASCADE`
+        # handles most, but explicit DELETEs keep intent obvious and
+        # cover tables without FKs (events, feedback, admin_reports).
+        for table in (
+            "job_scores", "applications", "viewed_jobs", "dismissed_jobs",
+            "suggested_queries", "resume_ai_summary",
+            "resumes", "jobs",
+            "saved_searches", "search_tasks",
+            "events", "feedback", "admin_reports",
+            "gemini_usage", "rate_limits",
+        ):
+            conn.execute(f"DELETE FROM {table}")
+    # Also delete the feedback screenshot files on disk.
+    shot_dir = db.DB_PATH.parent / "feedback"
+    if shot_dir.exists():
+        for f in shot_dir.iterdir():
+            if f.is_file():
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+    return HTMLResponse(
+        '<div class="pill pill-success inline-flex items-center gap-1.5">'
+        '<i class="ph-thin ph-trash i-3"></i>Data deleted — refreshing…</div>',
+        status_code=200,
+        headers={"HX-Refresh": "true"},
     )

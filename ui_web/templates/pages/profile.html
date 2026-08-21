@@ -64,12 +64,17 @@
 
         {# ATS chip — one row: score / verdict / See report link ── #}
         {% if ats_report %}
-          {% if ats_report.score >= 80 %}
+          {# 4-tier ATS labels (2026-08-20 retro): poor / almost there /
+             good / excellent. Previous 3-tier scheme called 100/100
+             "good" — user flagged as wrong. #}
+          {% if ats_report.score >= 90 %}
+            {% set _score_color = 'oklch(var(--su))' %}{% set _pill = 'pill-success' %}{% set _label = _('profile.ats.excellent') %}
+          {% elif ats_report.score >= 70 %}
             {% set _score_color = 'oklch(var(--su))' %}{% set _pill = 'pill-success' %}{% set _label = _('profile.ats.good') %}
-          {% elif ats_report.score >= 60 %}
-            {% set _score_color = 'oklch(var(--wa) / 0.85)' %}{% set _pill = 'pill-warn' %}{% set _label = _('profile.ats.needs_work') %}
+          {% elif ats_report.score >= 50 %}
+            {% set _score_color = 'oklch(var(--wa) / 0.85)' %}{% set _pill = 'pill-warn' %}{% set _label = _('profile.ats.almost_there') %}
           {% else %}
-            {% set _score_color = 'oklch(var(--er))' %}{% set _pill = 'pill-danger' %}{% set _label = _('profile.ats.serious') %}
+            {% set _score_color = 'oklch(var(--er))' %}{% set _pill = 'pill-danger' %}{% set _label = _('profile.ats.poor') %}
           {% endif %}
         <div class="mt-4 pt-4 border-t border-base-300/70 flex items-center gap-3 flex-wrap">
           <span class="text-label">ATS</span>
@@ -198,6 +203,130 @@
   {% if current %}
     {% include "partials/contact_verify.html" %}
   {% endif %}
+
+  {# ═════════ Danger zone ═════════
+     Two destructive actions moved here from Journey per user request
+     (2026-08-20). Both use typed-confirmation modals — clicking a
+     button opens a modal, user types the phrase, submit is disabled
+     until phrase matches. Server ALSO validates the phrase — the
+     modal is not the only defense. #}
+  {# Language-aware placeholder text for the typed-confirmation
+     modals. Server accepts both EN + ES phrases; the modal just
+     shows the one that matches the user's current UI language. #}
+  {% set _lang = current_ui_language() %}
+  {% set _delete_phrase = 'borrartodo' if _lang == 'es' else 'delete all' %}
+  {% set _reset_phrase = 'reiniciar' if _lang == 'es' else 'reset stats' %}
+  <section class="card-quiet mt-6"
+           x-data="{
+             deleteAllModal: false,
+             resetStatsModal: false,
+             deleteAllPhrase: '',
+             resetStatsPhrase: '',
+             deleteAllOk() {
+               const p = this.deleteAllPhrase.trim().toLowerCase();
+               return ['delete all', 'borrartodo', 'borrar todo', 'eliminar todo'].includes(p);
+             },
+             resetStatsOk() {
+               const p = this.resetStatsPhrase.trim().toLowerCase();
+               return ['reset stats', 'reset', 'reiniciar', 'reiniciar stats',
+                       'reiniciar estadisticas', 'reiniciar estadísticas'].includes(p);
+             },
+           }">
+    <div class="text-label mb-2 inline-flex items-center gap-1.5">
+      <i class="ph-thin ph-warning-circle i-4" style="color: oklch(var(--er) / 0.8);"></i>
+      {{ _('profile.danger.title') }}
+    </div>
+    <p class="text-sm text-body-muted mb-4">
+      {{ _('profile.danger.subtitle') }}
+    </p>
+
+    <div class="flex flex-wrap gap-3">
+      <button type="button" @click="resetStatsModal = true; resetStatsPhrase = ''"
+              class="btn btn-sm btn-outline cursor-pointer">
+        <i class="ph-thin ph-arrow-counter-clockwise i-4"></i>{{ _('profile.danger.reset_stats') }}
+      </button>
+      <button type="button" @click="deleteAllModal = true; deleteAllPhrase = ''"
+              class="btn btn-sm cursor-pointer"
+              style="background: oklch(var(--er)); color: oklch(var(--erc)); border-color: oklch(var(--er));">
+        <i class="ph-thin ph-trash i-4"></i>{{ _('profile.danger.delete_all') }}
+      </button>
+    </div>
+
+    {# ── Reset-stats modal ── #}
+    <div x-show="resetStatsModal" x-cloak
+         @keydown.escape.window="resetStatsModal = false"
+         class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/40" @click="resetStatsModal = false"></div>
+      <div class="relative bg-base-100 rounded-xl shadow-2xl w-full max-w-md p-5"
+           style="border: 1px solid oklch(var(--b3));">
+        <div class="text-title mb-1">{{ _('profile.danger.reset_stats') }}</div>
+        <p class="text-sm text-body-muted mb-4">
+          {{ _('profile.danger.reset_stats.explainer') }}
+        </p>
+        <label class="block text-sm mb-1">{{ _('profile.danger.type_to_confirm', phrase=_reset_phrase) | safe }}</label>
+        <input type="text" x-model="resetStatsPhrase"
+               autocomplete="off"
+               class="input input-bordered input-sm w-full font-mono"
+               placeholder="{{ _reset_phrase }}">
+        <div id="reset-stats-result" class="text-sm mt-2"></div>
+        <div class="flex items-center gap-2 mt-4">
+          <button type="button"
+                  hx-post="/profile/data/reset-stats"
+                  hx-vals='js:{confirmation: document.querySelector("[x-model=\"resetStatsPhrase\"]").value}'
+                  hx-target="#reset-stats-result"
+                  hx-swap="innerHTML"
+                  :disabled="!resetStatsOk()"
+                  class="btn btn-sm btn-primary cursor-pointer"
+                  :class="!resetStatsOk() ? 'opacity-40 cursor-not-allowed' : ''">
+            {{ _('profile.danger.confirm') }}
+          </button>
+          <button type="button" @click="resetStatsModal = false"
+                  class="btn btn-sm btn-ghost cursor-pointer">
+            {{ _('action.cancel') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {# ── Delete-all modal ── #}
+    <div x-show="deleteAllModal" x-cloak
+         @keydown.escape.window="deleteAllModal = false"
+         class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/40" @click="deleteAllModal = false"></div>
+      <div class="relative bg-base-100 rounded-xl shadow-2xl w-full max-w-md p-5"
+           style="border: 1px solid oklch(var(--er) / 0.4);">
+        <div class="text-title mb-1" style="color: oklch(var(--er));">
+          {{ _('profile.danger.delete_all') }}
+        </div>
+        <p class="text-sm text-body-muted mb-4">
+          {{ _('profile.danger.delete_all.explainer') }}
+        </p>
+        <label class="block text-sm mb-1">{{ _('profile.danger.type_to_confirm', phrase=_delete_phrase) | safe }}</label>
+        <input type="text" x-model="deleteAllPhrase"
+               autocomplete="off"
+               class="input input-bordered input-sm w-full font-mono"
+               placeholder="{{ _delete_phrase }}">
+        <div id="delete-all-result" class="text-sm mt-2"></div>
+        <div class="flex items-center gap-2 mt-4">
+          <button type="button"
+                  hx-post="/profile/data/delete-all"
+                  hx-vals='js:{confirmation: document.querySelector("[x-model=\"deleteAllPhrase\"]").value}'
+                  hx-target="#delete-all-result"
+                  hx-swap="innerHTML"
+                  :disabled="!deleteAllOk()"
+                  class="btn btn-sm cursor-pointer"
+                  :class="!deleteAllOk() ? 'opacity-40 cursor-not-allowed' : ''"
+                  style="background: oklch(var(--er)); color: oklch(var(--erc)); border-color: oklch(var(--er));">
+            {{ _('profile.danger.confirm_delete') }}
+          </button>
+          <button type="button" @click="deleteAllModal = false"
+                  class="btn btn-sm btn-ghost cursor-pointer">
+            {{ _('action.cancel') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
 
   {# Suggested queries moved to the Jobs quick-fill row — that's where
      the user starts a search, so having them one row above the search
@@ -355,12 +484,14 @@
       <div class="modal-panel__body space-y-5">
         {# Score summary at the top of the modal #}
         <div class="flex items-baseline gap-2">
-          {% if ats_report.score >= 80 %}
-            {% set _c = 'oklch(var(--su))' %}{% set _p = 'pill-success' %}{% set _l = 'Good' %}
-          {% elif ats_report.score >= 60 %}
-            {% set _c = 'oklch(var(--wa) / 0.85)' %}{% set _p = 'pill-warn' %}{% set _l = 'Needs work' %}
+          {% if ats_report.score >= 90 %}
+            {% set _c = 'oklch(var(--su))' %}{% set _p = 'pill-success' %}{% set _l = _('profile.ats.excellent') %}
+          {% elif ats_report.score >= 70 %}
+            {% set _c = 'oklch(var(--su))' %}{% set _p = 'pill-success' %}{% set _l = _('profile.ats.good') %}
+          {% elif ats_report.score >= 50 %}
+            {% set _c = 'oklch(var(--wa) / 0.85)' %}{% set _p = 'pill-warn' %}{% set _l = _('profile.ats.almost_there') %}
           {% else %}
-            {% set _c = 'oklch(var(--er))' %}{% set _p = 'pill-danger' %}{% set _l = 'Serious issues' %}
+            {% set _c = 'oklch(var(--er))' %}{% set _p = 'pill-danger' %}{% set _l = _('profile.ats.poor') %}
           {% endif %}
           <span style="font-size: 2.75rem; font-weight: 700; letter-spacing: -0.03em; color: {{ _c }}; font-variant-numeric: tabular-nums; line-height: 1;">{{ ats_report.score }}</span>
           <span class="text-lg font-medium text-base-content/30">/ 100</span>

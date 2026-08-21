@@ -249,7 +249,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.action.replace": "Replace",
         "profile.older_versions": "{n} older versions",
         "profile.upload.new_version": "Upload a new version",
+        "profile.ats.excellent": "Excellent",
         "profile.ats.good": "Good",
+        "profile.ats.almost_there": "Almost there",
+        "profile.ats.poor": "Poor",
+        # Legacy 3-tier labels, retained for backward compatibility.
         "profile.ats.needs_work": "Needs work",
         "profile.ats.serious": "Serious issues",
         "profile.contact.label": "Contact info",
@@ -331,6 +335,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.notif.enabled_toast": "Notifications enabled",
         "profile.notif.disabled_toast": "Notifications disabled",
         "profile.notif.permission_denied_toast": "Permission denied",
+        # Danger zone (data destruction) — moved from Journey per user request
+        "profile.danger.title": "Danger zone",
+        "profile.danger.subtitle": "Destructive actions. Both require typing a confirmation phrase — server rejects anything else.",
+        "profile.danger.reset_stats": "Reset stats",
+        "profile.danger.delete_all": "Delete all my data",
+        "profile.danger.reset_stats.explainer": "Wipes your activity history (events on the Journey page). Your resume, applications, and settings are preserved.",
+        "profile.danger.delete_all.explainer": "Permanently deletes your resume, applications, job scores, events, saved searches — everything. This cannot be undone. Language settings are kept so the app boots in the same language.",
+        "profile.danger.type_to_confirm": "Type <strong>{phrase}</strong> to confirm.",
+        "profile.danger.confirm": "Reset stats",
+        "profile.danger.confirm_delete": "Yes, delete everything",
     },
     "es": {
         # Navegación
@@ -477,7 +491,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.action.replace": "Reemplazar",
         "profile.older_versions": "{n} versiones anteriores",
         "profile.upload.new_version": "Subir una versión nueva",
+        "profile.ats.excellent": "Excelente",
         "profile.ats.good": "Bueno",
+        "profile.ats.almost_there": "Casi listo",
+        "profile.ats.poor": "Bajo",
+        # Legacy 3-tier labels
         "profile.ats.needs_work": "Requiere trabajo",
         "profile.ats.serious": "Problemas serios",
         "profile.contact.label": "Datos de contacto",
@@ -559,5 +577,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.notif.enabled_toast": "Notificaciones activadas",
         "profile.notif.disabled_toast": "Notificaciones desactivadas",
         "profile.notif.permission_denied_toast": "Permiso denegado",
+        # Zona peligrosa (borrar datos)
+        "profile.danger.title": "Zona peligrosa",
+        "profile.danger.subtitle": "Acciones destructivas. Ambas piden que escribas una frase de confirmación — el servidor rechaza cualquier otra cosa.",
+        "profile.danger.reset_stats": "Reiniciar estadísticas",
+        "profile.danger.delete_all": "Borrar todos mis datos",
+        "profile.danger.reset_stats.explainer": "Borra tu historial de actividad (los eventos de la página Trayecto). Tu currículum, postulaciones y ajustes se mantienen.",
+        "profile.danger.delete_all.explainer": "Borra permanentemente tu currículum, postulaciones, puntajes, eventos, búsquedas guardadas — todo. No se puede deshacer. Los ajustes de idioma se mantienen para que la app arranque en el mismo idioma.",
+        "profile.danger.type_to_confirm": "Escribe <strong>{phrase}</strong> para confirmar.",
+        "profile.danger.confirm": "Reiniciar",
+        "profile.danger.confirm_delete": "Sí, borrar todo",
     },
 }
