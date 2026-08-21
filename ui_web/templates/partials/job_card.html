@@ -43,32 +43,45 @@
             <span class="text-base-content/30 mx-1">·</span>{{ job.site }}
             <span class="text-base-content/30 mx-1">·</span>{{ job.date_posted or '?' }}
           </div>
-          {# Requirement + source pills. "New" (salmon accent) surfaces
-             first-time-seen jobs within 48h so the user knows which are fresh
-             vs already-scored from previous scrapes. #}
-          {% if job._is_new or job._is_new_since_expand or job._is_viewed or job._is_dismissed or job._experience or job.is_remote or job.min_salary or job._source_label %}
+          {# Requirement + source pills.
+
+             Applied WINS over New/Viewed — once you've marked a job as
+             applied, that's the badge that matters; the "48h fresh" or
+             "you already opened this" signals become noise. Per user
+             feedback 2026-08-21 ("deberia reemplazar el new/viewed"). #}
+          {% if job._is_applied or job._is_new or job._is_new_since_expand or job._is_viewed or job._is_dismissed or job._experience or job.is_remote or job.min_salary or job._source_label %}
           <div class="flex flex-wrap gap-1.5 mt-2">
-            {% if job._is_new_since_expand %}
-            {# Different from the 48h "New" chip: this one flags jobs that
-               came from the user's most recent Expand pass — persists only
-               until the next expand. #}
+            {% if job._is_applied %}
+            {# Green + filled check = "you tracked this one." Replaces
+               New/Viewed since those are irrelevant once you've applied. #}
             <span class="chip inline-flex items-center gap-1"
-                  style="background: hsl(140 40% 96%); border-color: hsl(140 30% 82%); color: hsl(140 50% 25%);"
-                  title="Added by your last Expand search">
-              <i class="ph-thin ph-arrows-out i-3"></i>{{ _('chip.fresh') }}
+                  style="background: oklch(var(--su) / 0.14); border-color: oklch(var(--su) / 0.42); color: oklch(var(--su));"
+                  title="{{ _('action.applied_title') }}">
+              <i class="ph-fill ph-check-circle i-3"></i>{{ _('action.applied') }}
             </span>
-            {% endif %}
-            {% if job._is_new %}
-            <span class="chip chip-accent inline-flex items-center gap-1" title="First seen in the last 48 hours">
-              <i class="ph-fill ph-sparkle i-3"></i>{{ _('chip.new') }}
-            </span>
-            {% endif %}
-            {% if job._is_viewed %}
-            <span class="chip inline-flex items-center gap-1 text-base-content/50"
-                  style="background: hsl(0 0% 96%); border-color: hsl(0 0% 88%);"
-                  title="You spent time reading this before">
-              <i class="ph-thin ph-eye i-3"></i>{{ _('chip.viewed') }}
-            </span>
+            {% else %}
+              {% if job._is_new_since_expand %}
+              {# Different from the 48h "New" chip: this one flags jobs that
+                 came from the user's most recent Expand pass — persists only
+                 until the next expand. #}
+              <span class="chip inline-flex items-center gap-1"
+                    style="background: hsl(140 40% 96%); border-color: hsl(140 30% 82%); color: hsl(140 50% 25%);"
+                    title="Added by your last Expand search">
+                <i class="ph-thin ph-arrows-out i-3"></i>{{ _('chip.fresh') }}
+              </span>
+              {% endif %}
+              {% if job._is_new %}
+              <span class="chip chip-accent inline-flex items-center gap-1" title="First seen in the last 48 hours">
+                <i class="ph-fill ph-sparkle i-3"></i>{{ _('chip.new') }}
+              </span>
+              {% endif %}
+              {% if job._is_viewed %}
+              <span class="chip inline-flex items-center gap-1 text-base-content/50"
+                    style="background: hsl(0 0% 96%); border-color: hsl(0 0% 88%);"
+                    title="You spent time reading this before">
+                <i class="ph-thin ph-eye i-3"></i>{{ _('chip.viewed') }}
+              </span>
+              {% endif %}
             {% endif %}
             {% if job._is_dismissed %}
             <span class="chip inline-flex items-center gap-1"

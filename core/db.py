@@ -662,6 +662,28 @@ def get_dismissed_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str]:
     return {r["job_id"] for r in rows}
 
 
+def get_applied_job_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str]:
+    """Batch lookup — which of the given job_ids has a corresponding
+    application row in status='applied' or beyond (interviewing / offer).
+
+    Added 2026-08-21 for the "Applied" badge on job cards. Same pattern
+    as get_viewed_ids / get_dismissed_ids so state stays cheap when the
+    same job re-surfaces in a later scrape (application row survives
+    scrape cycles — the `applications` table has UNIQUE(job_id))."""
+    ids = list(job_ids)
+    if not ids:
+        return set()
+    with connect(path) as conn:
+        placeholders = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT job_id FROM applications "
+            f"WHERE job_id IN ({placeholders}) "
+            f"  AND status IN ('applied', 'interviewing', 'offer')",
+            ids,
+        ).fetchall()
+    return {r["job_id"] for r in rows}
+
+
 def get_jobs(job_ids: Iterable[str], path: Path = DB_PATH) -> list[dict]:
     """Batch-load full job rows for a set of ids. Order matches `job_ids`
     (rows missing from the DB are silently skipped — treat as a stale cache
@@ -727,6 +749,53 @@ def create_or_get_application(
                 now,
                 "",
             ),
+        )
+        return int(cur.lastrowid)
+
+
+def mark_job_applied(
+    job_id: str,
+    resume_id: Optional[int] = None,
+    path: Path = DB_PATH,
+) -> int:
+    """One-shot "user says they applied to this job."
+
+    Two cases handled inside one tx:
+      1. No application row yet → INSERT with status='applied'.
+      2. Application row exists in 'interested' → UPDATE to 'applied'.
+      3. Row already in 'applied' / 'interviewing' / 'offer' → no-op
+         (don't downgrade — e.g. don't clobber interview stage).
+
+    Returns the application id. Application rows survive scrape cycles
+    (UNIQUE on job_id) so this state persists even if the same job
+    re-surfaces in a later search — the "Applied" badge shows next time.
+
+    Added 2026-08-21 for the "Mark as Applied" button, prompted by
+    Mehran feedback: 0 apps recorded because the flow made him navigate
+    to Journey → change status. Now: one click on the detail pane.
+    """
+    now = _now()
+    with tx(path) as conn:
+        existing = conn.execute(
+            "SELECT id, status FROM applications WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        if existing:
+            app_id = int(existing["id"])
+            if existing["status"] == "interested":
+                conn.execute(
+                    "UPDATE applications SET status = 'applied', "
+                    "  applied_at = COALESCE(applied_at, ?), "
+                    "  last_updated = ? "
+                    "WHERE id = ?",
+                    (now, now, app_id),
+                )
+            # Any status past 'interested' is preserved as-is.
+            return app_id
+        cur = conn.execute(
+            """INSERT INTO applications
+               (job_id, resume_id, status, applied_at, created_at, last_updated, notes)
+               VALUES (?, ?, 'applied', ?, ?, ?, '')""",
+            (job_id, resume_id, now, now, now),
         )
         return int(cur.lastrowid)
 

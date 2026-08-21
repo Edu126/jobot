@@ -26,8 +26,19 @@
         {% if ai %} · {{ ai.verdict | title }}{% endif %}
       </div>
     </div>
-    <div id="save-action-{{ job.id }}" class="shrink-0">
-      {% include "partials/save_action.html" %}
+    <div class="shrink-0 flex items-center gap-2">
+      {% if job._is_applied %}
+      {# Applied badge in the header — mirrors the small-card pill so
+         the user sees "you already marked this applied" at a glance
+         when re-visiting a detail pane. #}
+      <span class="pill pill-success inline-flex items-center gap-1"
+            title="{{ _('action.applied_title') }}">
+        <i class="ph-fill ph-check-circle i-3"></i>{{ _('action.applied') }}
+      </span>
+      {% endif %}
+      <div id="save-action-{{ job.id }}">
+        {% include "partials/save_action.html" %}
+      </div>
     </div>
   </div>
 
@@ -85,8 +96,16 @@
             hx-target="#tailor-drawer-body"
             hx-swap="innerHTML"
             @click="$store.tailor.openFor('{{ job.id }}')">
-      Tailor
+      {{ _('action.tailor') }}
     </button>
+
+    {# Mark-as-applied — one-click state change. Non-destructive: if
+       the user already promoted the app past "applied" (interviewing /
+       offer), the button just no-ops server-side. Added 2026-08-21 to
+       close the tracking gap Mehran surfaced (0 applied on pulse). #}
+    {% with job_id=job.id, is_applied=job._is_applied %}
+      {% include "partials/applied_action.html" %}
+    {% endwith %}
   </div>
 
   {# ── Full JD (rendered with structure — headers, lists, bold) ── #}

@@ -612,6 +612,10 @@ async def jobs_results(request: Request, cache_key: str):
     all_ids = [j["id"] for j in jobs_dicts]
     viewed_ids = db.get_viewed_ids(all_ids)
     dismissed_ids = db.get_dismissed_ids(all_ids)
+    # `applied_ids` = jobs with status='applied' / interviewing / offer.
+    # Same batch pattern; drives the small-card "Applied" badge which
+    # replaces New/Viewed once the user marks the job (per user 2026-08-21).
+    applied_ids = db.get_applied_job_ids(all_ids)
     new_since_expand_ids = set(cached.last_expand_added_ids)
 
     resume = db.get_current_resume()
@@ -670,6 +674,7 @@ async def jobs_results(request: Request, cache_key: str):
         j["_experience"] = _extract_experience(j.get("description", ""))
         j["_is_viewed"] = j["id"] in viewed_ids
         j["_is_dismissed"] = j["id"] in dismissed_ids
+        j["_is_applied"] = j["id"] in applied_ids
         j["_is_new_since_expand"] = j["id"] in new_since_expand_ids
 
         # "New" flag — first_seen within 48h
@@ -1532,6 +1537,11 @@ async def jobs_detail(request: Request, job_id: str):
 
     app = db.get_application_by_job(job_id)
     job["_app_status"] = app["status"] if app else None
+    # `_is_applied` mirrors the batch-computed flag on the list view so
+    # the detail-pane template can render Applied/Mark-as-Applied
+    # consistently whether the pane is reached via a card click (this
+    # endpoint) or via a full page load (main results renderer).
+    job["_is_applied"] = bool(app and app["status"] in ("applied", "interviewing", "offer"))
 
     events.track(
         events.JOB_DETAIL_VIEWED,
@@ -1631,6 +1641,42 @@ async def jobs_unsave(request: Request, job_id: str):
         request,
         "partials/save_action.html",
         {"job_id": job_id, "current_status": None if (app and app["status"] == "interested") else (app["status"] if app else None)},
+    )
+
+
+@router.post("/jobs/mark-applied/{job_id}")
+async def jobs_mark_applied(request: Request, job_id: str):
+    """One-click "I applied to this."
+
+    Bypasses the save-first-then-change-status flow that was making
+    Mehran skip application tracking entirely (2026-08-21 feedback):
+    the pulse report kept showing 0 applied because the affordance
+    lived on the Journey page, not next to the job.
+
+    Idempotent + non-destructive:
+      - Missing application row → INSERT with status='applied'.
+      - Row in 'interested' → UPDATE to 'applied'.
+      - Row already past 'applied' (interviewing / offer) → no-op.
+
+    State survives scrape cycles because `applications` has
+    UNIQUE(job_id), so the "Applied" badge shows next time the same
+    job re-surfaces in a later search — no double-marking risk.
+    """
+    job = db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    resume = db.get_current_resume()
+    db.mark_job_applied(
+        job_id,
+        resume_id=int(resume["id"]) if resume else None,
+    )
+    events.track(events.APP_STATUS_CHANGED,
+                 job_id=job_id, from_status="", to_status="applied")
+    # Re-render the button as the "Applied ✓" pill.
+    return templates.TemplateResponse(
+        request,
+        "partials/applied_action.html",
+        {"job_id": job_id, "is_applied": True},
     )
 
 

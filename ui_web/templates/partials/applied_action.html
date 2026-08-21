@@ -1,0 +1,27 @@
+{# "Mark as Applied" button — before + after states.
+
+   Wrapped in a stable-id container so both HTMX swap targets (the
+   endpoint returns this whole partial) and the surrounding layout
+   have one anchor. Rendered from the detail pane next to Open
+   posting / Tailor.
+   #}
+<span id="applied-action-{{ job_id }}" class="inline-block">
+  {% if is_applied %}
+    <span class="btn btn-sm btn-disabled cursor-default inline-flex items-center gap-1.5"
+          style="background: oklch(var(--su) / 0.15); color: oklch(var(--su)); border-color: oklch(var(--su) / 0.4);"
+          title="{{ _('action.applied_title') }}">
+      <i class="ph-fill ph-check-circle i-4"></i>{{ _('action.applied') }}
+    </span>
+  {% else %}
+    <button type="button"
+            class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5"
+            hx-post="/jobs/mark-applied/{{ job_id }}"
+            hx-target="#applied-action-{{ job_id }}"
+            hx-swap="outerHTML"
+            hx-indicator="#applied-spin-{{ job_id }}">
+      <i class="ph-thin ph-check-circle i-4"></i>{{ _('action.mark_applied') }}
+      <span id="applied-spin-{{ job_id }}"
+            class="htmx-indicator loading loading-spinner loading-xs"></span>
+    </button>
+  {% endif %}
+</span>
