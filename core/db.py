@@ -596,10 +596,16 @@ def save_feedback(
     user_agent: str = "",
     identity: str = "",
     screenshot_bytes: Optional[bytes] = None,
+    screenshot_ext: str = "png",
     path: Path = DB_PATH,
 ) -> int:
     """Persist a feedback submission. Screenshot bytes are written to a
     file next to the DB; only the relative path is stored on the row.
+
+    `screenshot_ext` is the file extension without the dot ("png",
+    "jpg", "webp"). Widened 2026-08-21 from PNG-only when we swapped
+    html2canvas for a native file picker — the user's file could be
+    any image type.
 
     Returns the new feedback id."""
     with tx(path) as conn:
@@ -613,12 +619,13 @@ def save_feedback(
     if screenshot_bytes:
         shot_dir = path.parent / "feedback"
         shot_dir.mkdir(parents=True, exist_ok=True)
-        shot_path = shot_dir / f"{new_id}.png"
+        ext = (screenshot_ext or "png").lstrip(".").lower() or "png"
+        shot_path = shot_dir / f"{new_id}.{ext}"
         shot_path.write_bytes(screenshot_bytes)
         with tx(path) as conn:
             conn.execute(
                 "UPDATE feedback SET screenshot_path = ? WHERE id = ?",
-                (f"feedback/{new_id}.png", new_id),
+                (f"feedback/{new_id}.{ext}", new_id),
             )
     return new_id
 

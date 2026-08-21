@@ -369,13 +369,13 @@ html, body {
    color. Reveals a subtle pulse (once per session, after 10 min) to
    draw the eye when the user hasn't clicked it. */
 .feedback-fab {
-  /* Bottom-right sticky FAB with visible "Feedback" label. Reworked
-     2026-08-20 — the previous top-left circle was invisible + user
-     said clicks did nothing. Pill shape + text = obvious affordance;
+  /* Bottom-LEFT sticky FAB with visible "Feedback" label. Was right
+     initially; user asked to move left so it doesn't cover right-side
+     content (2026-08-21). Pill shape + text = obvious affordance;
      z-index: 60 puts it above sticky headers but below dialogs. */
   position: fixed;
   bottom: calc(1.25rem + env(safe-area-inset-bottom));
-  right: 1.25rem;
+  left: 1.25rem;
   z-index: 60;
   padding: 0.65rem 1.1rem;
   border-radius: 999px;

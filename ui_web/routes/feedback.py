@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, Response
@@ -28,11 +29,17 @@ from ..ratelimit import get_identity, limiter
 router = APIRouter(tags=["feedback"])
 _LOG = logging.getLogger(__name__)
 
-# Screenshot payload cap — enough for a full mobile page at 2x DPR
-# under html2canvas' PNG output. Reject anything larger to keep the
-# volume from filling up if someone submits a spam loop.
-_MAX_SHOT_BYTES = 3 * 1024 * 1024   # 3 MB
+# Image payload cap. Client also validates at 2 MB; this is server-side
+# defense-in-depth against a hand-crafted request. Bumped from 3 → 2 MB
+# to match the client cap after we switched to file-upload (2026-08-21).
+_MAX_SHOT_BYTES = 2 * 1024 * 1024
 _MAX_MSG_LEN = 4000
+
+# `data:image/<subtype>;base64,` — any recognisable image mime is fine.
+# Was PNG-only in the html2canvas era; widened when we swapped to
+# native file upload (2026-08-21) so users can send jpg/webp/etc.
+_DATA_URL_RE = re.compile(r"^data:image/([a-zA-Z0-9.+-]+);base64,(.+)$", re.DOTALL)
+_ALLOWED_SUBTYPES = {"png", "jpeg", "jpg", "webp", "gif"}
 
 
 @router.post("/feedback")
@@ -47,9 +54,9 @@ async def submit_feedback(
     """Persist a feedback submission. Rate-limited 10/hour per identity
     to guard against a stuck client sending in a loop.
 
-    `screenshot` is an optional `data:image/png;base64,…` dataURL
-    produced by html2canvas on the client. Anything unrecognized is
-    silently dropped — the message is the primary signal.
+    `screenshot` is an optional `data:image/<subtype>;base64,…` dataURL
+    from a user-picked file. Anything unrecognized is silently dropped
+    — the message is the primary signal.
     """
     msg = (message or "").strip()
     if not msg:
@@ -62,16 +69,24 @@ async def submit_feedback(
     identity = get_identity(request)
 
     shot_bytes: bytes | None = None
-    if screenshot and screenshot.startswith("data:image/png;base64,"):
-        raw_b64 = screenshot.split(",", 1)[1]
-        try:
-            candidate = base64.b64decode(raw_b64, validate=True)
-            if len(candidate) <= _MAX_SHOT_BYTES:
-                shot_bytes = candidate
-            else:
-                _LOG.info("feedback: rejected oversized screenshot (%d bytes)", len(candidate))
-        except (ValueError, base64.binascii.Error):
-            _LOG.info("feedback: invalid base64 screenshot payload")
+    shot_ext: str = "png"
+    if screenshot:
+        m = _DATA_URL_RE.match(screenshot)
+        if m:
+            subtype = m.group(1).lower()
+            if subtype in _ALLOWED_SUBTYPES:
+                try:
+                    candidate = base64.b64decode(m.group(2), validate=True)
+                    if len(candidate) <= _MAX_SHOT_BYTES:
+                        shot_bytes = candidate
+                        shot_ext = "jpg" if subtype == "jpeg" else subtype
+                    else:
+                        _LOG.info(
+                            "feedback: rejected oversized image (%d bytes)",
+                            len(candidate),
+                        )
+                except (ValueError, base64.binascii.Error):
+                    _LOG.info("feedback: invalid base64 image payload")
 
     fid = db.save_feedback(
         message=msg,
@@ -79,6 +94,7 @@ async def submit_feedback(
         user_agent=(user_agent or "")[:512],
         identity=identity,
         screenshot_bytes=shot_bytes,
+        screenshot_ext=shot_ext,
     )
     _LOG.info("feedback saved id=%s identity=%s has_shot=%s", fid, identity, bool(shot_bytes))
 
@@ -105,4 +121,9 @@ async def get_screenshot(fid: int):
     p = db.DB_PATH.parent / row["screenshot_path"]
     if not p.exists():
         return Response(status_code=404)
-    return Response(content=p.read_bytes(), media_type="image/png")
+    # Derive mime from the stored path's suffix. Was PNG-hardcoded;
+    # widened when we swapped to user file upload (2026-08-21).
+    ext = p.suffix.lstrip(".").lower() or "png"
+    mime_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+                "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
+    return Response(content=p.read_bytes(), media_type=mime_map.get(ext, "image/png"))

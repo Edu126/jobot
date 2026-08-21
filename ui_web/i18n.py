@@ -277,6 +277,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "feedback.placeholder": "What's confusing, broken, or missing?",
         "feedback.include_screenshot": "Attach a screenshot of this page",
         "feedback.screenshot_ready": "Screenshot ready.",
+        "feedback.attach_image": "Attach a screenshot (image, up to 2 MB)",
+        "feedback.remove_image": "Remove",
         "feedback.send": "Send",
         # Journey page (was hard-coded EN, i18n'd in the "truth pass" PR)
         "journey.page_title": "Journey — Jobot",
@@ -519,6 +521,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "feedback.placeholder": "¿Qué está confuso, roto o falta?",
         "feedback.include_screenshot": "Adjuntar captura de esta página",
         "feedback.screenshot_ready": "Captura lista.",
+        "feedback.attach_image": "Adjuntar captura (imagen, hasta 2 MB)",
+        "feedback.remove_image": "Quitar",
         "feedback.send": "Enviar",
         # Trayecto (Journey) — sweep 2026-08-20, registro LatAm
         "journey.page_title": "Trayecto — Jobot",

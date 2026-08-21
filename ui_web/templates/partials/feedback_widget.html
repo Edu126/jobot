@@ -1,29 +1,21 @@
-{# Feedback capture — floating pill (bottom-right) + modal.
+{# Feedback capture — floating pill (bottom-LEFT) + modal + file upload.
 
    Two entry points to the modal:
      1. Click the floating button (always visible).
-     2. A one-shot gentle pulse after 10 min of active session — draws
-        the eye to the button without opening the modal automatically.
+     2. A one-shot gentle pulse after 10 min of active session.
 
-   Screenshot is captured client-side via html2canvas (lazy-loaded from
-   CDN on first modal open) so the user doesn't need to grant screen
-   permissions. PNG dataURL is posted to /feedback along with the
-   message; server decodes + stores.
+   Attachment: user picks an image file (up to 2 MB) rather than us
+   auto-capturing the DOM. Simpler than html2canvas (which was
+   producing "couldn't capture screen" errors + leaking attribute
+   text into the preview), more privacy-respecting (user chooses
+   what to share), and zero-dep. FileReader → base64 dataURL →
+   posted verbatim to /feedback; server decodes + stores.
 
-   The Alpine component is defined as a GLOBAL function
-   (`feedbackWidget()` in the <script> below) instead of inline JSON in
-   x-data. Two reasons:
-     - Inline multi-line strings with escaped quotes (\'Couldn\\\'t\')
-       trip up both HTML attribute parsing and html2canvas's DOM-to-
-       canvas rendering; user saw the attribute value leak as visible
-       text in the screenshot preview (2026-08-20).
-     - Easier to reason about + debug in DevTools.
+   Aligned with the "simplicity over escape hatches" memory: the
+   file uploader replaces ~50 lines of html2canvas machinery.
    #}
 <div x-data="feedbackWidget()" x-init="init()">
 
-  {# Floating action button — bottom-right (user asked "abajo" +
-     visible label, 2026-08-20). Pill shape with icon + text so it's
-     obviously a feedback affordance, not an ambiguous lightbulb. #}
   <button type="button"
           @click="openModal()"
           :class="pulsing ? 'feedback-fab feedback-fab--pulse' : 'feedback-fab'"
@@ -33,7 +25,6 @@
     <span class="feedback-fab__label">{{ _('feedback.label') }}</span>
   </button>
 
-  {# Modal — centered card. Backdrop-click and Escape both dismiss. #}
   <div x-show="open" x-cloak
        style="display:none;"
        class="fixed inset-0 z-[110] flex items-center justify-center p-4"
@@ -74,20 +65,39 @@
                   placeholder="{{ _('feedback.placeholder') }}"
                   class="textarea textarea-bordered w-full text-sm"></textarea>
 
-        <label class="mt-3 flex items-start gap-2 cursor-pointer select-none">
-          <input type="checkbox"
-                 x-model="includeShot"
-                 @change="if (includeShot) captureShot(); else shotDataUrl = ''"
-                 class="checkbox checkbox-sm mt-0.5">
-          <div class="text-xs">
-            <div>{{ _('feedback.include_screenshot') }}</div>
-            <div class="text-body-muted" x-show="shotDataUrl" x-cloak>{{ _('feedback.screenshot_ready') }}</div>
-            <div class="text-warning" x-show="shotError" x-cloak x-text="shotError"></div>
-          </div>
-        </label>
+        {# Image attachment — native file picker, image/* only, 2MB cap.
+           Client-side validation is UX only; the server also caps at
+           its own limit in /feedback (defense-in-depth). #}
+        <div class="mt-3">
+          <label class="text-xs inline-flex items-center gap-2 cursor-pointer text-body-muted hover:text-base-content"
+                 x-show="!shotDataUrl">
+            <input type="file"
+                   accept="image/*"
+                   class="sr-only"
+                   @change="attachFile($event.target.files[0])">
+            <i class="ph-thin ph-paperclip i-4"></i>
+            {{ _('feedback.attach_image') }}
+          </label>
 
-        {# Hidden fields: screenshot data URL + browser context. #}
-        <input type="hidden" name="screenshot" :value="includeShot ? shotDataUrl : ''">
+          {# Preview + Remove — shown once a file is selected. #}
+          <div x-show="shotDataUrl" x-cloak class="flex items-center gap-3">
+            <img :src="shotDataUrl" alt=""
+                 class="w-14 h-14 object-cover rounded border border-base-300">
+            <div class="text-xs flex-1 min-w-0">
+              <div class="truncate" x-text="shotName"></div>
+              <div class="text-body-muted" x-text="shotSizeLabel"></div>
+            </div>
+            <button type="button"
+                    @click="clearShot()"
+                    class="text-xs text-body-muted hover:text-error cursor-pointer">
+              {{ _('feedback.remove_image') }}
+            </button>
+          </div>
+          <div x-show="shotError" x-cloak class="text-xs text-error mt-1" x-text="shotError"></div>
+        </div>
+
+        {# Hidden fields: image data URL + browser context. #}
+        <input type="hidden" name="screenshot" :value="shotDataUrl">
         <input type="hidden" name="page_url" :value="window.location.href">
         <input type="hidden" name="user_agent" :value="navigator.userAgent">
 
@@ -106,16 +116,20 @@
 </div>
 
 <script>
-  // Feedback widget component — extracted from inline x-data (2026-08-20).
-  // Keeps the DOM attribute tiny (`x-data="feedbackWidget()"`) so nothing
-  // leaks into visible text if html2canvas or the HTML parser stumbles.
+  // Feedback widget — file upload variant (2026-08-21). Replaces the
+  // html2canvas capture path (~50 LOC + a CDN dependency + a broken
+  // "couldn't capture screen" error state) with a native file picker.
+  // See feedback_simplicity_over_escape_hatches memory.
   window.feedbackWidget = function () {
+    const MAX_BYTES = 2 * 1024 * 1024;   // 2 MB — matches user's ask
+
     return {
       open: false,
       pulsing: false,
       submitting: false,
-      includeShot: true,
       shotDataUrl: '',
+      shotName: '',
+      shotSizeLabel: '',
       shotError: '',
 
       init() {
@@ -130,51 +144,44 @@
       },
 
       openModal() {
-        // Show the modal immediately — do not await the html2canvas
-        // CDN load. Awaiting made the click look inert on slow networks
-        // (real user report). Screenshot is a nice-to-have.
         this.open = true;
         this.pulsing = false;
         sessionStorage.setItem('feedback_nudged', '1');
-        if (this.includeShot) {
-          this.captureShot().catch(() => { /* handled inside */ });
-        }
       },
 
-      async captureShot() {
+      attachFile(file) {
         this.shotError = '';
-        this.shotDataUrl = '';
-        try {
-          if (!window.html2canvas) {
-            await new Promise((resolve, reject) => {
-              const s = document.createElement('script');
-              s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
-              s.onload = resolve;
-              s.onerror = reject;
-              document.head.appendChild(s);
-            });
-          }
-          // Capture the visible viewport (not the whole scroll height —
-          // cheaper + more relevant to what the user is seeing right now).
-          const canvas = await html2canvas(document.body, {
-            width: window.innerWidth,
-            height: window.innerHeight,
-            x: window.scrollX,
-            y: window.scrollY,
-            scale: 1,
-            logging: false,
-            useCORS: true,
-          });
-          this.shotDataUrl = canvas.toDataURL('image/png');
-        } catch (e) {
-          this.shotError = "Couldn't capture screen — you can still send the message.";
+        if (!file) return;
+        if (!file.type || !file.type.startsWith('image/')) {
+          this.shotError = 'Only image files.';
+          return;
         }
+        if (file.size > MAX_BYTES) {
+          this.shotError = 'Image too large — 2 MB max.';
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          this.shotDataUrl = e.target.result;   // data:image/*;base64,...
+          this.shotName = file.name;
+          this.shotSizeLabel = (file.size / 1024).toFixed(0) + ' KB';
+        };
+        reader.onerror = () => {
+          this.shotError = 'Could not read the file.';
+        };
+        reader.readAsDataURL(file);
+      },
+
+      clearShot() {
+        this.shotDataUrl = '';
+        this.shotName = '';
+        this.shotSizeLabel = '';
+        this.shotError = '';
       },
 
       close() {
         this.open = false;
-        this.shotDataUrl = '';
-        this.shotError = '';
+        this.clearShot();
       },
     };
   };
