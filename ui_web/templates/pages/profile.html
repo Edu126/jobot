@@ -19,16 +19,20 @@
 </div>
 
 {# Root x-data — modal state + section toggles. Kept at page level so
-   the modal can be positioned as a sibling of the card that opened it. #}
+   the modal can be positioned as a sibling of the card that opened it.
+   Settings section extracted to the floating settings panel (base.html
+   include) — Profile is now only Profile per 2026-08-20 retro. #}
 <div class="space-y-6"
-     x-data="{ atsModal: false, resumeModal: {{ 'true' if just_regenerated else 'false' }}, showReplace: false, showOlder: false, settingsTab: 'language', showLocationEditor: false }"
+     x-data="{ atsModal: false, resumeModal: {{ 'true' if just_regenerated else 'false' }}, showReplace: false, showOlder: false }"
      x-init="{% if just_regenerated %}$store.toast.show('{{ _('profile.resume.reparsed_toast') }}', 'success'); history.replaceState({}, '', '/profile');{% endif %}"
      @keydown.escape.window="atsModal = false; resumeModal = false">
 
-  {# ─── HERO ROW — resume + inline score  |  settings hub ─── #}
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  {# ─── HERO — resume + inline score. Single column since 2026-08-20;
+     the settings hub that used to occupy the right slot moved to the
+     floating panel accessible from the gear icon. #}
+  <div>
 
-    {# ═══ LEFT: Current resume with inline ATS chip ═══ #}
+    {# ═══ Current resume with inline ATS chip ═══ #}
     <section class="card-quiet">
       {% if current %}
         <div class="text-label">{{ _('profile.resume.current') }}</div>
@@ -189,245 +193,6 @@
       {% endif %}
     </section>
 
-    {# ═══ RIGHT: Settings hub with seg-tabs ═══ #}
-    <section class="card-quiet">
-      {# API key + Updates tabs hidden from users as of 2026-08-18.
-       - API key is now backend-only (env / Fly secrets). The tab content
-         + POST /profile/api-key handlers stay in the codebase so the
-         future admin panel (docs/rate-limiting-quotas.md §10) can wire
-         a user-management view on top without re-implementing.
-       - Updates was for the pre-web-app installer flow (Update
-         Jobot.command). Web app self-updates via Fly deploy; users don't
-         drive it. Tab removed; corresponding /profile/updates/check
-         endpoint is still callable but nothing links to it.
-
-       Notifications remains as the only user-facing settings tab. When
-       auth ships and we introduce an admin role, restore the API-key
-       tab behind an is_admin gate. #}
-      <div class="seg-tabs mb-5">
-        <button type="button" @click="settingsTab = 'language'"
-                :class="settingsTab === 'language' ? 'seg-tab seg-tab--active' : 'seg-tab'">
-          <i class="ph-thin ph-globe-hemisphere-west i-4"></i>{{ _('profile.tab.language') }}
-        </button>
-        <button type="button" @click="settingsTab = 'notifications'"
-                :class="settingsTab === 'notifications' ? 'seg-tab seg-tab--active' : 'seg-tab'">
-          <i class="ph-thin ph-bell i-4"></i>{{ _('profile.tab.notifications') }}
-        </button>
-      </div>
-
-      {# ─── Tab: Language + geography settings ───
-       The two user-facing language knobs (UI + Output) plus the home
-       country/city with an inline editor. Home fields feed the search
-       defaults in core/jobs/search.py; the language fields feed both
-       template `_()` calls (UI) and prompt language directives (Output). #}
-      <div x-show="settingsTab === 'language'" x-cloak>
-        <form hx-post="/profile/settings/language" class="space-y-4">
-          <div>
-            <div class="text-label mb-2">{{ _('profile.settings.ui_language') }}</div>
-            <div class="flex gap-2">
-              {% for code, label in [('en', 'English'), ('es', 'Español')] %}
-              <label class="flex-1 cursor-pointer">
-                <input type="radio" name="ui_language" value="{{ code }}"
-                       {% if settings_ctx.ui_language == code %}checked{% endif %}
-                       class="lang-pill__input sr-only">
-                <span class="lang-pill">
-                  <i class="ph-thin ph-check lang-pill__check"></i>{{ label }}
-                </span>
-              </label>
-              {% endfor %}
-            </div>
-          </div>
-
-          <div>
-            <div class="text-label mb-2">{{ _('profile.settings.output_language') }}</div>
-            <div class="text-xs text-body-muted mb-2">
-              {{ _('profile.settings.output_language.hint') }}
-            </div>
-            <div class="flex gap-2">
-              {% for code, label in [('en', 'English'), ('es', 'Español')] %}
-              <label class="flex-1 cursor-pointer">
-                <input type="radio" name="output_language" value="{{ code }}"
-                       {% if settings_ctx.output_language == code %}checked{% endif %}
-                       class="lang-pill__input sr-only">
-                <span class="lang-pill">
-                  <i class="ph-thin ph-check lang-pill__check"></i>{{ label }}
-                </span>
-              </label>
-              {% endfor %}
-            </div>
-          </div>
-
-          <button type="submit" class="btn btn-primary btn-sm cursor-pointer">
-            {{ _('action.save') }}
-          </button>
-        </form>
-
-        {# Home location — display + inline edit. Populated once via the
-         first-visit banner; user can revisit here to change city or country. #}
-        <div class="pt-4 mt-4 border-t border-base-300">
-          <div class="flex items-baseline justify-between mb-2">
-            <div class="text-label">{{ _('profile.settings.home_location') }}</div>
-            <button type="button" @click="showLocationEditor = !showLocationEditor"
-                    class="text-xs text-primary hover:underline cursor-pointer">
-              <span x-text="showLocationEditor ? '{{ _('action.cancel') }}' : '{{ _('action.change') }}'"></span>
-            </button>
-          </div>
-          <div x-show="!showLocationEditor" class="text-sm">
-            {% if settings_ctx.home_city or settings_ctx.home_country %}
-              {{ settings_ctx.home_city or _('profile.settings.no_city') }}
-              {% if settings_ctx.home_country %}<span class="text-base-content/30 mx-1">·</span>{{ settings_ctx.home_country }}{% endif %}
-            {% else %}
-              <span class="text-body-muted">{{ _('profile.settings.no_location') }}</span>
-            {% endif %}
-          </div>
-          <div x-show="showLocationEditor" x-cloak x-collapse class="mt-2">
-            <form hx-post="/profile/geo-quick-set"
-                  class="flex flex-col sm:flex-row gap-2 items-stretch">
-              <select name="home_country" required
-                      class="select select-bordered select-sm sm:w-52 cursor-pointer">
-                <option value="" disabled {% if not settings_ctx.home_country %}selected{% endif %}>Country…</option>
-                {% for c in ['Canada','United States','United Kingdom','Spain','Colombia','Mexico','Argentina','Chile','France','Germany'] %}
-                <option value="{{ c }}" {% if settings_ctx.home_country == c %}selected{% endif %}>{{ c }}</option>
-                {% endfor %}
-              </select>
-              <input type="text" name="home_city" required
-                     value="{{ settings_ctx.home_city }}"
-                     placeholder="{{ _('profile.settings.city_placeholder') }}"
-                     autocomplete="off"
-                     class="input input-bordered input-sm sm:flex-1">
-              <button type="submit" class="btn btn-primary btn-sm cursor-pointer whitespace-nowrap">
-                {{ _('action.save') }}
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      {# ─── Tab: API key + usage quota (hidden — admin-only surface).
-       Kept in the template so the admin view can restore visibility by
-       flipping the outer conditional (currently always false). #}
-      {% if false %}
-      <div x-show="settingsTab === 'api'" x-data="{ showEditor: false }">
-        <div class="flex items-start justify-between gap-3 mb-3">
-          <div>
-            <div class="text-label">Gemini API key</div>
-            {% if api_key_present %}
-              <div class="flex items-center gap-2 mt-1">
-                <span class="font-mono text-sm">{{ api_key_masked }}</span>
-                <div class="pill pill-success">
-                  <span class="pill-dot live"></span>Connected
-                </div>
-              </div>
-            {% else %}
-              <div class="mt-1">
-                <div class="pill pill-warn inline-flex items-center gap-1.5">
-                  <span class="pill-dot warn"></span>Not set
-                </div>
-                <div class="text-xs text-body-muted mt-1">
-                  Get a free key at <a href="https://aistudio.google.com" target="_blank" class="link cursor-pointer">aistudio.google.com</a>.
-                </div>
-              </div>
-            {% endif %}
-          </div>
-          <button @click="showEditor = !showEditor"
-                  class="text-sm text-primary hover:underline cursor-pointer">
-            <span x-text="showEditor ? 'Cancel' : (({{ 'true' if api_key_present else 'false' }}) ? 'Change key' : 'Set key')"></span>
-          </button>
-        </div>
-
-        <div x-show="showEditor" x-cloak x-collapse class="mb-4">
-          <form hx-post="/profile/api-key" class="flex flex-col sm:flex-row gap-2 items-stretch">
-            <input type="password" name="api_key"
-                   placeholder="Paste your Gemini API key…"
-                   class="input input-bordered input-sm flex-1"
-                   autocomplete="off" required>
-            <button type="submit" class="btn btn-primary btn-sm cursor-pointer">Save</button>
-            {% if api_key_present %}
-            <button type="button"
-                    hx-post="/profile/api-key/clear"
-                    hx-confirm="Remove the saved API key? AI scoring won't work until you set a new one."
-                    class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content cursor-pointer">Clear</button>
-            {% endif %}
-          </form>
-          <div class="text-xs text-body-muted mt-2">
-            Saved to <code class="text-xs bg-base-200 px-1 rounded">jobot-app/.env</code>. Takes effect immediately.
-          </div>
-        </div>
-
-        {# Usage quota — only when key present #}
-        {% if api_key_present %}
-        <div class="pt-3 border-t border-base-300">
-          <div class="flex items-baseline justify-between mb-2">
-            <div class="text-label">Usage today (UTC)</div>
-            <div class="text-xs text-body-muted">resets on restart</div>
-          </div>
-          <div class="space-y-1.5">
-            {% for row in quota_rows %}
-            <div class="flex items-center gap-3 text-sm">
-              <div class="flex-1 font-mono text-xs truncate">{{ row.model }}</div>
-              <div class="flex-1 h-2 rounded-full overflow-hidden" style="background: oklch(var(--b3) / 0.5);">
-                {% set pct = (row.used / row.limit * 100) if row.limit else 0 %}
-                {% set pct_clamped = pct if pct <= 100 else 100 %}
-                {% if row.exhausted or pct >= 100 %}
-                  {% set color = 'oklch(var(--er))' %}
-                {% elif pct >= 75 %}
-                  {% set color = 'oklch(var(--wa) / 0.85)' %}
-                {% else %}
-                  {% set color = 'oklch(var(--p))' %}
-                {% endif %}
-                <div class="h-full" style="width: {{ pct_clamped }}%; background: {{ color }};"></div>
-              </div>
-              <div class="tabular-nums text-xs w-20 text-right">
-                <span class="font-semibold">{{ row.used }}</span>
-                <span class="text-base-content/40"> / {{ row.limit }}</span>
-                {% if row.exhausted %}<i class="ph-thin ph-prohibit i-3 ml-0.5" style="color: oklch(var(--er));" title="Quota exhausted for today"></i>{% endif %}
-              </div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-        {% endif %}
-      </div>
-
-      {# API-key tab content ends here. Kept behind `{% if false %}` for
-       admin restoration; see the seg-tabs comment above. #}
-      {% endif %}
-
-      {# ─── Tab: App updates — REMOVED 2026-08-18.
-       Web app updates via Fly deploy; users don't drive it. The
-       /profile/updates/check endpoint is still callable (in case an
-       admin wants version diagnostics) but no UI links to it. #}
-
-      {# ─── Tab: Notifications ─── #}
-      <div x-show="settingsTab === 'notifications'" x-cloak>
-        <div class="text-label mb-2">{{ _('profile.notif.title') }}</div>
-        <p class="text-sm text-body-muted mb-3">
-          {{ _('profile.notif.explainer') }}
-        </p>
-        <template x-if="$store.notif.permission === 'unsupported'">
-          <div class="pill pill-neutral">{{ _('profile.notif.unsupported') }}</div>
-        </template>
-        <template x-if="$store.notif.permission === 'denied'">
-          <div>
-            <div class="pill pill-danger">{{ _('profile.notif.blocked') }}</div>
-            <div class="text-xs text-body-muted mt-2">
-              {{ _('profile.notif.blocked_help') }}
-            </div>
-          </div>
-        </template>
-        <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && $store.notif.enabled">
-          <div class="flex items-center gap-3">
-            <div class="pill pill-success"><span class="pill-dot live"></span>{{ _('profile.notif.enabled') }}</div>
-            <button @click="$store.notif.disable(); $store.toast.show('{{ _('profile.notif.disabled_toast') }}')"
-                    class="text-sm text-body-muted hover:text-base-content cursor-pointer">{{ _('profile.notif.turn_off') }}</button>
-          </div>
-        </template>
-        <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && !$store.notif.enabled">
-          <button @click="$store.notif.enable().then(p => $store.toast.show(p === 'granted' ? '{{ _('profile.notif.enabled_toast') }}' : '{{ _('profile.notif.permission_denied_toast') }}', p === 'granted' ? 'success' : 'info'))"
-                  class="btn btn-primary btn-sm cursor-pointer">{{ _('profile.notif.enable') }}</button>
-        </template>
-      </div>
-    </section>
   </div>
 
   {% if current %}

@@ -1,0 +1,190 @@
+{# Floating settings panel — slide-in from the right edge.
+
+   Opened from the gear icon in base.html (`@click="$store.settings.open = true"`)
+   or by dispatching the `open-settings` window event. Available on
+   every page because base.html includes this partial once, so
+   `Language + Notifications + Home location` are all reachable
+   without a navigation to `/profile`.
+
+   Design: hard-modal-lite. Backdrop dims the page and clicks it to
+   close; Escape closes; the panel itself slides in from the right on
+   a 250ms transform. z-index sits above sticky headers (60) but below
+   dialog modals like the ATS report / view-resume overlay (110).
+
+   Rationale from the 2026-08-20 retro:
+   - User asked for the gear to open a floating panel, not navigate.
+   - Not enough settings yet to justify a full Settings page. #}
+{% set ctx = settings_ctx() %}
+<div class="settings-panel-root"
+     x-data="{ tab: 'language' }"
+     @open-settings.window="$store.settings.open = true; tab = 'language'">
+
+  {# Backdrop — click to dismiss. `pointer-events-none` on the outer
+     wrapper keeps the whole layout mouse-inert when closed. #}
+  <div x-show="$store.settings.open"
+       @click="$store.settings.close()"
+       x-transition:enter="transition-opacity duration-200 ease-out"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition-opacity duration-150 ease-in"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="settings-panel-backdrop"
+       x-cloak></div>
+
+  {# Sliding panel — from the right. #}
+  <aside x-show="$store.settings.open"
+         x-transition:enter="transition-transform duration-250 ease-out"
+         x-transition:enter-start="translate-x-full"
+         x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition-transform duration-200 ease-in"
+         x-transition:leave-start="translate-x-0"
+         x-transition:leave-end="translate-x-full"
+         @keydown.escape.window="$store.settings.close()"
+         class="settings-panel"
+         role="dialog"
+         aria-modal="true"
+         aria-label="{{ _('nav.settings') }}"
+         x-cloak>
+
+    <div class="settings-panel__header">
+      <div class="text-title inline-flex items-center gap-2">
+        <i class="ph-thin ph-gear i-5"></i>{{ _('nav.settings') }}
+      </div>
+      <button type="button" @click="$store.settings.close()"
+              aria-label="Close"
+              class="text-body-muted hover:text-base-content cursor-pointer p-1">
+        <i class="ph-thin ph-x i-5"></i>
+      </button>
+    </div>
+
+    <div class="seg-tabs mb-5 px-6">
+      <button type="button" @click="tab = 'language'"
+              :class="tab === 'language' ? 'seg-tab seg-tab--active' : 'seg-tab'">
+        <i class="ph-thin ph-globe-hemisphere-west i-4"></i>{{ _('profile.tab.language') }}
+      </button>
+      <button type="button" @click="tab = 'notifications'"
+              :class="tab === 'notifications' ? 'seg-tab seg-tab--active' : 'seg-tab'">
+        <i class="ph-thin ph-bell i-4"></i>{{ _('profile.tab.notifications') }}
+      </button>
+    </div>
+
+    <div class="settings-panel__body">
+
+      {# ─── Tab: Language + home location ─── #}
+      <div x-show="tab === 'language'">
+        <form hx-post="/profile/settings/language" class="space-y-4">
+          <div>
+            <div class="text-label mb-2">{{ _('profile.settings.ui_language') }}</div>
+            <div class="flex gap-2">
+              {% for code, label in [('en', 'English'), ('es', 'Español')] %}
+              <label class="flex-1 cursor-pointer">
+                <input type="radio" name="ui_language" value="{{ code }}"
+                       {% if ctx.ui_language == code %}checked{% endif %}
+                       class="lang-pill__input sr-only">
+                <span class="lang-pill">
+                  <i class="ph-thin ph-check lang-pill__check"></i>{{ label }}
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div>
+            <div class="text-label mb-2">{{ _('profile.settings.output_language') }}</div>
+            <div class="text-xs text-body-muted mb-2">
+              {{ _('profile.settings.output_language.hint') }}
+            </div>
+            <div class="flex gap-2">
+              {% for code, label in [('en', 'English'), ('es', 'Español')] %}
+              <label class="flex-1 cursor-pointer">
+                <input type="radio" name="output_language" value="{{ code }}"
+                       {% if ctx.output_language == code %}checked{% endif %}
+                       class="lang-pill__input sr-only">
+                <span class="lang-pill">
+                  <i class="ph-thin ph-check lang-pill__check"></i>{{ label }}
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-sm cursor-pointer">
+            {{ _('action.save') }}
+          </button>
+        </form>
+
+        {# Home location — display + inline edit. #}
+        <div class="pt-4 mt-4 border-t border-base-300"
+             x-data="{ showLocationEditor: false }">
+          <div class="flex items-baseline justify-between mb-2">
+            <div class="text-label">{{ _('profile.settings.home_location') }}</div>
+            <button type="button" @click="showLocationEditor = !showLocationEditor"
+                    class="text-xs text-primary hover:underline cursor-pointer">
+              <span x-text="showLocationEditor ? '{{ _('action.cancel') }}' : '{{ _('action.change') }}'"></span>
+            </button>
+          </div>
+          <div x-show="!showLocationEditor" class="text-sm">
+            {% if ctx.home_city or ctx.home_country %}
+              {{ ctx.home_city or _('profile.settings.no_city') }}
+              {% if ctx.home_country %}<span class="text-base-content/30 mx-1">·</span>{{ ctx.home_country }}{% endif %}
+            {% else %}
+              <span class="text-body-muted">{{ _('profile.settings.no_location') }}</span>
+            {% endif %}
+          </div>
+          <div x-show="showLocationEditor" x-cloak x-collapse class="mt-2">
+            <form hx-post="/profile/geo-quick-set"
+                  class="flex flex-col gap-2 items-stretch">
+              <select name="home_country" required
+                      class="select select-bordered select-sm cursor-pointer">
+                <option value="" disabled {% if not ctx.home_country %}selected{% endif %}>Country…</option>
+                {% for c in ['Canada','United States','United Kingdom','Spain','Colombia','Mexico','Argentina','Chile','France','Germany'] %}
+                <option value="{{ c }}" {% if ctx.home_country == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+              </select>
+              <input type="text" name="home_city" required
+                     value="{{ ctx.home_city }}"
+                     placeholder="{{ _('profile.settings.city_placeholder') }}"
+                     autocomplete="off"
+                     class="input input-bordered input-sm">
+              <button type="submit" class="btn btn-primary btn-sm cursor-pointer">
+                {{ _('action.save') }}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      {# ─── Tab: Notifications ─── #}
+      <div x-show="tab === 'notifications'" x-cloak>
+        <div class="text-label mb-2">{{ _('profile.notif.title') }}</div>
+        <p class="text-sm text-body-muted mb-3">
+          {{ _('profile.notif.explainer') }}
+        </p>
+        <template x-if="$store.notif.permission === 'unsupported'">
+          <div class="pill pill-neutral">{{ _('profile.notif.unsupported') }}</div>
+        </template>
+        <template x-if="$store.notif.permission === 'denied'">
+          <div>
+            <div class="pill pill-danger">{{ _('profile.notif.blocked') }}</div>
+            <div class="text-xs text-body-muted mt-2">
+              {{ _('profile.notif.blocked_help') }}
+            </div>
+          </div>
+        </template>
+        <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && $store.notif.enabled">
+          <div class="flex items-center gap-3">
+            <div class="pill pill-success"><span class="pill-dot live"></span>{{ _('profile.notif.enabled') }}</div>
+            <button @click="$store.notif.disable(); $store.toast.show('{{ _('profile.notif.disabled_toast') }}')"
+                    class="text-sm text-body-muted hover:text-base-content cursor-pointer">{{ _('profile.notif.turn_off') }}</button>
+          </div>
+        </template>
+        <template x-if="($store.notif.permission === 'granted' || $store.notif.permission === 'default') && !$store.notif.enabled">
+          <button @click="$store.notif.enable().then(p => $store.toast.show(p === 'granted' ? '{{ _('profile.notif.enabled_toast') }}' : '{{ _('profile.notif.permission_denied_toast') }}', p === 'granted' ? 'success' : 'info'))"
+                  class="btn btn-primary btn-sm cursor-pointer">{{ _('profile.notif.enable') }}</button>
+        </template>
+      </div>
+
+    </div>
+  </aside>
+</div>

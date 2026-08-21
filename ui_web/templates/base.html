@@ -48,6 +48,14 @@
         openFor(jobId) { this.jobId = jobId; this.open = true; },
         close()        { this.open = false; },
       });
+      // Floating settings panel (partials/settings_panel.html). Triggered
+      // from the gear icon in the top nav; available on every page.
+      // Added 2026-08-20 per retro item 2.1.
+      Alpine.store('settings', {
+        open: false,
+        toggle() { this.open = !this.open; },
+        close()  { this.open = false; },
+      });
       // Selected job for the split-viewport results page. Detail pane HTMX-
       // loads content when this changes. Keeps state so highlighting persists
       // as the user scrolls / filters.
@@ -562,16 +570,20 @@
         <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">{{ _('nav.profile') }}</a>
       </nav>
 
-      {# Settings gear — desktop top-right. Replaces the old "local" pill
-       which was inaccurate now that the app is hosted (not local, not
-       single-user, not $0). Links straight to Profile → Language tab,
-       which is where geo + language settings live. #}
-      <a href="/profile"
-         class="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors {% if active_tab == 'profile' %}text-base-content{% else %}text-base-content/50{% endif %}"
-         title="{{ _('nav.settings') }}"
-         aria-label="{{ _('nav.settings') }}">
+      {# Settings gear — desktop top-right. Opens the floating settings
+       panel (partials/settings_panel.html) — was a link to /profile
+       before 2026-08-20; user asked twice for a floating panel instead
+       ("aun no tenemos muchas cosas para tener un single settings
+       page"). Language + Notifications + Home location live inside. #}
+      <button type="button"
+              @click="$store.settings.toggle()"
+              :class="$store.settings.open ? 'text-base-content' : 'text-base-content/50'"
+              class="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors cursor-pointer"
+              title="{{ _('nav.settings') }}"
+              aria-label="{{ _('nav.settings') }}"
+              aria-haspopup="dialog">
         <i class="ph-thin ph-gear" style="font-size:1.25rem;"></i>
-      </a>
+      </button>
 
       {# Mobile hamburger — visible below sm #}
       <button class="sm:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors"
@@ -626,6 +638,9 @@
      Always available; gentle one-shot pulse after 10 min of active
      session if the user hasn't clicked yet. #}
   {% include "partials/feedback_widget.html" %}
+
+  {# Floating settings panel — slide-in from the right, opened by gear #}
+  {% include "partials/settings_panel.html" %}
 
   {# First-visit geography banner — shown until the user provides a
      home country. Without this, non-Canada users (Sara in Spain, sister

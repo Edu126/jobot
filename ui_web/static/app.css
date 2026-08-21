@@ -1508,3 +1508,43 @@ html { scroll-behavior: smooth; }
   outline: 2px solid oklch(var(--p));
   outline-offset: 2px;
 }
+
+/* ────────────────────────────────────────────────────────────────
+   Floating settings panel — slide-in from the right.
+   Triggered by the gear icon in the top nav. See partials/settings_panel.html
+   Added 2026-08-20 per retro item 2.1 (asked twice by user).
+   ──────────────────────────────────────────────────────────────── */
+.settings-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.32);
+}
+.settings-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 101;
+  width: 100%;
+  max-width: 26rem;
+  background: oklch(var(--b1));
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.14);
+  overflow-y: auto;
+  will-change: transform;
+}
+.settings-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid oklch(var(--b3));
+  position: sticky;
+  top: 0;
+  background: oklch(var(--b1));
+  z-index: 1;
+}
+.settings-panel__body {
+  padding: 0.25rem 1.5rem 2rem;
+}

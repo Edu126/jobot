@@ -49,6 +49,24 @@ templates.env.globals["current_ui_language"] = _i18n.current_ui_language
 from core import settings as _app_settings  # noqa: E402
 templates.env.globals["get_setting"] = _app_settings.get
 
+
+def _settings_ctx() -> dict:
+    """Snapshot of user-facing settings for the floating settings panel.
+    Available in every template via `{% set ctx = settings_ctx() %}` so
+    the panel (included in base.html) renders on any page without each
+    route having to thread the values through its context dict."""
+    ui = _i18n.current_ui_language() or _app_settings.DEFAULT_LANGUAGE
+    out = _app_settings.get("output_language", "") or ui
+    return {
+        "ui_language": ui,
+        "output_language": out,
+        "home_country": _app_settings.get("home_country", ""),
+        "home_city": _app_settings.get("home_city", ""),
+    }
+
+
+templates.env.globals["settings_ctx"] = _settings_ctx
+
 # Jinja filters — mirror what the Streamlit UI uses so templates read the same.
 templates.env.filters["humanize"] = humanize
 
