@@ -267,6 +267,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.contact.linkedin_placeholder": "linkedin.com/in/yourname",
         # Feedback widget
         "feedback.open": "Send feedback",
+        "feedback.label": "Feedback",
         "feedback.title": "Something not working?",
         "feedback.subtitle": "Tell us what you saw. We read every message.",
         "feedback.placeholder": "What's confusing, broken, or missing?",
@@ -494,6 +495,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.contact.linkedin_placeholder": "linkedin.com/in/tunombre",
         # Feedback widget
         "feedback.open": "Enviar comentarios",
+        "feedback.label": "Comentarios",
         "feedback.title": "¿Algo no funciona?",
         "feedback.subtitle": "Cuéntanos qué viste. Leemos cada mensaje.",
         "feedback.placeholder": "¿Qué está confuso, roto o falta?",

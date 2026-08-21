@@ -19,11 +19,18 @@
        includeShot: true,
        shotDataUrl: '',
        shotError: '',
-       async openModal() {
+       openModal() {
+         /* Show the modal IMMEDIATELY — don't await the html2canvas
+            CDN load. If we await, a slow CDN blocks the visible open
+            and the user sees "click did nothing" (real user report,
+            2026-08-20 batch #4). Screenshot is a nice-to-have; the
+            modal is the primary path. */
          this.open = true;
          this.pulsing = false;
          sessionStorage.setItem('feedback_nudged', '1');
-         if (this.includeShot) await this.captureShot();
+         if (this.includeShot) {
+           this.captureShot().catch(() => { /* handled inside */ });
+         }
        },
        async captureShot() {
          this.shotError = '';
@@ -72,16 +79,16 @@
        }
      ">
 
-  {# Floating button — top-left, above other content. Aesthetic:
-     matches the app's hairline card style (thin border, white bg, soft
-     shadow), not DaisyUI's default filled button — the user asked for
-     something 'esteticamente bien'. Pulse anim reuses geo-banner-pulse. #}
+  {# Floating action button — bottom-right (user asked "abajo" +
+     visible label, 2026-08-20). Pill shape with icon + text so it's
+     obviously a feedback affordance, not an ambiguous lightbulb. #}
   <button type="button"
           @click="openModal()"
           :class="pulsing ? 'feedback-fab feedback-fab--pulse' : 'feedback-fab'"
           aria-label="{{ _('feedback.open') }}"
           title="{{ _('feedback.open') }}">
-    <i class="ph-thin ph-lightbulb" style="font-size: 1.25rem; color: oklch(var(--p));"></i>
+    <i class="ph-thin ph-chat-circle-dots feedback-fab__icon"></i>
+    <span class="feedback-fab__label">{{ _('feedback.label') }}</span>
   </button>
 
   {# Modal — centered card. Backdrop-click and Escape both dismiss. #}
