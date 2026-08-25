@@ -54,10 +54,23 @@
         </button>
       </div>
 
+      {# Busy-state + error surfacing live on the FORM, not the button.
+         Reason: a `@click` handler on the submit button that flipped
+         `submitting = true` synchronously was disabling the button in
+         the same tick as the form's submit dispatch, and iOS Safari
+         intermittently swallowed the submission — the classic "Send
+         does nothing" report from Mehran. htmx:*-request events fire
+         around HTMX's own request lifecycle, so busy toggling can't
+         race the submit. htmx:response-error surfaces server-side
+         4xx/5xx (rate limit, oversize body) instead of the previous
+         silent-swap behavior. #}
       <form hx-post="/feedback"
             hx-target="#feedback-result"
             hx-swap="innerHTML"
-            @htmx:after-request="if ($event.detail.successful) { setTimeout(() => close(), 1500); }">
+            @htmx:before-request="submitting = true"
+            @htmx:after-request="submitting = false; if ($event.detail.successful) { setTimeout(() => close(), 1500); }"
+            @htmx:response-error="document.getElementById('feedback-result').innerHTML = '<div class=&quot;text-error text-sm&quot;>Could not send — please try again in a moment.</div>'"
+            @htmx:send-error="document.getElementById('feedback-result').innerHTML = '<div class=&quot;text-error text-sm&quot;>Network error — check your connection.</div>'">
         <textarea name="message"
                   required
                   rows="4"
@@ -104,7 +117,6 @@
         <div class="flex items-center gap-2 mt-4">
           <button type="submit"
                   :disabled="submitting"
-                  @click="submitting = true; setTimeout(() => submitting = false, 2000)"
                   class="btn btn-primary btn-sm cursor-pointer">
             {{ _('feedback.send') }}
           </button>
