@@ -12,7 +12,7 @@
      style="background: oklch(var(--p) / 0.05); border: 1px solid oklch(var(--p) / 0.3);">
   <span class="loading loading-spinner loading-xs" style="color: oklch(var(--p));"></span>
   <div class="flex-1 min-w-0">
-    <div class="text-sm font-medium capitalize" x-text="`Generating ${level}…`"></div>
+    <div class="text-sm font-medium capitalize">{{ _('tailor.action.generating') }}</div>
     <div class="text-xs text-body-muted mt-0.5" x-text="`${message()} · ${elapsed}s`"></div>
   </div>
 </div>

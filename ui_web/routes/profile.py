@@ -173,9 +173,17 @@ def _get_or_generate_suggestions(force: bool = False) -> tuple[list[str], Option
 
     resume_id = int(resume["id"])
 
-    # Return cache if fresh AND not forcing
+    from core import settings as app_settings
+    # get_output_language() honors the user's explicit output-language pref
+    # (EN UI + ES output resumes is a real config). Was get_ui_language()
+    # from the initial patch; corrected in /simplify pass.
+    lang = app_settings.get_output_language()
+
+    # Return cache if fresh AND not forcing. Cache is keyed on (resume_id,
+    # lang) since v14 so flipping output language re-generates instead of
+    # serving stale-language chips (ADR-008 rule 3).
     if not force:
-        cached = db.get_cached_suggestions(resume_id, max_age_days=SUGGESTIONS_CACHE_DAYS)
+        cached = db.get_cached_suggestions(resume_id, lang, max_age_days=SUGGESTIONS_CACHE_DAYS)
         if cached:
             return cached["queries"][:SUGGESTIONS_MAX], None, cached["age_days"]
 
@@ -183,11 +191,7 @@ def _get_or_generate_suggestions(force: bool = False) -> tuple[list[str], Option
     if not resume_text:
         return [], "Resume text is empty — try re-uploading.", None
 
-    from core import settings as app_settings
-    # get_output_language() honors the user's explicit output-language pref
-    # (EN UI + ES output resumes is a real config). Was get_ui_language()
-    # from the initial patch; corrected in /simplify pass.
-    lang_line = app_settings.language_instruction(app_settings.get_output_language())
+    lang_line = app_settings.language_instruction(lang)
 
     prompt = f"""{lang_line}
 
@@ -223,7 +227,7 @@ Return JSON: {{"queries": ["query 1", "query 2", ...]}}
     if not queries:
         return [], "Model returned no usable suggestions. Try again.", None
 
-    db.save_suggestions(resume_id, queries)
+    db.save_suggestions(resume_id, queries, lang)
     return queries, None, 0
 
 
@@ -365,7 +369,13 @@ def _maybe_generate_ai_summary(resume_id: int) -> Optional[dict]:
     output + invite quota-burning spam. Quality lives in the prompt
     contract + Pydantic validation, not in a "try again" affordance.
     """
-    cached = db.get_resume_ai_summary(resume_id)
+    from core import settings as app_settings
+    # See note above (suggestions path): output_language is the correct
+    # resolver for LLM-generated text. Resolved once; joins the cache PK
+    # (v14) and is passed to the prompt as `lang_line`.
+    lang = app_settings.get_output_language()
+
+    cached = db.get_resume_ai_summary(resume_id, lang)
     if cached:
         return cached
     try:
@@ -389,10 +399,7 @@ def _maybe_generate_ai_summary(resume_id: int) -> Optional[dict]:
             missing_block = ", ".join(t for _, t in missing)
         location = (parsed.get("contact") or {}).get("location", "")
 
-        from core import settings as app_settings
-        # See note above (suggestions path): output_language is the correct
-        # resolver for LLM-generated text.
-        lang_line = app_settings.language_instruction(app_settings.get_output_language())
+        lang_line = app_settings.language_instruction(lang)
 
         prompt = f"""{lang_line}
 
@@ -498,6 +505,7 @@ Return JSON:
 
         db.save_resume_ai_summary(
             resume_id,
+            lang=lang,
             role_label=role_label,
             first_impression=first_impression,
             suggestions=suggestions,

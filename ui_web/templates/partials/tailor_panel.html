@@ -1,11 +1,18 @@
 {# Tailor drawer body. Injected by HTMX when user clicks "Tailor" on a card. #}
-{% set TAILOR_STAGES = "[[5,'Reading your resume…'],[15,'Analyzing the job requirements…'],[30,'Writing tailored bullets…'],[45,'Drafting the cover letter…'],[90,'Almost there — polishing…'],[999,'Model is thinking hard — up to 3 min on Aggressive']]" %}
+{% set TAILOR_STAGES = [
+    [5,   _('tailor.stages.reading')],
+    [15,  _('tailor.stages.analyzing')],
+    [30,  _('tailor.stages.bullets')],
+    [45,  _('tailor.stages.cover_letter')],
+    [90,  _('tailor.stages.polishing')],
+    [999, _('tailor.stages.still_working')],
+] | tojson %}
 
 <div class="space-y-6">
 
   {# Job context #}
   <div>
-    <div class="text-label">For this role</div>
+    <div class="text-label">{{ _('tailor.for_this_role') }}</div>
     <div class="text-lg font-semibold tracking-tight mt-1">{{ job.title }}</div>
     <div class="text-sm text-body-muted">{{ job.company }} · {{ job.location or '?' }}</div>
   </div>
@@ -13,9 +20,9 @@
   {% if not has_resume or not has_api_key %}
     <div class="card-quiet" style="background: hsl(35 85% 96%); border-color: hsl(35 70% 82%);">
       <div class="text-sm">
-        <span class="font-semibold">Setup needed:</span>
-        {% if not has_resume %}<div class="mt-1">• Upload a resume on the <a href="/profile" class="underline">Profile</a> tab.</div>{% endif %}
-        {% if not has_api_key %}<div class="mt-1">• Add <code class="text-xs bg-base-200 px-1 rounded">GOOGLE_API_KEY</code> on the <a href="/profile" class="underline">Profile</a> tab.</div>{% endif %}
+        <span class="font-semibold">{{ _('tailor.setup.title') }}</span>
+        {% if not has_resume %}<div class="mt-1">• {{ _('tailor.setup.upload_resume') | safe }}</div>{% endif %}
+        {% if not has_api_key %}<div class="mt-1">• {{ _('tailor.setup.add_key') | safe }}</div>{% endif %}
       </div>
     </div>
   {% else %}
@@ -34,7 +41,7 @@
        Wrapped in an ID so POST /jobs/tailor OOB-swaps this content in place
        when a new run completes. #}
     <div x-show="hasAnyRuns || running" x-cloak class="mb-5">
-      <div class="text-label mb-2">Runs for this job</div>
+      <div class="text-label mb-2">{{ _('tailor.runs.title') }}</div>
       <div id="tailor-runs-{{ job.id }}">
         {% include "partials/tailor_runs_list.html" %}
       </div>
@@ -42,7 +49,7 @@
 
     {% if runs %}
     <div class="text-xs text-body-muted text-center my-3"
-         x-show="hasAnyRuns && !running" x-cloak>— or generate a new one below —</div>
+         x-show="hasAnyRuns && !running" x-cloak>— {{ _('tailor.runs.separator') }} —</div>
     {% endif %}
 
     <form hx-post="/jobs/tailor/{{ job.id }}"
@@ -52,9 +59,10 @@
           @htmx:after-request="stop($event); if ($event.detail.successful) hasAnyRuns = true"
           class="space-y-5">
 
-      {# Level selector — .level-tile class + [data-selected] attribute #}
+      {# Level selector — .level-tile class + [data-selected] attribute.
+         `label` and `desc` come in as i18n keys (see jobs_tailor_open). #}
       <div>
-        <label class="text-label block mb-2">Tailoring level</label>
+        <label class="text-label block mb-2">{{ _('tailor.level.label') }}</label>
         <div class="grid grid-cols-3 gap-2">
           {% for value, label, desc in levels %}
           <button type="button"
@@ -62,8 +70,8 @@
                   @click="level = '{{ value }}'"
                   :data-selected="level === '{{ value }}' ? 'true' : 'false'"
                   data-selected="{{ 'true' if value == default_level else 'false' }}">
-            <div class="level-tile-title">{{ label }}</div>
-            <div class="level-tile-desc">{{ desc }}</div>
+            <div class="level-tile-title">{{ _(label) }}</div>
+            <div class="level-tile-desc">{{ _(desc) }}</div>
           </button>
           {% endfor %}
         </div>
@@ -76,11 +84,11 @@
               class="btn btn-primary w-full cursor-pointer"
               :disabled="running">
         <span x-show="!running">
-          {% if runs %}Generate a new version{% else %}Generate tailored resume + cover letter{% endif %}
+          {% if runs %}{{ _('tailor.action.generate_new') }}{% else %}{{ _('tailor.action.generate_first') }}{% endif %}
         </span>
         <span x-show="running" x-cloak class="flex items-center gap-2">
           <span class="loading loading-spinner loading-xs"></span>
-          <span>Generating…</span>
+          <span>{{ _('tailor.action.generating') }}</span>
         </span>
       </button>
     </form>

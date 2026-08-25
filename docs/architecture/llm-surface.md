@@ -43,8 +43,8 @@ for why.
 | 4 | `core/jobs/from_url.py::extract_job_from_text` | "From URL" flow + manual-paste fallback | No | None (per-URL) | None (extraction — output is JD fields, not generated prose) | JSON |
 | 5 | `core/llm/company_research.py::fetch_company_context` | Tailor tab opt-in checkbox | No | None | None (English-only briefing today) | **Plain text** — GoogleSearch tool is incompatible with `response_mime_type=json` |
 | 6 | `core/bi/pulse.py::generate_report` | Weekly GH Actions cron (`.github/workflows/pulse.yml`) + `/admin/pulse` manual | No | `admin_reports` table (one row per run) | None (admin-only, English) | JSON (unwraps `{"markdown": "..."}`) |
-| 7 | `ui_web/routes/profile.py::_generate_suggestions` | Jobs page "Quick fill" chips first render (lazy) | No | `resume_suggestions` (per-resume) | `get_output_language()` | JSON |
-| 8 | `ui_web/routes/profile.py::_grounded_or_none` (used by `_maybe_generate_ai_summary`) | Lazy fragment on Profile page after resume upload | No, but retries **once** silently on ungrounded output | `resume_ai_summary(resume_id)` (per-resume) | `get_output_language()` | JSON validated via Pydantic + custom grounding check |
+| 7 | `ui_web/routes/profile.py::_generate_suggestions` | Jobs page "Quick fill" chips first render (lazy) | No | `suggested_queries(resume_id, lang)` | `get_output_language()` | JSON |
+| 8 | `ui_web/routes/profile.py::_grounded_or_none` (used by `_maybe_generate_ai_summary`) | Lazy fragment on Profile page after resume upload | No, but retries **once** silently on ungrounded output | `resume_ai_summary(resume_id, lang)` | `get_output_language()` | JSON validated via Pydantic + custom grounding check |
 
 ## Coverage the table doesn't capture
 
@@ -68,12 +68,11 @@ for why.
   are extraction-only (defensible), but #5 (company briefing shown
   in a tailor drawer) probably *should* follow output_language and
   doesn't. Fix pending.
-- **Cache-key parity.** Only site #1 keys its cache on language
-  (as of the 2026-08-25 fix). Sites #7 and #8 cache generated user-
-  facing text per-resume-only — flipping language will show stale
-  text until the resume changes. Not urgent because those two
-  render at moments where the user has just changed something
-  anyway, but flagged.
+- **Cache-key parity.** Fixed 2026-08-25 (v14): sites #1, #7, #8 all
+  now key on `lang`. Same rebuild-and-copy migration pattern; old
+  rows preserved with `lang=''` so an unmigrated deploy loses no
+  data. Site #6 (`admin_reports`) is English-only today and can
+  stay one-dimensional until an admin-language toggle exists.
 - **Prompt inline vs. shared**: only #2 uses a shared
   `core/llm/prompts.py`. Every other site has its prompt string
   living next to the call. That's fine for now — a shared prompt

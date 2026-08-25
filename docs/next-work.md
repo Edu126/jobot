@@ -34,6 +34,62 @@ the same missing-`lang` bug class we fixed for `job_scores`.
 Flagged in [llm-surface.md](architecture/llm-surface.md) under
 "Known drift risks."
 
+## 2026-08-25 PM — Mehran feedback dump (post-hotfix)
+
+Second round of feedback from Mehran the same evening as the
+hotfix ship. Six buckets. REQs filed for the top-severity three;
+the rest wait until those land.
+
+**Filed as REQs (this session):**
+- [REQ-007](requirements/REQ-007-restore-destructive-action-modals.md)
+  — bucket C. Destructive-action buttons on Profile lost their
+  confirm modal (likely regression from `79d3e6a` tiered
+  data-destruction PR). ~30 min. **Highest severity — data loss
+  risk.**
+- [REQ-008](requirements/REQ-008-jobs-results-filter-reactivity.md)
+  — bucket E. `min_score` and "solo nuevas" filters don't react to
+  scores arriving via HTMX OOB swap during the batch chain. User
+  sees 3 of 31 when it should be 21. ~1–2 h. **Product-breaking.**
+- [REQ-009](requirements/REQ-009-cache-key-lang-parity.md) — bucket
+  A. Apply the `job_scores` cache-key fix pattern to
+  `resume_suggestions` (#7) and `resume_ai_summary` (#8). ~1–1.5 h.
+  Closes the drift entry in llm-surface.md.
+
+**Buckets D, F, B shipped in the same session (docs + code):**
+- **Bucket D (code)** — jobs_results: hide FR toggle when UI=es;
+  hide Dismissed toggle when dataset has zero dismissed;
+  base.html filter store: `onlyNew` unions `is_new || new_since_expand`;
+  city placeholder now includes country example; jobs.html:
+  loading stages (search / multi / URL) go through `_()` + `tojson`
+  so overlay speaks the user's language; job-title first placeholder
+  personalises using `resume_ai_summary.role_label` when cached,
+  falls back to generic; `filters.only_new.tooltip` reworded to
+  match new semantic.
+- **Bucket F (code)** — full tailor-flow i18n sweep. 44 new keys
+  (EN + ES parity). Covers: drawer chrome (base.html), tailor_panel
+  (setup, runs, level tiles, generate/generating buttons, TAILOR_STAGES),
+  tailor_runs_list (in-progress row), tailor_result (fallback banner,
+  ribbon, meta line, insight, resume/cover sections, action row).
+  Level labels + descs now flow as i18n keys from the route
+  (`jobs_tailor_open`), not hardcoded English strings.
+- **Bucket B (docs)** — [REQ-010](requirements/REQ-010-explicit-language-onboarding.md)
+  + [ADR-009](decisions/ADR-009-explicit-language-onboarding.md).
+  Extend the geo first-visit banner to also ask UI + output
+  language; retire silent `Accept-Language` overwrites. Implementation
+  is a follow-up sprint — this pass captures the architectural
+  decision only.
+
+**Open question for the user:** confirm with Mehran which button
+exactly triggered the 54→98 score jump. Code mechanics say re-upload
+of PDF (new `resume_id` → cache miss); if she insists it was only
+"regenerate cleanly", there's an invalidation bug not covered by
+REQ-009.
+
+**Session hygiene note:** `/code-review medium` earlier today burnt
+6/8 finders on rate-limit. Next end-of-sprint pass use `low` or
+`ultra`, not `medium`. Cap sub-agent parallelism at 3–4 Sonnet by
+default.
+
 ---
 
 # Prior Sprint (shipped) — i18n + Geography + BI Agent

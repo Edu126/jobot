@@ -141,7 +141,11 @@
           if (this.remoteFilter === 'remote' && !job.remote) return false;
           if (this.remoteFilter === 'onsite' && job.remote) return false;
           if (this.maxAgeDays !== null && job.age_days !== undefined && job.age_days > this.maxAgeDays) return false;
-          if (this.onlyNew && !job.is_new) return false;
+          // "Only new" unions two flags: is_new (last 48h) OR new_since_expand
+          // (jobs the current Expand pass added). Otherwise on a cached
+          // search older than 48h, toggling hides every job — the filter
+          // reads as broken. Mehran 2026-08-25.
+          if (this.onlyNew && !job.is_new && !job.new_since_expand) return false;
           if (this.hideViewed && job.viewed) return false;
           if (this.hideDismissed && job.dismissed) return false;
           return true;
@@ -821,15 +825,15 @@
          @keydown.escape.window="$store.tailor.close()">
       <div class="drawer-header">
         <div>
-          <div class="text-label">Tailor resume</div>
-          <div class="text-title" x-text="$store.tailor.jobId ? 'Ready when you are' : ''"></div>
+          <div class="text-label">{{ _('tailor.drawer.label') }}</div>
+          <div class="text-title" x-text="$store.tailor.jobId ? '{{ _('tailor.drawer.title') }}' : ''"></div>
         </div>
         <button @click="$store.tailor.close()"
                 class="btn btn-ghost btn-sm btn-circle text-lg"
-                aria-label="Close"><i class="ph-thin ph-x i-4"></i></button>
+                aria-label="{{ _('action.close') }}"><i class="ph-thin ph-x i-4"></i></button>
       </div>
       <div id="tailor-drawer-body" class="drawer-body">
-        <div class="text-body-muted text-sm">Pick a job to tailor for.</div>
+        <div class="text-body-muted text-sm">{{ _('tailor.drawer.empty') }}</div>
       </div>
     </div>
   </div>

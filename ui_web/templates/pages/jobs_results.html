@@ -70,6 +70,15 @@
          if (this.totalJobs === 0) return 100;
          return Math.round(((this.totalJobs - this.pendingScoreCount) / this.totalJobs) * 100);
        },
+       // Per-card visibility. Cards call this via their x-show so that
+       // filter evaluation reads the REACTIVE jobs_meta entry — not a
+       // server-baked literal. Without this, __jobotUpdateScore mutates
+       // the meta but each card's x-show still holds the initial score,
+       // so cards stay hidden while the header count says otherwise.
+       cardVisible(jobId) {
+         const m = this.jobs.find(x => x.id === jobId);
+         return m ? this.$store.filters.matches(m) : true;
+       },
        destroy() {
          if (window.__jobotUpdateScore) delete window.__jobotUpdateScore;
          if (window.__jobotMarkJob) delete window.__jobotMarkJob;
@@ -209,10 +218,17 @@
              x-model.number="$store.filters.minScore"
              class="range range-sm range-primary cursor-pointer">
     </div>
+    {# "Hide french" only makes sense in a mixed-language market (Ottawa/
+       Montréal). A Spanish-speaking user (Colombia, España) sees FR jobs
+       as noise the wrong way — the toggle labelled "ocultar francés"
+       reads like a language-of-the-app switch. Hide the whole toggle when
+       UI=es. Mehran 2026-08-25. #}
+    {% if current_ui_language() != 'es' %}
     <label class="flex items-center gap-2 cursor-pointer select-none">
       <input type="checkbox" x-model="$store.filters.hideFrench" class="checkbox checkbox-sm">
       <span class="text-sm">{{ _('filters.hide_french') }}</span>
     </label>
+    {% endif %}
     <label class="flex items-center gap-2 cursor-pointer select-none"
            title="{{ _('filters.only_new.tooltip') }}">
       <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
@@ -223,7 +239,12 @@
       <input type="checkbox" x-model="$store.filters.hideViewed" class="checkbox checkbox-sm">
       <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-eye-slash i-4"></i>{{ _('filters.hide_viewed') }}</span>
     </label>
+    {# "Hide dismissed" only appears when the user actually has dismissed
+       jobs in the current result set. Desktop has no dismiss button
+       today (only mobile swipe fires POST /jobs/dismiss), so most desktop
+       users would see this toggle with nothing to hide. Mehran 2026-08-25. #}
     <label class="flex items-center gap-2 cursor-pointer select-none"
+           x-show="jobs.some(j => j.dismissed)" x-cloak
            title="{{ _('filters.hide_dismissed.tooltip') }}">
       <input type="checkbox" x-model="$store.filters.hideDismissed" class="checkbox checkbox-sm">
       <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-x-circle i-4"></i>{{ _('filters.hide_dismissed') }}</span>

@@ -350,7 +350,8 @@ async def api_search_suggest(request: Request):
     if len(items) < 5:
         resume = db.get_current_resume()
         if resume:
-            cached = db.get_cached_suggestions(int(resume["id"]))
+            from core import settings as app_settings
+            cached = db.get_cached_suggestions(int(resume["id"]), app_settings.get_output_language())
             for q in (cached or {}).get("queries", []) or []:
                 _add(q)
                 if len(items) >= 5:
@@ -403,7 +404,8 @@ async def jobs_landing(request: Request):
     seen_q: set[str] = set()
     quick_fill: list[dict] = []
     if resume:
-        cached_suggestions = db.get_cached_suggestions(int(resume["id"]))
+        from core import settings as app_settings
+        cached_suggestions = db.get_cached_suggestions(int(resume["id"]), app_settings.get_output_language())
         for q in (cached_suggestions or {}).get("queries", []):
             key = str(q).strip().lower()
             if not key or key in seen_q:
@@ -419,6 +421,17 @@ async def jobs_landing(request: Request):
         not quick_fill and bool(resume) and has_key
     )
 
+    # Personalized role hint for the "job title" placeholder. Pulled from
+    # the resume AI summary if it's already cached; NOT generated on-demand
+    # here (that call belongs to the /profile/ai-summary lazy fragment).
+    # Falls back to a generic placeholder when there's no summary yet.
+    resume_role_label = ""
+    if resume:
+        from core import settings as app_settings
+        summary = db.get_resume_ai_summary(int(resume["id"]), app_settings.get_output_language())
+        if summary:
+            resume_role_label = summary.get("role_label", "")
+
     return templates.TemplateResponse(
         request,
         "pages/jobs.html",
@@ -432,6 +445,7 @@ async def jobs_landing(request: Request):
             "has_api_key": has_key,
             "top_matches": top_matches,
             "cache_count": cache_count,
+            "resume_role_label": resume_role_label,
         },
     )
 
@@ -708,6 +722,7 @@ async def jobs_results(request: Request, cache_key: str):
             "viewed": int(bool(j.get("_is_viewed"))),
             "dismissed": int(bool(j.get("_is_dismissed"))),
             "new_since_expand": int(bool(j.get("_is_new_since_expand"))),
+            "age_days": j.get("_age_days"),
         }
         for j in jobs_dicts
     ]
@@ -1741,10 +1756,19 @@ async def jobs_tailor_panel(request: Request, job_id: str):
             "job": job,
             "has_resume": bool(resume),
             "has_api_key": bool(api_key),
+            # Labels + descriptions passed as i18n keys so the template
+            # can resolve via `_()`. Adding a level = new key pair here +
+            # matching entries in ui_web/i18n.py.
             "levels": [
-                ("conservative", "Conservative", "Light edits. Never adds skills."),
-                ("balanced", "Balanced", "Real tailoring. Drops irrelevant bullets."),
-                ("aggressive", "Aggressive", "Max keyword alignment using JD vocab."),
+                ("conservative",
+                 "tailor.level.conservative.label",
+                 "tailor.level.conservative.desc"),
+                ("balanced",
+                 "tailor.level.balanced.label",
+                 "tailor.level.balanced.desc"),
+                ("aggressive",
+                 "tailor.level.aggressive.label",
+                 "tailor.level.aggressive.desc"),
             ],
             "default_level": "balanced",
             "runs": list_runs(job_id),   # past tailor runs, newest first

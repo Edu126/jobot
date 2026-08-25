@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
@@ -46,6 +46,28 @@ _JOB_SCORES_BODY = """
     model        TEXT NOT NULL,
     scored_at    TEXT NOT NULL,
     PRIMARY KEY (resume_id, job_id, lang)
+"""
+
+# v14: `lang` joins the PK on the two remaining LLM user-text caches.
+# Same rule as `job_scores` (v13, ADR-008 rule 3) — flipping UI/output
+# language must not serve stale-language cached prose. Both bodies live
+# here so the migration + fresh install share one DDL source.
+_SUGGESTED_QUERIES_BODY = """
+    resume_id     INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+    lang          TEXT NOT NULL DEFAULT '',
+    queries_json  TEXT NOT NULL,
+    generated_at  TEXT NOT NULL,
+    PRIMARY KEY (resume_id, lang)
+"""
+
+_RESUME_AI_SUMMARY_BODY = """
+    resume_id         INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+    lang              TEXT NOT NULL DEFAULT '',
+    role_label        TEXT,
+    first_impression  TEXT,
+    suggestions_json  TEXT NOT NULL DEFAULT '[]',
+    generated_at      TEXT NOT NULL,
+    PRIMARY KEY (resume_id, lang)
 """
 
 _SCHEMA_SQL = """
@@ -119,11 +141,7 @@ CREATE TABLE IF NOT EXISTS saved_searches (
 );
 CREATE INDEX IF NOT EXISTS idx_saved_searches_order ON saved_searches(sort_order);
 
-CREATE TABLE IF NOT EXISTS suggested_queries (
-    resume_id     INTEGER PRIMARY KEY REFERENCES resumes(id) ON DELETE CASCADE,
-    queries_json  TEXT NOT NULL,
-    generated_at  TEXT NOT NULL
-);
+CREATE TABLE IF NOT EXISTS suggested_queries (__SUGGESTED_QUERIES_BODY__);
 
 -- One-shot LLM read of a resume, generated on upload/switch and cached
 -- (keyed by resume_id, no expiry — a new upload gets a new id, so the
@@ -140,13 +158,7 @@ CREATE TABLE IF NOT EXISTS suggested_queries (
 -- NOT named "profile_insights" — that name is taken by the local activity-
 -- analytics feature (events table, /profile/insights route). This is a
 -- distinct, LLM-generated, per-resume artifact.
-CREATE TABLE IF NOT EXISTS resume_ai_summary (
-    resume_id         INTEGER PRIMARY KEY REFERENCES resumes(id) ON DELETE CASCADE,
-    role_label        TEXT,
-    first_impression  TEXT,
-    suggestions_json  TEXT NOT NULL DEFAULT '[]',
-    generated_at      TEXT NOT NULL
-);
+CREATE TABLE IF NOT EXISTS resume_ai_summary (__RESUME_AI_SUMMARY_BODY__);
 
 -- Analytics — append-only event log. Never leaves this SQLite file.
 -- Used by the Insights view on Profile to visualize activity.
@@ -280,7 +292,12 @@ CREATE TABLE IF NOT EXISTS admin_reports (
 CREATE INDEX IF NOT EXISTS idx_admin_reports_generated ON admin_reports(generated_at);
 """
 
-_SCHEMA_SQL = _SCHEMA_SQL.replace("__JOB_SCORES_BODY__", _JOB_SCORES_BODY.strip())
+_SCHEMA_SQL = (
+    _SCHEMA_SQL
+    .replace("__JOB_SCORES_BODY__", _JOB_SCORES_BODY.strip())
+    .replace("__SUGGESTED_QUERIES_BODY__", _SUGGESTED_QUERIES_BODY.strip())
+    .replace("__RESUME_AI_SUMMARY_BODY__", _RESUME_AI_SUMMARY_BODY.strip())
+)
 
 
 # Seeded on first init if the table is empty. User can edit/delete/add from Profile.
@@ -349,6 +366,33 @@ def init_db(path: Path = DB_PATH) -> None:
                 DROP TABLE job_scores;
                 ALTER TABLE job_scores_new RENAME TO job_scores;
                 CREATE INDEX IF NOT EXISTS idx_job_scores_resume ON job_scores(resume_id);
+            """)
+
+        # v14 migration: extend the (resume_id) PK on the two remaining
+        # LLM user-text caches to (resume_id, lang). Same reasoning as v13
+        # — flipping UI/output language must not serve stale-language
+        # cached prose. Old rows keep lang='' and coexist with fresh
+        # current-lang rows; they age out naturally.
+        sq_cols = {r["name"] for r in conn.execute("PRAGMA table_info(suggested_queries)").fetchall()}
+        if sq_cols and "lang" not in sq_cols:
+            conn.executescript(f"""
+                CREATE TABLE suggested_queries_new ({_SUGGESTED_QUERIES_BODY});
+                INSERT INTO suggested_queries_new (resume_id, lang, queries_json, generated_at)
+                SELECT resume_id, '', queries_json, generated_at FROM suggested_queries;
+                DROP TABLE suggested_queries;
+                ALTER TABLE suggested_queries_new RENAME TO suggested_queries;
+            """)
+
+        ras_cols = {r["name"] for r in conn.execute("PRAGMA table_info(resume_ai_summary)").fetchall()}
+        if ras_cols and "lang" not in ras_cols:
+            conn.executescript(f"""
+                CREATE TABLE resume_ai_summary_new ({_RESUME_AI_SUMMARY_BODY});
+                INSERT INTO resume_ai_summary_new
+                    (resume_id, lang, role_label, first_impression, suggestions_json, generated_at)
+                SELECT resume_id, '', role_label, first_impression, suggestions_json, generated_at
+                FROM resume_ai_summary;
+                DROP TABLE resume_ai_summary;
+                ALTER TABLE resume_ai_summary_new RENAME TO resume_ai_summary;
             """)
 
         conn.execute(
@@ -1055,15 +1099,22 @@ def delete_saved_search(sid: int, path: Path = DB_PATH) -> None:
 
 def get_cached_suggestions(
     resume_id: int,
+    lang: str,
     max_age_days: int = 7,
     path: Path = DB_PATH,
 ) -> Optional[dict]:
     """Return {'queries': list, 'generated_at': iso, 'age_days': int} if a cached
-    entry exists AND is fresher than max_age_days. None otherwise."""
+    entry exists for this resume AT THIS OUTPUT LANGUAGE and is fresher
+    than max_age_days. None otherwise.
+
+    `lang` joins the PK (v14) so a language flip yields a cache miss —
+    the suggestions are user-facing prose and would look stale in the
+    old language otherwise.
+    """
     with connect(path) as conn:
         row = conn.execute(
-            "SELECT queries_json, generated_at FROM suggested_queries WHERE resume_id = ?",
-            (resume_id,),
+            "SELECT queries_json, generated_at FROM suggested_queries WHERE resume_id = ? AND lang = ?",
+            (resume_id, lang),
         ).fetchone()
     if not row:
         return None
@@ -1085,30 +1136,42 @@ def get_cached_suggestions(
 def save_suggestions(
     resume_id: int,
     queries: list[str],
+    lang: str,
     path: Path = DB_PATH,
 ) -> None:
-    """Upsert cached suggestions for a resume."""
+    """Upsert cached suggestions for a (resume, lang) pair."""
     with tx(path) as conn:
         conn.execute(
-            """INSERT INTO suggested_queries (resume_id, queries_json, generated_at)
-               VALUES (?, ?, ?)
-               ON CONFLICT(resume_id) DO UPDATE SET
+            """INSERT INTO suggested_queries (resume_id, lang, queries_json, generated_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(resume_id, lang) DO UPDATE SET
                  queries_json = excluded.queries_json,
                  generated_at = excluded.generated_at""",
-            (resume_id, json.dumps(queries, ensure_ascii=False), _now()),
+            (resume_id, lang, json.dumps(queries, ensure_ascii=False), _now()),
         )
 
 
-def get_resume_ai_summary(resume_id: int, path: Path = DB_PATH) -> Optional[dict]:
-    """Return the cached one-shot AI read of a resume:
-    {'role_label': str, 'first_impression': str, 'suggestions': [...]}
-    or None if never generated. No max-age check — a new resume upload
-    gets a fresh row via its own resume_id."""
+def get_resume_ai_summary(
+    resume_id: int,
+    lang: str,
+    path: Path = DB_PATH,
+) -> Optional[dict]:
+    """Return the cached one-shot AI read of a resume for this output
+    language: {'role_label': str, 'first_impression': str, 'suggestions': [...]}
+    or None if never generated in this language.
+
+    `lang` joins the PK (v14). A new resume upload still invalidates the
+    cache via its own resume_id (per-language rows tied to that id are
+    cascade-deleted when the resume row is deleted, but we don't delete
+    resumes on re-upload — we insert new ones with a new id, so the
+    lookup misses regardless). Flipping language is the case this key
+    now covers.
+    """
     with connect(path) as conn:
         row = conn.execute(
             """SELECT role_label, first_impression, suggestions_json
-               FROM resume_ai_summary WHERE resume_id = ?""",
-            (resume_id,),
+               FROM resume_ai_summary WHERE resume_id = ? AND lang = ?""",
+            (resume_id, lang),
         ).fetchone()
     if not row:
         return None
@@ -1126,24 +1189,25 @@ def get_resume_ai_summary(resume_id: int, path: Path = DB_PATH) -> Optional[dict
 def save_resume_ai_summary(
     resume_id: int,
     *,
+    lang: str,
     role_label: str,
     first_impression: str,
     suggestions: list[dict],
     path: Path = DB_PATH,
 ) -> None:
-    """Upsert the cached AI summary for a resume."""
+    """Upsert the cached AI summary for a (resume, lang) pair."""
     with tx(path) as conn:
         conn.execute(
             """INSERT INTO resume_ai_summary
-               (resume_id, role_label, first_impression, suggestions_json, generated_at)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(resume_id) DO UPDATE SET
+               (resume_id, lang, role_label, first_impression, suggestions_json, generated_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(resume_id, lang) DO UPDATE SET
                  role_label = excluded.role_label,
                  first_impression = excluded.first_impression,
                  suggestions_json = excluded.suggestions_json,
                  generated_at = excluded.generated_at""",
             (
-                resume_id, role_label, first_impression,
+                resume_id, lang, role_label, first_impression,
                 json.dumps(suggestions, ensure_ascii=False), _now(),
             ),
         )

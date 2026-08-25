@@ -13,11 +13,9 @@
        style="background: oklch(var(--in) / 0.06); border: 1px solid oklch(var(--in) / 0.30);">
     <i class="ph-thin ph-shield-check i-5 mt-0.5 shrink-0" style="color: oklch(var(--in));"></i>
     <div class="flex-1">
-      <div class="font-semibold text-sm">We kept your resume as-is</div>
+      <div class="font-semibold text-sm">{{ _('tailor.fallback.title') }}</div>
       <p class="text-sm text-body-muted mt-1 leading-relaxed">
-        Your original resume already scores well for this role — the {{ tailored.tailoring_level | title }} pass
-        didn't improve it, so we're skipping the rewrite. Your cover letter below
-        <em>is</em> tailored to this specific posting.
+        {{ _('tailor.fallback.body', level=(tailored.tailoring_level | title)) | safe }}
       </p>
       <div class="mt-3 flex items-center gap-3 flex-wrap">
         {% if tailored.tailoring_level != 'aggressive' %}
@@ -27,10 +25,10 @@
                 hx-target="#tailor-result-{{ job_id }}"
                 hx-swap="innerHTML"
                 class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1">
-          <i class="ph-thin ph-sparkle i-4"></i>Try Aggressive instead
+          <i class="ph-thin ph-sparkle i-4"></i>{{ _('tailor.fallback.try_aggressive') }}
         </button>
         {% endif %}
-        <span class="text-xs text-body-muted">Downloads still work — you get the original DOCX + the tailored cover letter.</span>
+        <span class="text-xs text-body-muted">{{ _('tailor.fallback.downloads_note') }}</span>
       </div>
     </div>
   </div>
@@ -48,7 +46,7 @@
 
       {% if m.verdict_jumped and m.before %}
       <div class="score-hero__ribbon">
-        <i class="ph-thin ph-sparkle i-3"></i> Moved up a tier
+        <i class="ph-thin ph-sparkle i-3"></i> {{ _('tailor.ribbon.moved_up') }}
       </div>
       {% endif %}
 
@@ -75,16 +73,16 @@
               {% if m.delta > 0 %}<i class="ph-thin ph-trend-up i-4" style="color: oklch(var(--su));"></i>
               {% elif m.delta < 0 %}<i class="ph-thin ph-trend-down i-4" style="color: oklch(var(--er));"></i>
               {% else %}<i class="ph-thin ph-minus i-4"></i>{% endif %}
-              <strong>{% if m.delta > 0 %}+{% endif %}{{ m.delta }} pts</strong>
-              from {{ m.before.score }}
+              <strong>{% if m.delta > 0 %}+{% endif %}{{ m.delta }} {{ _('tailor.meta.pts') }}</strong>
+              {{ _('tailor.meta.from_score', score=m.before.score) }}
             </span>
             <span class="text-base-content/25">·</span>
           {% endif %}
-          <span><strong>{{ tailored.tailoring_level | title }}</strong> tailoring</span>
+          <span>{{ _('tailor.meta.level_tailoring', level=(tailored.tailoring_level | title)) | safe }}</span>
           {% if tailored.tailoring_change %}
             <span class="text-base-content/25">·</span>
-            <span title="How much of your resume text differs from the original — a rough guide for fact-checking effort">
-              Resume modified <strong>{{ tailored.tailoring_change.overall_pct }}%</strong>
+            <span title="{{ _('tailor.meta.modified_tooltip') }}">
+              {{ _('tailor.meta.resume_modified', pct=tailored.tailoring_change.overall_pct) | safe }}
             </span>
           {% endif %}
         </div>
@@ -95,8 +93,7 @@
         <p class="score-hero__insight">"{{ tailored.tailoring_notes }}"</p>
         {% elif m.verdict_jumped and m.before %}
         <p class="score-hero__insight">
-          {{ tailored.tailoring_level | title }} tailoring moved this from
-          {{ m.before.verdict | verdict_label }} to {{ after.verdict | verdict_label }} — worth applying.
+          {{ _('tailor.insight.jumped', level=(tailored.tailoring_level | title), before=(m.before.verdict | verdict_label), after=(after.verdict | verdict_label)) }}
         </p>
         {% endif %}
       </div>
@@ -121,8 +118,8 @@
   {# ── Tailored sections (all visible, stacked) ── #}
   <div>
     <div class="flex items-center gap-2 mb-3">
-      <h3 class="text-title">Tailored resume</h3>
-      <span class="text-xs text-body-muted">preview — full DOCX below</span>
+      <h3 class="text-title">{{ _('tailor.result.resume_title') }}</h3>
+      <span class="text-xs text-body-muted">{{ _('tailor.result.resume_preview_note') }}</span>
     </div>
     <div class="space-y-4">
       {% for section, items in tailored.sections.items() %}
@@ -151,7 +148,7 @@
      with paragraph spacing. #}
   {% if tailored.cover_letter %}
   <div>
-    <h3 class="text-title mb-3">Cover letter</h3>
+    <h3 class="text-title mb-3">{{ _('tailor.result.cover_letter_title') }}</h3>
     <div class="rounded-lg border border-base-300 p-4">
       <div class="text-sm leading-relaxed text-base-content/90 space-y-3">
         {% for para in tailored.cover_letter.split('\n\n') if para.strip() %}
@@ -169,23 +166,23 @@
             hx-vals='{"status": "interested"}'
             hx-target="#tailor-save-status"
             hx-swap="innerHTML">
-      Save as interested
+      {{ _('tailor.action.save_interested') }}
     </button>
     <button class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium"
             hx-post="/jobs/tailor/{{ job_id }}/save"
             hx-vals='{"status": "applied"}'
             hx-target="#tailor-save-status"
             hx-swap="innerHTML">
-      Mark applied
+      {{ _('tailor.action.mark_applied') }}
     </button>
     <a href="/jobs/tailor/{{ job_id }}/download{% if run_index is defined %}?run={{ run_index }}{% endif %}"
        class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium ml-auto cursor-pointer">
-      <i class="ph-thin ph-download-simple i-4"></i> Resume DOCX
+      <i class="ph-thin ph-download-simple i-4"></i> {{ _('tailor.action.download_resume') }}
     </a>
     {% if tailored.cover_letter %}
     <a href="/jobs/tailor/{{ job_id }}/cover-letter{% if run_index is defined %}?run={{ run_index }}{% endif %}"
        class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer">
-      <i class="ph-thin ph-download-simple i-4"></i> Cover letter DOCX
+      <i class="ph-thin ph-download-simple i-4"></i> {{ _('tailor.action.download_cover') }}
     </a>
     {% endif %}
   </div>

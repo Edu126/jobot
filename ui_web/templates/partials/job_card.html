@@ -17,13 +17,7 @@
          {% endif %}
          :class="$store.selectedJob.id === '{{ job.id }}' ? 'card-quiet--selected' : ''"
          @click="$store.selectedJob.select('{{ job.id }}')"
-         x-show="$store.filters.matches({
-           score: {{ job._score }},
-           french: {{ 1 if (job.french_required or job.detected_language == 'fr') else 0 }},
-           remote: {{ 1 if job.is_remote else 0 }},
-           age_days: {% if job._age_days is defined %}{{ job._age_days }}{% else %}0{% endif %},
-           is_new: {{ 1 if job._is_new else 0 }}
-         })">
+         x-show="cardVisible('{{ job.id }}')">
 
   <div class="flex items-start gap-4">
 

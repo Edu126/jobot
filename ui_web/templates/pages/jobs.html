@@ -2,9 +2,35 @@
 {% block title %}Jobs — Jobot{% endblock %}
 {% block container_class %}max-w-7xl{% endblock %}
 
-{% set SEARCH_STAGES = "[[5,'Starting the search…'],[15,'Scanning LinkedIn postings…'],[30,'Checking Indeed board…'],[45,'Sweeping Google for Jobs…'],[60,'Reading full job descriptions…'],[80,'Deduplicating across sources…'],[999,'Still working (this is longer than usual)']]" %}
+{# Loading-stage arrays for longOp(). Strings go through _() so the
+   overlay speaks the user's UI language; tojson emits a JS-safe array.
+   Adding a stage = add one row + one i18n key per language. #}
+{% set SEARCH_STAGES = [
+    [5,   _('jobs.stages.search.starting')],
+    [15,  _('jobs.stages.search.linkedin')],
+    [30,  _('jobs.stages.search.indeed')],
+    [45,  _('jobs.stages.search.google')],
+    [60,  _('jobs.stages.search.descriptions')],
+    [80,  _('jobs.stages.search.dedup')],
+    [999, _('jobs.stages.search.still_working')],
+] | tojson %}
 
-{% set MULTI_STAGES = "[[30,'Running the first search…'],[75,'Cooling down before the next…'],[130,'Running the second search…'],[175,'Cooling down before the last…'],[230,'Running the last search…'],[280,'Almost done — organizing results…'],[999,'Still working (multi runs can take up to 3 min)']]" %}
+{% set MULTI_STAGES = [
+    [30,  _('jobs.stages.multi.first')],
+    [75,  _('jobs.stages.multi.cool1')],
+    [130, _('jobs.stages.multi.second')],
+    [175, _('jobs.stages.multi.cool2')],
+    [230, _('jobs.stages.multi.third')],
+    [280, _('jobs.stages.multi.organizing')],
+    [999, _('jobs.stages.multi.still_working')],
+] | tojson %}
+
+{% set URL_STAGES = [
+    [5,   _('jobs.stages.url.fetching')],
+    [15,  _('jobs.stages.url.extracting')],
+    [30,  _('jobs.stages.url.scoring')],
+    [999, _('jobs.stages.url.still_working')],
+] | tojson %}
 
 {% block content %}
 
@@ -188,7 +214,12 @@
             <div class="typeahead-wrap flex-1">
               <input type="text" name="queries"
                      x-model="queries[idx].value"
-                     :placeholder="idx === 0 ? '{{ _('jobs.form.job_placeholder_first') }}' : '{{ _('jobs.form.job_placeholder_more') }}'"
+                     {# First-row placeholder personalises to the user's
+                        actual role when their resume has been AI-summarised.
+                        Falls back to the generic label otherwise. Mehran
+                        2026-08-25: generic "Especialista en Revit" reads
+                        as AEC-biased for non-AEC users. #}
+                     :placeholder="idx === 0 ? '{% if resume_role_label %}{{ _('jobs.form.job_placeholder_first_personal', role=resume_role_label) }}{% else %}{{ _('jobs.form.job_placeholder_first_generic') }}{% endif %}' : '{{ _('jobs.form.job_placeholder_more') }}'"
                      required
                      :disabled="running"
                      autocomplete="off"
@@ -288,7 +319,7 @@
 
     {# ─── PANEL B: targeted analysis (URL) ─── #}
     <div x-show="mode === 'targeted'" x-cloak
-         x-data="{ ...longOp([[5,'Fetching the page…'],[15,'Extracting job details from the layout…'],[30,'Scoring against your resume…'],[999,'Still working — some sites take a bit']], 'Import') }">
+         x-data="{ ...longOp({{ URL_STAGES }}, 'Import') }">
       <form hx-post="/jobs/from-url"
             hx-target="#from-url-feedback"
             hx-swap="innerHTML"

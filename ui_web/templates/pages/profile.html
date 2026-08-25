@@ -213,12 +213,16 @@
      accepted phrase means editing deps.py only. #}
   {% set _delete_phrases_json = DANGER_DELETE_PHRASES | list | tojson %}
   {% set _reset_phrases_json = DANGER_RESET_PHRASES | list | tojson %}
+  {# x-data attribute MUST be single-quoted: tojson emits double-quoted
+     JSON strings, and embedding them in a double-quoted attribute would
+     close the attribute on the first inner ". Keep string literals
+     inside this block double-quoted for the same reason. #}
   <section class="card-quiet mt-6"
-           x-data="{
+           x-data='{
              deleteAllModal: false,
              resetStatsModal: false,
-             deleteAllPhrase: '',
-             resetStatsPhrase: '',
+             deleteAllPhrase: "",
+             resetStatsPhrase: "",
              DELETE_PHRASES: {{ _delete_phrases_json }},
              RESET_PHRASES: {{ _reset_phrases_json }},
              deleteAllOk() {
@@ -227,7 +231,7 @@
              resetStatsOk() {
                return this.RESET_PHRASES.includes(this.resetStatsPhrase.trim().toLowerCase());
              },
-           }">
+           }'>
     <div class="text-label mb-2 inline-flex items-center gap-1.5">
       <i class="ph-thin ph-warning-circle i-4" style="color: oklch(var(--er) / 0.8);"></i>
       {{ _('profile.danger.title') }}
