@@ -1,6 +1,6 @@
 name: Deploy to Fly.io
 
-# Auto-deploy every push to main to all 3 per-user apps in parallel.
+# Auto-deploy every push to main to all per-user apps in parallel.
 # Also manually triggerable from the Actions tab (workflow_dispatch).
 #
 # Setup (one-time):
@@ -42,6 +42,7 @@ jobs:
           - jobbotv2
           - jobbotv2-melissa
           - jobbotv2-hermana
+          - jobbotv2-andrea
     steps:
       - uses: actions/checkout@v4
 

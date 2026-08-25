@@ -1,8 +1,8 @@
 # Jobot
 
-A local-first AI job-search assistant. Search boards, get AI-scored matches, tailor your resume + cover letter for each role, and track your applications — all on your own Mac. Data never leaves your machine except for LLM calls to Google Gemini.
+An AI job-search assistant. Search boards, get AI-scored matches, tailor your resume + cover letter for each role, and track your applications — either locally on your Mac or on your own private Fly.io instance. Data never leaves your instance except for LLM calls to Google Gemini.
 
-Built for AEC (architecture / engineering / construction) job hunters in Ottawa, but the pipeline is domain-agnostic.
+Originally built for AEC (architecture / engineering / construction) job hunters in Ottawa; the scoring pipeline is being generalized to work across any domain from the candidate's own resume context (see `docs/requirements/REQ-005-remove-aec-scoring-bias.md`).
 
 ## Quick start (macOS)
 
@@ -29,7 +29,7 @@ Built for AEC (architecture / engineering / construction) job hunters in Ottawa,
 
 ## Requirements
 
-- macOS (Windows/Linux untested but likely works — just skip the `.command` scripts and use `./run.sh`)
+- macOS for the local install path; Linux via the Fly.io deploy path (Docker image is Debian-based)
 - Python 3.10 or newer
 - A free Google Gemini API key ([get one at aistudio.google.com](https://aistudio.google.com))
 
@@ -48,15 +48,19 @@ Server boots at `http://127.0.0.1:8000`.
 
 ## Deploy to Fly.io
 
-For remote single-user testing on Fly.io's free tier:
+One app per user — full data isolation, own volume, own secrets, own URL. Poor-man's multi-tenancy until proper auth ships (see [`docs/decisions/ADR-001-single-tenant-per-user-fly-app.md`](docs/decisions/ADR-001-single-tenant-per-user-fly-app.md)).
 
 ```bash
-brew install flyctl && fly auth signup   # one-time setup
-bash scripts/deploy-fly.sh               # first + every subsequent deploy
+brew install flyctl && fly auth signup           # one-time setup
+bash scripts/deploy-fly.sh                       # deploy the base app (fly.toml)
+bash scripts/deploy-fly.sh <name>                # deploy an extra per-user app: jobbotv2-<name>
+KEY=<their_gemini_key> bash scripts/deploy-fly.sh <name>   # with their own Gemini key
 ```
+
+Push-to-deploy is wired via `.github/workflows/deploy-fly.yml` — every push to `main` deploys all per-user apps in parallel. Add new apps to the matrix there (and in `pulse.yml` for the weekly BI report).
 
 Full walkthrough (volumes, secrets, logs, DB access, IP-block caveats): [`docs/FLY_DEPLOY.md`](docs/FLY_DEPLOY.md).
 
 ## License
 
-MIT
+[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal, research, hobby, and noncommercial-organization use. Commercial use requires a separate agreement with the author. Reading, learning from, and studying the code is fine; using it (or derivative work) as part of a paid product or commercial offering is not.

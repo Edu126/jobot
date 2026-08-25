@@ -36,13 +36,14 @@ jobs:
     strategy:
       # A failure on one app shouldn't skip the others — each Fly volume
       # is independent, and losing one week's report on one app is not
-      # a reason to lose it on all three.
+      # a reason to lose it on all the others.
       fail-fast: false
       matrix:
         app:
           - jobbotv2
           - jobbotv2-melissa
           - jobbotv2-hermana
+          - jobbotv2-andrea
     steps:
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
