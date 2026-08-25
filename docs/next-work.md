@@ -1,6 +1,44 @@
-# Next Sprint — i18n + Geography + BI Agent
+# Next Sprint — Scoring rework (Sprint 7)
 
-**Status:** locked plan, ready to execute.
+**Status:** planned; not yet started as of 2026-08-25.
+**Date:** 2026-08-25 (current entry). Prior sprint kept below for history.
+**Related:** [REQ-004](requirements/REQ-004-section-based-scoring.md),
+[REQ-005](requirements/REQ-005-remove-aec-scoring-bias.md),
+[REQ-006](requirements/REQ-006-aec-cleanup-search-matching-seeds.md),
+[ADR-006](decisions/ADR-006-section-based-scoring-llm-evidence-backend-math.md),
+[ADR-007](decisions/ADR-007-domain-neutral-persona-from-resume-context.md).
+
+## What's the sprint
+Section-based scoring (LLM produces per-section evidence, backend
+does the math) + domain-neutral persona derived from resume context
+(remove baked-in AEC assumptions in search seeds, matching, and
+prompts). Requirements and ADRs already written; implementation is
+what's left.
+
+## 2026-08-25 hotfix detour (not Sprint 7)
+Mehran feedback shipped as 6 commits in an unplanned session:
+1. `08e9619` — cache key gains `lang` (schema v13 + migration).
+2. `216c0c1` — feedback modal Send button (iOS Safari race).
+3. `d4750aa` — translate Matched / Gaps / Gaps flagged headers.
+4. `3f672f7` — north-star docs: `llm-surface.md` + `ADR-008`.
+5. `a2c0423` — /simplify pass (3 cleanups).
+6. `71fce5a` — reset feedback textarea on close (from /code-review).
+
+Sprint hygiene done: /simplify pass ran, /code-review medium partial
+(6/8 finders cut by session rate-limit — inline review closed the
+gap; only surviving actionable finding was the textarea reset).
+
+Known drift documented but NOT fixed in this detour (real work, own
+session): `resume_suggestions` and `resume_ai_summary` caches carry
+the same missing-`lang` bug class we fixed for `job_scores`.
+Flagged in [llm-surface.md](architecture/llm-surface.md) under
+"Known drift risks."
+
+---
+
+# Prior Sprint (shipped) — i18n + Geography + BI Agent
+
+**Status:** shipped (PRs 1–6 landed weeks 2026-08-18 → 2026-08-25).
 **Date:** 2026-08-18 (session-break checkpoint).
 **Supersedes:** the earlier session-break notes; that version conflated
 strategic direction and implementation.
