@@ -4,7 +4,7 @@
 
    Card is clickable: sets $store.selectedJob so the split-viewport right pane
    loads this job's details. Highlighted via ring when selected. #}
-<article class="card-quiet cursor-pointer transition-shadow job-swipeable"
+<article class="card-quiet cursor-pointer transition-shadow job-swipeable scroll-mt-20"
          data-job-id="{{ job.id }}"
          x-data="{
            ageDays: {% if job._age_days is defined %}{{ job._age_days }}{% else %}null{% endif %}

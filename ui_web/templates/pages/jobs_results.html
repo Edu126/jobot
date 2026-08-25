@@ -294,10 +294,17 @@
   {# RIGHT: sticky detail pane with its own scroll container.
      `max-h` + `overflow-y-auto` = the pane scrolls independently from the
      job list on the left. Scroll auto-resets to top when switching cards
-     (see `Alpine.store('selectedJob').select` in base.html). #}
-  <aside class="hidden lg:block">
+     (see `Alpine.store('selectedJob').select` in base.html).
+
+     `self-start` is critical — without it, the grid stretches the aside
+     to match the (very tall) left column, and `sticky` on the inner
+     div silently fails because the sticky element already occupies its
+     containing block's full scrollable height. Andrea 2026-08-25:
+     clicking a card at position 15 loaded the detail up at the natural
+     top of the aside (far above viewport), user saw nothing change. #}
+  <aside class="hidden lg:block self-start sticky top-20">
     <div id="job-detail-scroll"
-         class="sticky top-20 overflow-y-auto"
+         class="overflow-y-auto"
          style="max-height: calc(100vh - 6rem);">
       <div id="job-detail-pane" class="card-quiet min-h-[300px]">
         <div class="text-body-muted text-sm text-center py-16">

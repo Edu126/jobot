@@ -96,6 +96,16 @@
           const scroll = document.getElementById(isMobile ? 'mobile-detail-scroll' : 'job-detail-scroll');
           if (scroll) scroll.scrollTop = 0;
 
+          // Desktop: pin the clicked card to the top of the viewport so
+          // the sticky detail pane appears right next to it (not floating
+          // near card #1 when the user clicked card #15). scroll-margin-top
+          // covers the sticky header. Skip on mobile — the bottom sheet
+          // covers the list entirely.
+          if (!isMobile) {
+            const card = document.querySelector(`[data-job-id="${CSS.escape(id)}"]`);
+            if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+
           // Start the 3-second "actually read this" timer. Only POSTs if
           // the same id is still selected 3s later — switching cards
           // cancels via the clearTimeout above. Skip if we already
