@@ -110,7 +110,7 @@
   {% if tailored.tailoring_warnings %}
   <div class="rounded-lg p-3 text-sm" style="background: hsl(35 85% 96%); border: 1px solid hsl(35 70% 82%);">
     <div class="text-label mb-1 inline-flex items-center gap-1" style="color: hsl(28 75% 32%);">
-      <i class="ph-thin ph-warning i-4"></i> Gaps flagged
+      <i class="ph-thin ph-warning i-4"></i> {{ _('jobs.gaps_flagged') }}
     </div>
     <ul class="list-disc pl-5 space-y-0.5">
       {% for w in tailored.tailoring_warnings %}<li>{{ w }}</li>{% endfor %}

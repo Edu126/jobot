@@ -205,6 +205,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.top_matches.title": "Top matches for you",
         "jobs.top_matches.curated": "curated",
         "jobs.top_matches.subtitle": "Best-scoring jobs across your {n} recent searches. Click any to see full details.",
+        # Score card / detail — chip section headers
+        "jobs.matched": "Matched",
+        "jobs.gaps": "Gaps",
+        "jobs.gaps_flagged": "Gaps flagged",
         # Filters
         "filters.only_new.tooltip": "Only jobs first seen in the last 48 hours",
         "filters.hide_viewed.tooltip": "Hide jobs you've already spent time reading",
@@ -451,6 +455,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.top_matches.title": "Mejores coincidencias para ti",
         "jobs.top_matches.curated": "seleccionadas",
         "jobs.top_matches.subtitle": "Empleos mejor puntuados entre tus {n} búsquedas recientes. Toca cualquiera para ver los detalles.",
+        # Score card / detail — chip section headers
+        "jobs.matched": "Coincide",
+        "jobs.gaps": "Brechas",
+        "jobs.gaps_flagged": "Brechas señaladas",
         # Filtros
         "filters.only_new.tooltip": "Solo empleos vistos por primera vez en las últimas 48 horas",
         "filters.hide_viewed.tooltip": "Ocultar empleos que ya leíste con atención",
