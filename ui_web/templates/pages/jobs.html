@@ -2,10 +2,16 @@
 {% block title %}Jobs — Jobot{% endblock %}
 {% block container_class %}max-w-7xl{% endblock %}
 
-{# Loading-stage arrays for longOp(). Strings go through _() so the
-   overlay speaks the user's UI language; tojson emits a JS-safe array.
-   Adding a stage = add one row + one i18n key per language. #}
-{% set SEARCH_STAGES = [
+{% block content %}
+
+{# Loading-stage arrays for longOp(). Set as JS globals via a <script>
+   tag rather than string-substituted into an x-data attribute — tojson
+   emits double-quoted JSON strings which would close a double-quoted
+   x-data attribute early (see feedback_tojson_in_html_attribute memory
+   / REQ-007). Adding a stage = one row here + matching i18n key pairs
+   in ui_web/i18n.py. Script runs before Alpine reads x-data. #}
+<script>
+  window.__JOBOT_STAGES_SEARCH = {{ [
     [5,   _('jobs.stages.search.starting')],
     [15,  _('jobs.stages.search.linkedin')],
     [30,  _('jobs.stages.search.indeed')],
@@ -13,9 +19,8 @@
     [60,  _('jobs.stages.search.descriptions')],
     [80,  _('jobs.stages.search.dedup')],
     [999, _('jobs.stages.search.still_working')],
-] | tojson %}
-
-{% set MULTI_STAGES = [
+  ] | tojson | safe }};
+  window.__JOBOT_STAGES_MULTI = {{ [
     [30,  _('jobs.stages.multi.first')],
     [75,  _('jobs.stages.multi.cool1')],
     [130, _('jobs.stages.multi.second')],
@@ -23,16 +28,14 @@
     [230, _('jobs.stages.multi.third')],
     [280, _('jobs.stages.multi.organizing')],
     [999, _('jobs.stages.multi.still_working')],
-] | tojson %}
-
-{% set URL_STAGES = [
+  ] | tojson | safe }};
+  window.__JOBOT_STAGES_URL = {{ [
     [5,   _('jobs.stages.url.fetching')],
     [15,  _('jobs.stages.url.extracting')],
     [30,  _('jobs.stages.url.scoring')],
     [999, _('jobs.stages.url.still_working')],
-] | tojson %}
-
-{% block content %}
+  ] | tojson | safe }};
+</script>
 
 <div class="mb-6 space-y-2">
   <h1 class="text-display">{{ _('jobs.title') }}</h1>
@@ -88,7 +91,7 @@
     {# ─── PANEL A: broad search ─── #}
     <div x-show="mode === 'search'"
          x-data="{
-           ...longOp({{ MULTI_STAGES }}, 'Search'),
+           ...longOp(window.__JOBOT_STAGES_MULTI, 'Search'),
            queries: [{value: ''}],
            locationValue: '{{ (get_setting("home_city") or "Ottawa, Ontario, Canada") | replace("'", "\\'") }}',
            /* Single string tracks which typeahead is open: '' | 'loc' | 'q-N'.
@@ -319,7 +322,7 @@
 
     {# ─── PANEL B: targeted analysis (URL) ─── #}
     <div x-show="mode === 'targeted'" x-cloak
-         x-data="{ ...longOp({{ URL_STAGES }}, 'Import') }">
+         x-data="{ ...longOp(window.__JOBOT_STAGES_URL, 'Import') }">
       <form hx-post="/jobs/from-url"
             hx-target="#from-url-feedback"
             hx-swap="innerHTML"

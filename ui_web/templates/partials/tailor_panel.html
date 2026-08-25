@@ -1,12 +1,21 @@
-{# Tailor drawer body. Injected by HTMX when user clicks "Tailor" on a card. #}
-{% set TAILOR_STAGES = [
+{# Tailor drawer body. Injected by HTMX when user clicks "Tailor" on a card.
+
+   TAILOR_STAGES is set on `window` via a <script> tag rather than string-
+   substituted into the x-data attribute — tojson emits double-quoted
+   JSON strings that would close a double-quoted attribute early. See
+   feedback_tojson_in_html_attribute memory / REQ-007. Script runs when
+   the drawer HTML is swapped in; Alpine picks up window.__JOBOT_STAGES_TAILOR
+   when it evaluates the x-data expression below. #}
+<script>
+  window.__JOBOT_STAGES_TAILOR = {{ [
     [5,   _('tailor.stages.reading')],
     [15,  _('tailor.stages.analyzing')],
     [30,  _('tailor.stages.bullets')],
     [45,  _('tailor.stages.cover_letter')],
     [90,  _('tailor.stages.polishing')],
     [999, _('tailor.stages.still_working')],
-] | tojson %}
+  ] | tojson | safe }};
+</script>
 
 <div class="space-y-6">
 
@@ -32,7 +41,7 @@
        the panel was first rendered with runs=[]. Server-rendered initial value
        covers the case where the drawer opens for a job that already has history. #}
     <div x-data="{
-           ...longOp({{ TAILOR_STAGES }}, 'Tailoring'),
+           ...longOp(window.__JOBOT_STAGES_TAILOR, 'Tailoring'),
            level: '{{ default_level }}',
            hasAnyRuns: {{ 'true' if runs else 'false' }}
          }">
