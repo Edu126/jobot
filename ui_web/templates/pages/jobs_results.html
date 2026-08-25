@@ -27,6 +27,14 @@
          // the settled page defaults to 'quality only'. In the fresh view we
          // don't auto-snap — the user came here to see fresh material.
          $store.filters.minScore = 0;
+         // hideFrench default (true) is a Canadian bilingual-market
+         // assumption. On UI=es the toggle is hidden entirely (Colombian /
+         // Spanish users have no use for it), so keep the underlying value
+         // consistent with the missing UI — otherwise Andrea saw an
+         // invisible active filter hiding ~25 of 31 jobs (2026-08-25).
+         {% if current_ui_language() == 'es' %}
+         $store.filters.hideFrench = false;
+         {% endif %}
          // Score updater called by OOB batch script per newly-scored job.
          // Each call = one previously-pending job now has a real score, so
          // we decrement the pending counter and auto-snap when it hits 0.
