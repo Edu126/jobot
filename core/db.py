@@ -29,6 +29,25 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 SCHEMA_VERSION = 13
 
+# Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
+# wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
+# installs) and the v13 migration (rebuild-and-copy), so a future
+# column change lands in exactly one place instead of drifting between
+# the two DDLs.
+_JOB_SCORES_BODY = """
+    resume_id    INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+    job_id       TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    lang         TEXT NOT NULL DEFAULT '',
+    score        INTEGER NOT NULL,
+    verdict      TEXT NOT NULL,
+    reasoning    TEXT NOT NULL,
+    matched_json TEXT NOT NULL,
+    gaps_json    TEXT NOT NULL,
+    model        TEXT NOT NULL,
+    scored_at    TEXT NOT NULL,
+    PRIMARY KEY (resume_id, job_id, lang)
+"""
+
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -84,19 +103,7 @@ CREATE TABLE IF NOT EXISTS applications (
 );
 CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
 
-CREATE TABLE IF NOT EXISTS job_scores (
-    resume_id     INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
-    job_id        TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-    lang          TEXT NOT NULL DEFAULT '',
-    score         INTEGER NOT NULL,
-    verdict       TEXT NOT NULL,
-    reasoning     TEXT NOT NULL,
-    matched_json  TEXT NOT NULL,
-    gaps_json     TEXT NOT NULL,
-    model         TEXT NOT NULL,
-    scored_at     TEXT NOT NULL,
-    PRIMARY KEY (resume_id, job_id, lang)
-);
+CREATE TABLE IF NOT EXISTS job_scores (__JOB_SCORES_BODY__);
 CREATE INDEX IF NOT EXISTS idx_job_scores_resume ON job_scores(resume_id);
 
 CREATE TABLE IF NOT EXISTS saved_searches (
@@ -273,6 +280,8 @@ CREATE TABLE IF NOT EXISTS admin_reports (
 CREATE INDEX IF NOT EXISTS idx_admin_reports_generated ON admin_reports(generated_at);
 """
 
+_SCHEMA_SQL = _SCHEMA_SQL.replace("__JOB_SCORES_BODY__", _JOB_SCORES_BODY.strip())
+
 
 # Seeded on first init if the table is empty. User can edit/delete/add from Profile.
 _DEFAULT_SAVED_SEARCHES = [
@@ -329,20 +338,8 @@ def init_db(path: Path = DB_PATH) -> None:
         # a prior language re-hit their old cache.
         scores_cols = {r["name"] for r in conn.execute("PRAGMA table_info(job_scores)").fetchall()}
         if scores_cols and "lang" not in scores_cols:
-            conn.executescript("""
-                CREATE TABLE job_scores_new (
-                    resume_id    INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
-                    job_id       TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-                    lang         TEXT NOT NULL DEFAULT '',
-                    score        INTEGER NOT NULL,
-                    verdict      TEXT NOT NULL,
-                    reasoning    TEXT NOT NULL,
-                    matched_json TEXT NOT NULL,
-                    gaps_json    TEXT NOT NULL,
-                    model        TEXT NOT NULL,
-                    scored_at    TEXT NOT NULL,
-                    PRIMARY KEY (resume_id, job_id, lang)
-                );
+            conn.executescript(f"""
+                CREATE TABLE job_scores_new ({_JOB_SCORES_BODY});
                 INSERT INTO job_scores_new
                     (resume_id, job_id, lang, score, verdict, reasoning,
                      matched_json, gaps_json, model, scored_at)

@@ -27,6 +27,13 @@ from typing import Any
 
 from core import db
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
+from core.settings import get_reasoning_language
+
+
+def _resolve_lang(lang: str | None) -> str:
+    """Fall back to the request's UI language when the caller hasn't
+    pinned one. Keeps cache reads/writes and the prompt in agreement."""
+    return lang if lang is not None else get_reasoning_language()
 
 
 DEFAULT_BATCH_SIZE = 6
@@ -82,9 +89,7 @@ def score_jobs(
     if not jobs or not resume_text.strip():
         return {}
 
-    from core.settings import get_reasoning_language
-    if lang is None:
-        lang = get_reasoning_language()
+    lang = _resolve_lang(lang)
 
     all_ids = [j["id"] for j in jobs]
     results: dict[str, ScoreResult] = {}
@@ -139,9 +144,7 @@ def score_single_no_cache(
         return None
     if client.all_models_exhausted():
         return None
-    from core.settings import get_reasoning_language
-    if lang is None:
-        lang = get_reasoning_language()
+    lang = _resolve_lang(lang)
     resume_snippet = resume_text.strip()[:MAX_RESUME_CHARS]
     try:
         results = _score_batch(resume_snippet, [job], client, lang=lang)
@@ -158,9 +161,7 @@ def score_stats(
 ) -> dict[str, int]:
     """Small helper for the UI: how many scores came from cache vs fresh in
     this render. Doesn't hit Gemini — pure SQLite lookup."""
-    from core.settings import get_reasoning_language
-    if lang is None:
-        lang = get_reasoning_language()
+    lang = _resolve_lang(lang)
     cached = db.get_cached_scores(resume_id, all_job_ids, lang)
     total = len(all_job_ids)
     from_cache = sum(1 for jid in all_job_ids if jid in cached)
