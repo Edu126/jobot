@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -87,6 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
 CREATE TABLE IF NOT EXISTS job_scores (
     resume_id     INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
     job_id        TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    lang          TEXT NOT NULL DEFAULT '',
     score         INTEGER NOT NULL,
     verdict       TEXT NOT NULL,
     reasoning     TEXT NOT NULL,
@@ -94,7 +95,7 @@ CREATE TABLE IF NOT EXISTS job_scores (
     gaps_json     TEXT NOT NULL,
     model         TEXT NOT NULL,
     scored_at     TEXT NOT NULL,
-    PRIMARY KEY (resume_id, job_id)
+    PRIMARY KEY (resume_id, job_id, lang)
 );
 CREATE INDEX IF NOT EXISTS idx_job_scores_resume ON job_scores(resume_id);
 
@@ -319,6 +320,40 @@ def init_db(path: Path = DB_PATH) -> None:
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(jobs)").fetchall()}
         if "job_url_direct" not in cols:
             conn.execute("ALTER TABLE jobs ADD COLUMN job_url_direct TEXT")
+
+        # v13 migration: `lang` joins the job_scores PK so cached gaps
+        # /reasoning don't leak across UI-language changes. Old rows keep
+        # lang='' — they simply age out as fresh runs write current-lang
+        # rows next to them. Cheap (a handful of KB of zombie rows) and
+        # non-destructive vs. wiping; also lets a user who flips back to
+        # a prior language re-hit their old cache.
+        scores_cols = {r["name"] for r in conn.execute("PRAGMA table_info(job_scores)").fetchall()}
+        if scores_cols and "lang" not in scores_cols:
+            conn.executescript("""
+                CREATE TABLE job_scores_new (
+                    resume_id    INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+                    job_id       TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                    lang         TEXT NOT NULL DEFAULT '',
+                    score        INTEGER NOT NULL,
+                    verdict      TEXT NOT NULL,
+                    reasoning    TEXT NOT NULL,
+                    matched_json TEXT NOT NULL,
+                    gaps_json    TEXT NOT NULL,
+                    model        TEXT NOT NULL,
+                    scored_at    TEXT NOT NULL,
+                    PRIMARY KEY (resume_id, job_id, lang)
+                );
+                INSERT INTO job_scores_new
+                    (resume_id, job_id, lang, score, verdict, reasoning,
+                     matched_json, gaps_json, model, scored_at)
+                SELECT resume_id, job_id, '', score, verdict, reasoning,
+                       matched_json, gaps_json, model, scored_at
+                FROM job_scores;
+                DROP TABLE job_scores;
+                ALTER TABLE job_scores_new RENAME TO job_scores;
+                CREATE INDEX IF NOT EXISTS idx_job_scores_resume ON job_scores(resume_id);
+            """)
+
         conn.execute(
             "INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
             (str(SCHEMA_VERSION),),
@@ -1122,10 +1157,13 @@ def save_resume_ai_summary(
 def get_cached_scores(
     resume_id: int,
     job_ids: Iterable[str],
+    lang: str,
     path: Path = DB_PATH,
 ) -> dict[str, dict]:
     """Return {job_id: score_row_dict} for any job in job_ids that already
-    has a score for this resume. Missing jobs are simply omitted."""
+    has a score for this resume AT THIS UI LANGUAGE. Missing jobs are
+    simply omitted; rows scored under a different `lang` are treated as
+    misses so callers regenerate in the current language."""
     job_ids = list(job_ids)
     if not job_ids:
         return {}
@@ -1135,8 +1173,8 @@ def get_cached_scores(
             f"""SELECT job_id, score, verdict, reasoning,
                        matched_json, gaps_json, model, scored_at
                 FROM job_scores
-                WHERE resume_id = ? AND job_id IN ({placeholders})""",
-            (resume_id, *job_ids),
+                WHERE resume_id = ? AND lang = ? AND job_id IN ({placeholders})""",
+            (resume_id, lang, *job_ids),
         ).fetchall()
         return {r["job_id"]: dict(r) for r in rows}
 
@@ -1144,10 +1182,17 @@ def get_cached_scores(
 def save_scores(
     resume_id: int,
     scores: Iterable[dict],
+    lang: str,
     path: Path = DB_PATH,
 ) -> int:
-    """Upsert a batch of scores for one resume. Each score dict must have:
-    job_id, score, verdict, reasoning, matched (list), gaps (list), model.
+    """Upsert a batch of scores for one resume + language. Each score dict
+    must have: job_id, score, verdict, reasoning, matched (list),
+    gaps (list), model.
+
+    `lang` is the UI language the reasoning/matched/gaps were generated in
+    (see get_reasoning_language). It joins the PK so a Spanish score and
+    an English score for the same (resume, job) coexist — no wiping when
+    the user flips language.
 
     Returns count written. Jobs referenced by job_id must already exist in
     the jobs table (FK enforced)."""
@@ -1157,10 +1202,10 @@ def save_scores(
         for s in scores:
             conn.execute(
                 """INSERT INTO job_scores (
-                    resume_id, job_id, score, verdict, reasoning,
+                    resume_id, job_id, lang, score, verdict, reasoning,
                     matched_json, gaps_json, model, scored_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(resume_id, job_id) DO UPDATE SET
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(resume_id, job_id, lang) DO UPDATE SET
                     score = excluded.score,
                     verdict = excluded.verdict,
                     reasoning = excluded.reasoning,
@@ -1171,6 +1216,7 @@ def save_scores(
                 (
                     resume_id,
                     s["job_id"],
+                    lang,
                     int(s["score"]),
                     str(s["verdict"]),
                     str(s.get("reasoning", "")),

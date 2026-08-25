@@ -55,6 +55,7 @@ from core.matching.semantic_score import (
     score_jobs as score_jobs_batch,
     score_single_no_cache,
 )
+from core.settings import get_reasoning_language
 from core.resume.writer import render_cover_letter_docx, render_docx
 
 from .. import state
@@ -143,7 +144,7 @@ def _list_top_matches(min_score: int = 65, limit: int = 20) -> tuple[list[dict],
 
     # Single DB query for all scores + first_seen (for "new job" flag)
     all_ids = list({j["id"] for j, _, _ in all_jobs})
-    scores = db.get_cached_scores(resume_id, all_ids)
+    scores = db.get_cached_scores(resume_id, all_ids, get_reasoning_language())
     first_seens = db.get_first_seen_batch(all_ids)
 
     # Dedupe by URL (fallback to id if URL missing). Keep highest score per URL.
@@ -630,7 +631,7 @@ async def jobs_results(request: Request, cache_key: str):
     if resume and jobs_dicts:
         all_ids = [j["id"] for j in jobs_dicts]
         from core.matching.semantic_score import _row_to_result
-        cached_rows = db.get_cached_scores(int(resume["id"]), all_ids)
+        cached_rows = db.get_cached_scores(int(resume["id"]), all_ids, get_reasoning_language())
         for jid, row in cached_rows.items():
             ai_scores[jid] = _row_to_result(row)
 
@@ -789,7 +790,7 @@ async def jobs_score_batch(request: Request, cache_key: str):
 
     resume_id = int(resume["id"])
     all_ids = [j.id for j in cached.jobs]
-    already_scored_ids = set(db.get_cached_scores(resume_id, all_ids).keys())
+    already_scored_ids = set(db.get_cached_scores(resume_id, all_ids, get_reasoning_language()).keys())
 
     # Pending = jobs still uncached against THIS resume. Order matches
     # the cached list order so the visual "spinner → badge" cascade
@@ -1449,7 +1450,7 @@ async def jobs_from_url(
                 client=client,
             )
             if result is not None:
-                db.save_scores(int(resume["id"]), [result.to_dict()])
+                db.save_scores(int(resume["id"]), [result.to_dict()], get_reasoning_language())
         except Exception:
             # Non-fatal — the analyzed page can render without a score
             pass
@@ -1471,7 +1472,7 @@ async def jobs_analyzed(request: Request, job_id: str):
     resume = db.get_current_resume()
     ai = None
     if resume:
-        cached = db.get_cached_scores(int(resume["id"]), [job_id])
+        cached = db.get_cached_scores(int(resume["id"]), [job_id], get_reasoning_language())
         row = cached.get(job_id)
         if row:
             import json as _json
@@ -1523,7 +1524,7 @@ async def jobs_detail(request: Request, job_id: str):
     resume = db.get_current_resume()
     ai = None
     if resume:
-        cached = db.get_cached_scores(int(resume["id"]), [job_id])
+        cached = db.get_cached_scores(int(resume["id"]), [job_id], get_reasoning_language())
         row = cached.get(job_id)
         if row:
             import json as _json
@@ -1794,7 +1795,7 @@ async def jobs_tailor_generate(
     # If the before-score is missing (job wasn't scored yet) or the after-score
     # fails (quota / model error), we degrade gracefully: no match block shown.
     resume_id = int(resume["id"])
-    before_row = db.get_cached_scores(resume_id, [job_id]).get(job_id)
+    before_row = db.get_cached_scores(resume_id, [job_id], get_reasoning_language()).get(job_id)
     after_result = score_single_no_cache(
         resume_text=tailored_to_text(tailored),
         job=job,

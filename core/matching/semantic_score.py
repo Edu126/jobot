@@ -63,6 +63,7 @@ def score_jobs(
     *,
     batch_size: int = DEFAULT_BATCH_SIZE,
     use_cache: bool = True,
+    lang: str | None = None,
 ) -> dict[str, ScoreResult]:
     """Score every job in `jobs` against the given resume.
 
@@ -72,15 +73,24 @@ def score_jobs(
 
     The `resume_text` should already be trimmed by the caller if desired;
     we truncate to MAX_RESUME_CHARS regardless for prompt sanity.
+
+    `lang` is the language for reasoning/matched/gaps. Defaults to the
+    current UI language via `get_reasoning_language()` — plumbed through
+    both the cache key and the prompt so a language flip produces cache
+    misses (regen in new language) instead of stale-language chips.
     """
     if not jobs or not resume_text.strip():
         return {}
+
+    from core.settings import get_reasoning_language
+    if lang is None:
+        lang = get_reasoning_language()
 
     all_ids = [j["id"] for j in jobs]
     results: dict[str, ScoreResult] = {}
 
     if use_cache:
-        for jid, row in db.get_cached_scores(resume_id, all_ids).items():
+        for jid, row in db.get_cached_scores(resume_id, all_ids, lang).items():
             results[jid] = _row_to_result(row)
 
     uncached = [j for j in jobs if j["id"] not in results]
@@ -100,14 +110,14 @@ def score_jobs(
         if client.all_models_exhausted():
             break
         try:
-            batch_results = _score_batch(resume_snippet, batch, client)
+            batch_results = _score_batch(resume_snippet, batch, client, lang=lang)
         except QuotaExhaustedError:
             # Fallback chain exhausted mid-run — stop cleanly with partial data.
             break
         for r in batch_results:
             results[r.job_id] = r
         if batch_results:
-            db.save_scores(resume_id, [r.to_dict() for r in batch_results])
+            db.save_scores(resume_id, [r.to_dict() for r in batch_results], lang)
 
     return results
 
@@ -116,6 +126,8 @@ def score_single_no_cache(
     resume_text: str,
     job: dict,
     client: GeminiClient,
+    *,
+    lang: str | None = None,
 ) -> ScoreResult | None:
     """One-shot score for arbitrary resume text vs a single job. Does NOT
     touch the DB cache — used to re-score a *tailored* resume where we don't
@@ -127,9 +139,12 @@ def score_single_no_cache(
         return None
     if client.all_models_exhausted():
         return None
+    from core.settings import get_reasoning_language
+    if lang is None:
+        lang = get_reasoning_language()
     resume_snippet = resume_text.strip()[:MAX_RESUME_CHARS]
     try:
-        results = _score_batch(resume_snippet, [job], client)
+        results = _score_batch(resume_snippet, [job], client, lang=lang)
     except QuotaExhaustedError:
         return None
     return results[0] if results else None
@@ -139,10 +154,14 @@ def score_stats(
     results: dict[str, ScoreResult],
     all_job_ids: list[str],
     resume_id: int,
+    lang: str | None = None,
 ) -> dict[str, int]:
     """Small helper for the UI: how many scores came from cache vs fresh in
     this render. Doesn't hit Gemini — pure SQLite lookup."""
-    cached = db.get_cached_scores(resume_id, all_job_ids)
+    from core.settings import get_reasoning_language
+    if lang is None:
+        lang = get_reasoning_language()
+    cached = db.get_cached_scores(resume_id, all_job_ids, lang)
     total = len(all_job_ids)
     from_cache = sum(1 for jid in all_job_ids if jid in cached)
     fresh = sum(1 for jid in all_job_ids if jid in results and jid not in cached)
@@ -155,17 +174,20 @@ def _score_batch(
     resume: str,
     jobs: list[dict],
     client: GeminiClient,
+    *,
+    lang: str,
 ) -> list[ScoreResult]:
     """Score one batch. On non-quota failure, retry each job individually
     (unless already at size 1, which gives up silently). On QuotaExhausted,
     propagate up so callers can stop early. On partial response (missing
     job_ids), retry the missing ones individually.
 
-    Reasoning language comes from settings — user-facing strings (reasoning,
-    matched, gaps) render in the UI, so they follow the UI-language setting
-    (Spanish UI + English gaps reads as broken)."""
-    from core.settings import get_reasoning_language
-    prompt = _build_prompt(resume, jobs, reasoning_language=get_reasoning_language())
+    `lang` is passed by the top-level entry point (score_jobs /
+    score_single_no_cache) — user-facing strings (reasoning, matched,
+    gaps) render in the UI, so they must follow the current UI language
+    (Spanish UI + English gaps reads as broken). The cache key includes
+    lang too so a flip doesn't return stale-language rows."""
+    prompt = _build_prompt(resume, jobs, reasoning_language=lang)
     try:
         raw = client.generate_json(prompt)
     except QuotaExhaustedError:
@@ -176,7 +198,7 @@ def _score_batch(
         out: list[ScoreResult] = []
         for j in jobs:
             try:
-                out.extend(_score_batch(resume, [j], client))
+                out.extend(_score_batch(resume, [j], client, lang=lang))
             except QuotaExhaustedError:
                 raise
         return out
@@ -192,7 +214,7 @@ def _score_batch(
     if missing and len(jobs) > 1:
         for j in missing:
             try:
-                parsed.extend(_score_batch(resume, [j], client))
+                parsed.extend(_score_batch(resume, [j], client, lang=lang))
             except QuotaExhaustedError:
                 # Return what we got so far — outer loop stops on the next call
                 break
