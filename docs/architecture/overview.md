@@ -27,7 +27,8 @@ job-hunt patterns.
   + matched/gap evidence. Cached per (resume_id, job_id).
 - **`core/llm/`** — Gemini client with fallback chain, prompt
   templates for tailoring, per-identity daily cap accounting,
-  kill-switch (`LLM_DISABLED`).
+  kill-switch (`LLM_DISABLED`). Every call site across the codebase
+  is inventoried in [llm-surface.md](llm-surface.md).
 - **`core/resume/`** — resume parsing (deterministic + LLM re-parse
   fallback), ATS anomaly checks, contact extraction.
 - **`core/bi/pulse.py`** — weekly Gemini-authored markdown report over

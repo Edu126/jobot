@@ -9,6 +9,10 @@ Mandatory: requirement notes before features, ADRs at the moment of decision.
   checkable against it.
 - `docs/architecture/overview.md` — what jobot is, big pieces, boundaries.
 - `docs/architecture/components.md` — Mermaid diagram of the system shape.
+- `docs/architecture/llm-surface.md` — inventory of every Gemini call
+  site (site, batch, cache, language, output). Update when you add or
+  remove a call — [ADR-008](docs/decisions/ADR-008-prompt-conventions.md)
+  makes it a hard rule.
 - `docs/decisions/ADR-XXX-<slug>.md` — one decision per file, under 150 words.
 - `docs/requirements/REQ-XXX-<slug>.md` — the ask + the need underneath.
 - `docs/governance/GOV-XXX-<slug>.md` — who touches what data.
