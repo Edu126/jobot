@@ -1,11 +1,13 @@
-"""Pre-baked saved searches.
+"""Illustrative saved-search examples — not wired into any live route.
 
-Tuned for the AEC/construction roles user's boyfriend is targeting in
-Ottawa. Each entry is a label + JobSearchParams; the UI exposes them as
-a dropdown.
-
-To add more searches, edit this file — it's the cheapest source of truth
-until we add per-profile config in slice 4.
+REQ-006: this module used to hardcode 3 AEC/Ottawa presets for a single
+early user. The actual saved-searches feature is DB-backed
+(`db.list_saved_searches()` / the `saved_searches` table) and per-user
+editable, seeded empty (see `db._seed_saved_searches_if_empty`'s
+docstring) — a Sales/BI/tech user should never see AEC-tuned defaults.
+This module is kept only as a domain-neutral reference of the
+`JobSearchParams` shape for future template/preset work; nothing reads
+`SAVED_SEARCHES` at runtime today.
 """
 from __future__ import annotations
 
@@ -13,23 +15,23 @@ from .search import JobSearchParams
 
 
 SAVED_SEARCHES: dict[str, JobSearchParams] = {
-    "BIM Coordinator / Modeler": JobSearchParams(
-        query="BIM coordinator",
-        location="Ottawa, Ontario, Canada",
+    "BI / Data Analyst": JobSearchParams(
+        query="BI analyst",
+        location="Toronto, Ontario, Canada",
         distance=50,
         results_wanted=30,
         hours_old=168,
     ),
-    "Construction Estimator": JobSearchParams(
-        query="construction estimator",
-        location="Ottawa, Ontario, Canada",
+    "B2B Account Executive": JobSearchParams(
+        query="B2B account executive",
+        location="Bogota, Colombia",
         distance=50,
         results_wanted=30,
         hours_old=168,
     ),
     "Junior Project Coordinator": JobSearchParams(
-        query="junior project coordinator construction",
-        location="Ottawa, Ontario, Canada",
+        query="junior project coordinator",
+        location="Madrid, Spain",
         distance=50,
         results_wanted=30,
         hours_old=168,

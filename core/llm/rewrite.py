@@ -107,6 +107,7 @@ def rewrite_resume(
     level: Level,
     client: GeminiClient,
     company_context: str = "",
+    resume_id: int | None = None,
 ) -> dict[str, Any]:
     """Generate a tailored version of the parsed resume.
 
@@ -116,7 +117,14 @@ def rewrite_resume(
         - "tailoring_level": Level
 
     The original `parsed` is not mutated.
+
+    `resume_id`, when the caller has one, resolves the domain-neutral
+    persona line (ADR-007 + ADR-013) via `core.resume.ai_summary` — the
+    same profile scoring uses, so the candidate reads as the same person
+    across both. Falls back to a generic persona when omitted.
     """
+    from core.resume import ai_summary
+    persona = ai_summary.persona_line(resume_id) if resume_id else ai_summary.GENERIC_PERSONA
     sections = parsed.get("sections", {}) or {}
     contact = parsed.get("contact", {}) or {}
 
@@ -155,6 +163,7 @@ def rewrite_resume(
         level=level,
         company_context=company_context,
         output_language=get_output_language(),
+        persona=persona,
     )
 
     response = client.generate_json(prompt)

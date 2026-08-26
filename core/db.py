@@ -27,24 +27,36 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
 # installs) and the v13 migration (rebuild-and-copy), so a future
 # column change lands in exactly one place instead of drifting between
 # the two DDLs.
+#
+# v15 (ADR-006): sections_json + hard_requirements_json hold the
+# per-section LLM evidence and the version-gated hard-requirement list;
+# prompt_version/scoring_version gate cache hits — a row is only served
+# when BOTH match the currently active constants in semantic_score.py,
+# otherwise it's recomputed. Old rows keep '' and simply miss until
+# re-scored — additive columns, no rebuild needed (v15 uses ALTER TABLE
+# ADD COLUMN, unlike v13's PK-changing rebuild-and-copy).
 _JOB_SCORES_BODY = """
-    resume_id    INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
-    job_id       TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-    lang         TEXT NOT NULL DEFAULT '',
-    score        INTEGER NOT NULL,
-    verdict      TEXT NOT NULL,
-    reasoning    TEXT NOT NULL,
-    matched_json TEXT NOT NULL,
-    gaps_json    TEXT NOT NULL,
-    model        TEXT NOT NULL,
-    scored_at    TEXT NOT NULL,
+    resume_id              INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+    job_id                 TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    lang                   TEXT NOT NULL DEFAULT '',
+    score                  INTEGER NOT NULL,
+    verdict                TEXT NOT NULL,
+    reasoning              TEXT NOT NULL,
+    matched_json           TEXT NOT NULL,
+    gaps_json              TEXT NOT NULL,
+    sections_json          TEXT NOT NULL DEFAULT '{}',
+    hard_requirements_json TEXT NOT NULL DEFAULT '[]',
+    prompt_version         TEXT NOT NULL DEFAULT '',
+    scoring_version        TEXT NOT NULL DEFAULT '',
+    model                  TEXT NOT NULL,
+    scored_at              TEXT NOT NULL,
     PRIMARY KEY (resume_id, job_id, lang)
 """
 
@@ -60,10 +72,16 @@ _SUGGESTED_QUERIES_BODY = """
     PRIMARY KEY (resume_id, lang)
 """
 
+# v15 (ADR-013): domain + seniority ride along with role_label — same
+# call, same grounding contract, same cache row. Consumed as scoring/
+# rewrite persona input (core/resume/ai_summary.py::persona_line), not
+# rendered to the user, so they don't need their own grounding check.
 _RESUME_AI_SUMMARY_BODY = """
     resume_id         INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
     lang              TEXT NOT NULL DEFAULT '',
     role_label        TEXT,
+    domain            TEXT NOT NULL DEFAULT '',
+    seniority         TEXT NOT NULL DEFAULT '',
     first_impression  TEXT,
     suggestions_json  TEXT NOT NULL DEFAULT '[]',
     generated_at      TEXT NOT NULL,
@@ -301,18 +319,21 @@ _SCHEMA_SQL = (
 
 
 # Seeded on first init if the table is empty. User can edit/delete/add from Profile.
+# Unreachable — see _seed_saved_searches_if_empty's docstring below.
+# Kept as a domain-neutral shape reference only (REQ-006: this used to be
+# 3 AEC/Ottawa presets for a single early user).
 _DEFAULT_SAVED_SEARCHES = [
-    {"name": "BIM Coordinator / Modeler",
-     "query": "BIM coordinator",
-     "location": "Ottawa, Ontario, Canada",
+    {"name": "BI / Data Analyst",
+     "query": "BI analyst",
+     "location": "Toronto, Ontario, Canada",
      "hours_old": 168, "results_wanted": 30, "distance": 50},
-    {"name": "Construction Estimator",
-     "query": "construction estimator",
-     "location": "Ottawa, Ontario, Canada",
+    {"name": "B2B Account Executive",
+     "query": "B2B account executive",
+     "location": "Bogota, Colombia",
      "hours_old": 168, "results_wanted": 30, "distance": 50},
     {"name": "Junior Project Coordinator",
-     "query": "junior project coordinator construction",
-     "location": "Ottawa, Ontario, Canada",
+     "query": "junior project coordinator",
+     "location": "Madrid, Spain",
      "hours_old": 168, "results_wanted": 30, "distance": 50},
 ]
 
@@ -393,6 +414,28 @@ def init_db(path: Path = DB_PATH) -> None:
                 FROM resume_ai_summary;
                 DROP TABLE resume_ai_summary;
                 ALTER TABLE resume_ai_summary_new RENAME TO resume_ai_summary;
+            """)
+
+        # v15 migrations (ADR-006 + ADR-013): additive columns only, no PK
+        # change, so plain ADD COLUMN suffices (unlike v13/v14's rebuild-
+        # and-copy). Old rows read back with '' / '{}' / '[]' defaults —
+        # a '' prompt_version/scoring_version can never match the current
+        # constants, so old job_scores rows simply miss cache and get
+        # recomputed under the new prompt; no data is lost.
+        scores_cols = {r["name"] for r in conn.execute("PRAGMA table_info(job_scores)").fetchall()}
+        if scores_cols and "sections_json" not in scores_cols:
+            conn.executescript("""
+                ALTER TABLE job_scores ADD COLUMN sections_json TEXT NOT NULL DEFAULT '{}';
+                ALTER TABLE job_scores ADD COLUMN hard_requirements_json TEXT NOT NULL DEFAULT '[]';
+                ALTER TABLE job_scores ADD COLUMN prompt_version TEXT NOT NULL DEFAULT '';
+                ALTER TABLE job_scores ADD COLUMN scoring_version TEXT NOT NULL DEFAULT '';
+            """)
+
+        ras_cols = {r["name"] for r in conn.execute("PRAGMA table_info(resume_ai_summary)").fetchall()}
+        if ras_cols and "domain" not in ras_cols:
+            conn.executescript("""
+                ALTER TABLE resume_ai_summary ADD COLUMN domain TEXT NOT NULL DEFAULT '';
+                ALTER TABLE resume_ai_summary ADD COLUMN seniority TEXT NOT NULL DEFAULT '';
             """)
 
         conn.execute(
@@ -1187,7 +1230,7 @@ def get_resume_ai_summary(
     """
     with connect(path) as conn:
         row = conn.execute(
-            """SELECT role_label, first_impression, suggestions_json
+            """SELECT role_label, domain, seniority, first_impression, suggestions_json
                FROM resume_ai_summary WHERE resume_id = ? AND lang = ?""",
             (resume_id, lang),
         ).fetchone()
@@ -1199,6 +1242,8 @@ def get_resume_ai_summary(
         suggestions = []
     return {
         "role_label": row["role_label"] or "",
+        "domain": row["domain"] or "",
+        "seniority": row["seniority"] or "",
         "first_impression": row["first_impression"] or "",
         "suggestions": suggestions,
     }
@@ -1209,6 +1254,8 @@ def save_resume_ai_summary(
     *,
     lang: str,
     role_label: str,
+    domain: str = "",
+    seniority: str = "",
     first_impression: str,
     suggestions: list[dict],
     path: Path = DB_PATH,
@@ -1217,15 +1264,17 @@ def save_resume_ai_summary(
     with tx(path) as conn:
         conn.execute(
             """INSERT INTO resume_ai_summary
-               (resume_id, lang, role_label, first_impression, suggestions_json, generated_at)
-               VALUES (?, ?, ?, ?, ?, ?)
+               (resume_id, lang, role_label, domain, seniority, first_impression, suggestions_json, generated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(resume_id, lang) DO UPDATE SET
                  role_label = excluded.role_label,
+                 domain = excluded.domain,
+                 seniority = excluded.seniority,
                  first_impression = excluded.first_impression,
                  suggestions_json = excluded.suggestions_json,
                  generated_at = excluded.generated_at""",
             (
-                resume_id, lang, role_label, first_impression,
+                resume_id, lang, role_label, domain, seniority, first_impression,
                 json.dumps(suggestions, ensure_ascii=False), _now(),
             ),
         )
@@ -1237,12 +1286,16 @@ def get_cached_scores(
     resume_id: int,
     job_ids: Iterable[str],
     lang: str,
+    prompt_version: str,
+    scoring_version: str,
     path: Path = DB_PATH,
 ) -> dict[str, dict]:
     """Return {job_id: score_row_dict} for any job in job_ids that already
-    has a score for this resume AT THIS UI LANGUAGE. Missing jobs are
-    simply omitted; rows scored under a different `lang` are treated as
-    misses so callers regenerate in the current language."""
+    has a score for this resume AT THIS UI LANGUAGE, under the CURRENT
+    prompt/scoring version. Missing jobs are simply omitted; rows scored
+    under a different `lang`, `prompt_version`, or `scoring_version` are
+    treated as misses so callers regenerate (ADR-006's logical
+    invalidation — old rows aren't deleted, just no longer served)."""
     job_ids = list(job_ids)
     if not job_ids:
         return {}
@@ -1250,10 +1303,12 @@ def get_cached_scores(
         placeholders = ",".join("?" * len(job_ids))
         rows = conn.execute(
             f"""SELECT job_id, score, verdict, reasoning,
-                       matched_json, gaps_json, model, scored_at
+                       matched_json, gaps_json, sections_json, hard_requirements_json,
+                       model, scored_at
                 FROM job_scores
-                WHERE resume_id = ? AND lang = ? AND job_id IN ({placeholders})""",
-            (resume_id, lang, *job_ids),
+                WHERE resume_id = ? AND lang = ? AND prompt_version = ? AND scoring_version = ?
+                      AND job_id IN ({placeholders})""",
+            (resume_id, lang, prompt_version, scoring_version, *job_ids),
         ).fetchall()
         return {r["job_id"]: dict(r) for r in rows}
 
@@ -1262,16 +1317,22 @@ def save_scores(
     resume_id: int,
     scores: Iterable[dict],
     lang: str,
+    prompt_version: str,
+    scoring_version: str,
     path: Path = DB_PATH,
 ) -> int:
     """Upsert a batch of scores for one resume + language. Each score dict
     must have: job_id, score, verdict, reasoning, matched (list),
-    gaps (list), model.
+    gaps (list), sections (dict), hard_requirements (list), model.
 
     `lang` is the UI language the reasoning/matched/gaps were generated in
     (see get_reasoning_language). It joins the PK so a Spanish score and
     an English score for the same (resume, job) coexist — no wiping when
     the user flips language.
+
+    `prompt_version`/`scoring_version` are the constants active at scoring
+    time (ADR-006) — stamped on every row so a later prompt or weight
+    change can tell stale rows apart without deleting them.
 
     Returns count written. Jobs referenced by job_id must already exist in
     the jobs table (FK enforced)."""
@@ -1282,14 +1343,19 @@ def save_scores(
             conn.execute(
                 """INSERT INTO job_scores (
                     resume_id, job_id, lang, score, verdict, reasoning,
-                    matched_json, gaps_json, model, scored_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    matched_json, gaps_json, sections_json, hard_requirements_json,
+                    prompt_version, scoring_version, model, scored_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(resume_id, job_id, lang) DO UPDATE SET
                     score = excluded.score,
                     verdict = excluded.verdict,
                     reasoning = excluded.reasoning,
                     matched_json = excluded.matched_json,
                     gaps_json = excluded.gaps_json,
+                    sections_json = excluded.sections_json,
+                    hard_requirements_json = excluded.hard_requirements_json,
+                    prompt_version = excluded.prompt_version,
+                    scoring_version = excluded.scoring_version,
                     model = excluded.model,
                     scored_at = excluded.scored_at""",
                 (
@@ -1301,6 +1367,10 @@ def save_scores(
                     str(s.get("reasoning", "")),
                     json.dumps(s.get("matched") or [], ensure_ascii=False),
                     json.dumps(s.get("gaps") or [], ensure_ascii=False),
+                    json.dumps(s.get("sections") or {}, ensure_ascii=False),
+                    json.dumps(s.get("hard_requirements") or [], ensure_ascii=False),
+                    prompt_version,
+                    scoring_version,
                     str(s.get("model", "")),
                     now,
                 ),

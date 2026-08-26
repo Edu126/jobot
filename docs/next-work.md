@@ -1,12 +1,13 @@
 # Next Sprint — Scoring rework (Sprint 7)
 
-**Status:** planned; not yet started as of 2026-08-25.
-**Date:** 2026-08-25 (current entry). Prior sprint kept below for history.
+**Status:** in progress, started 2026-08-26.
+**Date:** 2026-08-26 (current entry). Prior sprint kept below for history.
 **Related:** [REQ-004](requirements/REQ-004-section-based-scoring.md),
 [REQ-005](requirements/REQ-005-remove-aec-scoring-bias.md),
 [REQ-006](requirements/REQ-006-aec-cleanup-search-matching-seeds.md),
 [ADR-006](decisions/ADR-006-section-based-scoring-llm-evidence-backend-math.md),
-[ADR-007](decisions/ADR-007-domain-neutral-persona-from-resume-context.md).
+[ADR-007](decisions/ADR-007-domain-neutral-persona-from-resume-context.md),
+[ADR-013](decisions/ADR-013-persona-source-shared-resume-profile.md).
 
 ## What's the sprint
 Section-based scoring (LLM produces per-section evidence, backend
@@ -14,6 +15,32 @@ does the math) + domain-neutral persona derived from resume context
 (remove baked-in AEC assumptions in search seeds, matching, and
 prompts). Requirements and ADRs already written; implementation is
 what's left.
+
+## 2026-08-26 kickoff — implementation decisions
+
+Reading the code before touching it surfaced a gap: ADR-007 assumes
+`role_label`/domain/seniority are already available resume signals;
+in practice only `role_label` exists, and it's generated lazily by
+`ui_web/routes/profile.py` on Profile visits — not guaranteed present
+at scoring time, and not reachable from `core/` without an inverted
+dependency. Raised as a 3-way architecture question; decided:
+
+1. **Persona pipeline** — captured as [ADR-013](decisions/ADR-013-persona-source-shared-resume-profile.md).
+   Shared resume-profile generation moves to `core/resume/ai_summary.py`,
+   extended to also produce `domain` + `seniority`, callable from
+   `score_jobs` with a generic fallback on failure.
+2. **REQ-006 saved searches** — replace the 3 hardcoded AEC presets in
+   `core/jobs/saved_searches.py` with domain-neutral content (keep the
+   pre-baked/editable structure, just de-bias what's in it), and clean
+   the AEC/"boyfriend" framing from comments.
+3. **REQ-005 regression fixtures** — no real resume text or fixtures
+   directory exists in this repo/environment (`data/` is gitignored).
+   Building realistic *synthetic* fixtures for the AEC / non-AEC /
+   career-switcher cases instead of real user resumes — committing
+   real resume text to git is a separate data-governance call from the
+   ephemeral per-request send to Gemini that GOV-001 covers. Fixtures
+   are clearly labeled synthetic; swappable for real text later if
+   provided.
 
 ## 2026-08-25 hotfix detour (not Sprint 7)
 Mehran feedback shipped as 6 commits in an unplanned session:

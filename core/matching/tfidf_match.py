@@ -18,16 +18,27 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-# Domain-aware extras for AEC/construction roles the user is targeting.
-# Adds nothing for unrelated jobs; helps the matcher recognize and weight
-# AEC tooling that generic English stopword lists ignore.
+# Domain-aware extras across several fields, not tied to any one
+# candidate's industry (REQ-006). Adds nothing for unrelated jobs; helps
+# the matcher recognize and weight domain tooling/vocabulary that generic
+# English stopword lists ignore. AEC terms sit here as one peer domain
+# among several — add more as new domains show up, not as the default.
 DOMAIN_HINTS = {
+    # AEC / construction
     "bim", "revit", "navisworks", "autocad", "civil 3d", "sketchup",
     "tekla", "ifc", "cobie", "lod", "clash detection", "rfi",
     "takeoff", "quantity takeoff", "ms project", "primavera", "p6",
     "pmp", "capm", "gantt", "wbs",
     "estimating", "cost control", "blueprint", "construction documents",
-    "ontario", "ottawa", "bilingual",
+    # Sales / B2B
+    "crm", "salesforce", "hubspot", "pipeline", "quota", "prospecting",
+    "cold outreach", "account management", "b2b", "b2c", "arr", "mrr",
+    # BI / data analytics
+    "sql", "tableau", "power bi", "looker", "etl", "data warehouse",
+    "dashboards", "kpi reporting",
+    # Tech / software
+    "python", "javascript", "react", "aws", "ci/cd", "microservices",
+    "bilingual",
 }
 
 # Words to ignore as "missing keywords" even if they're TF-IDF heavy in the

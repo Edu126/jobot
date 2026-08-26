@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 from typing import Literal
 
+from core.resume.ai_summary import GENERIC_PERSONA
+
 Level = Literal["conservative", "balanced", "aggressive"]
 
 
@@ -54,10 +56,15 @@ LEVEL: AGGRESSIVE — maximum keyword alignment.
 }
 
 
-_SYSTEM_PREAMBLE = """
-You are an expert resume editor for the Canadian job market, especially
-AEC/construction roles (BIM, Estimating, Project Coordination). Your job
-is to tailor a candidate's existing resume to a specific job posting.
+def _system_preamble(persona: str) -> str:
+    """Domain-neutral persona (ADR-007 + ADR-013): the recruiter/editor
+    voice is anchored to the candidate's own resume (role/domain/
+    seniority), not a hardcoded industry. `persona` comes from
+    `core.resume.ai_summary.persona_line` — same source scoring uses, so
+    a candidate reads as the same person across scoring and tailoring."""
+    return f"""
+You are an expert resume editor helping {persona} tailor their existing
+resume to a specific job posting.
 
 You will follow the LEVEL rules below, then return a JSON object with the
 tailored content. NEVER fabricate experience, skills, dates, or
@@ -115,6 +122,7 @@ def build_rewrite_prompt(
     level: Level,
     company_context: str = "",
     output_language: str = "en",
+    persona: str = GENERIC_PERSONA,
 ) -> str:
     """Build the full prompt for a single rewrite call.
 
@@ -130,6 +138,10 @@ def build_rewrite_prompt(
         come back in ('en' | 'es'). User-controlled via Profile — a
         Colombian user with a Spanish resume applying to a multinational
         Bogotá office wants English output; the reverse also happens.
+    persona: domain-neutral candidate descriptor (ADR-007 + ADR-013),
+        e.g. "a mid BI analyst candidate with experience in fintech".
+        Caller resolves this via `core.resume.ai_summary.persona_line`;
+        defaults to a generic line when the caller has no resume_id.
     """
     if level not in LEVEL_RULES:
         raise ValueError(f"Unknown level: {level!r}")
@@ -148,7 +160,7 @@ def build_rewrite_prompt(
 
     from core.settings import language_instruction
 
-    return f"""{_SYSTEM_PREAMBLE}
+    return f"""{_system_preamble(persona)}
 
 {language_instruction(output_language)}
 

@@ -70,13 +70,10 @@ _DEGREE_RE = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
-# Common tools/technologies. Broad on purpose — covers AEC, office, data,
-# cloud. Used as a "did the candidate list ANY tools" signal.
+# Common tools/technologies. Broad on purpose — covers office, data,
+# cloud, AEC, and more as peer domains (REQ-006: no single domain is the
+# default). Used as a "did the candidate list ANY tools" signal.
 _TOOL_KEYWORDS = {
-    # AEC / construction
-    "autocad", "revit", "navisworks", "bluebeam", "sketchup", "tekla",
-    "civil 3d", "bim 360", "bim360", "primavera", "p6", "ms project",
-    "procore", "bluebeam revu", "ifc", "cobie",
     # Office / general
     "excel", "powerpoint", "outlook", "sharepoint", "ms office", "microsoft office",
     "google workspace", "google docs", "google sheets",
@@ -87,6 +84,12 @@ _TOOL_KEYWORDS = {
     # Cloud / devops
     "aws", "azure", "gcp", "google cloud", "docker", "kubernetes",
     "terraform", "ansible", "git", "github", "gitlab", "jenkins",
+    # Sales / CRM
+    "salesforce", "hubspot", "crm", "zendesk", "hootsuite",
+    # AEC / construction
+    "autocad", "revit", "navisworks", "bluebeam", "sketchup", "tekla",
+    "civil 3d", "bim 360", "bim360", "primavera", "p6", "ms project",
+    "procore", "bluebeam revu", "ifc", "cobie",
     # Methodologies count as listed skills
     "agile", "scrum", "kanban", "lean", "six sigma", "waterfall", "itil",
     "pmp", "prince2",
