@@ -64,7 +64,12 @@
         mobileOpen: false,            // controls the mobile bottom sheet
         _viewedTimer: null,           // pending "mark viewed" timeout id
         _viewedMarked: new Set(),     // per-session dedup — no duplicate POSTs
-        select(id) {
+        // `markViewed: false` selects a job WITHOUT recording it as read.
+        // Viewed is an engagement signal, not UI state (ADR-012): it feeds
+        // the hideViewed filter, the fresh-view counts and the BI funnel,
+        // so anything the app selects on the user's behalf — today the
+        // results page auto-selecting the first card — must opt out.
+        select(id, { markViewed = true } = {}) {
           // Cancel any pending "mark viewed" timer from the previous card.
           // Rapid switching → nothing gets marked, matching the "you have
           // to actually spend time on it" intent behind the 3s threshold.
@@ -96,29 +101,19 @@
           const scroll = document.getElementById(isMobile ? 'mobile-detail-scroll' : 'job-detail-scroll');
           if (scroll) scroll.scrollTop = 0;
 
-          // Desktop: line up the detail pane's top edge with the clicked
-          // card's top edge. #jobs-detail-aside is `position: absolute`
-          // inside the (`position: relative`) grid — we just set its top
-          // to the card's Y offset within the grid. Card and pane then
-          // scroll together with the document (see jobs_results.html
-          // layout intent comment). Skip on mobile — bottom sheet covers
-          // the list entirely.
-          if (!isMobile) {
-            const card = document.querySelector(`[data-job-id="${CSS.escape(id)}"]`);
-            const grid = document.getElementById('jobs-results-grid');
-            const aside = document.getElementById('jobs-detail-aside');
-            if (card && grid && aside) {
-              const gridRect = grid.getBoundingClientRect();
-              const cardRect = card.getBoundingClientRect();
-              aside.style.top = `${Math.max(0, Math.round(cardRect.top - gridRect.top))}px`;
-            }
-          }
+          // NOTE: the detail pane used to be aligned here by hand —
+          // `position: absolute` inside a `relative` grid with its `top`
+          // computed from the clicked card's bounding rect. ADR-012
+          // deleted that: on the fixed-height workspace the pane is an
+          // ordinary grid cell with its own scroll, so there is no
+          // geometry left to compute. Do not reintroduce it.
 
           // Start the 3-second "actually read this" timer. Only POSTs if
           // the same id is still selected 3s later — switching cards
           // cancels via the clearTimeout above. Skip if we already
-          // marked this id in the current session.
-          if (!id || this._viewedMarked.has(id)) return;
+          // marked this id in the current session, or if the caller
+          // asked for a selection that does not count as engagement.
+          if (!markViewed || !id || this._viewedMarked.has(id)) return;
           const target = id;
           this._viewedTimer = setTimeout(() => {
             if (this.id !== target) return;   // guard against races
@@ -573,7 +568,12 @@
     });
   </script>
 </head>
-<body class="bg-base-200 min-h-screen flex flex-col text-base-content"
+{# `body_class` lets one page opt into the fixed-height workspace shell
+   (`app-shell`, see app.css / ADR-012) without changing the layout of
+   every other page. A page that sets it takes responsibility for
+   bounding its own content — get it wrong and the page traps its own
+   scroll. #}
+<body class="bg-base-200 min-h-screen flex flex-col text-base-content {% block body_class %}{% endblock %}"
       style="padding-bottom: env(safe-area-inset-bottom);"
       x-bind:class="{ 'pb-16 lg:pb-0': true }">
 
@@ -640,10 +640,16 @@
     </div>
   </header>
 
-  <main class="{% block container_class %}max-w-7xl{% endblock %} mx-auto px-4 sm:px-6 py-16 flex-1 w-full">
+  {# `main_class` carries the vertical rhythm so a workspace page can trade
+     the default `py-16` for something tighter — 4rem of padding top and
+     bottom is generous on a document and unaffordable on a fixed shell. #}
+  <main class="{% block container_class %}max-w-7xl{% endblock %} mx-auto px-4 sm:px-6 {% block main_class %}py-16{% endblock %} flex-1 w-full">
     {% block content %}{% endblock %}
   </main>
 
+  {# Overridable so a fixed-height page can drop the footer rather than
+     spend viewport on it. Every other page inherits it unchanged. #}
+  {% block footer %}
   <footer class="max-w-7xl mx-auto px-6 py-6 w-full">
     <div class="flex items-center justify-between text-xs text-base-content/40">
       <p>Jobot · <span x-text="new Date().getFullYear()"></span></p>
@@ -653,6 +659,7 @@
       </div>
     </div>
   </footer>
+  {% endblock %}
 
   {# Mobile bottom nav — visible below lg. Hides on desktop where the
      top nav suffices. See partials/mobile_nav.html. Body has

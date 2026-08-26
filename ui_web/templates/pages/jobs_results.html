@@ -3,6 +3,18 @@
 {# Wider container for the split viewport — need room for list + detail #}
 {% block container_class %}max-w-7xl{% endblock %}
 
+{# ── Workspace shell (ADR-012) ──
+   This page is a fixed-height workspace, not a document: the page itself
+   stops scrolling and the two panes scroll independently. `app-shell`
+   only bites at lg+ AND ≥560px viewport height (see app.css); below
+   either threshold every rule is inert and this behaves like any other
+   scrolling page, which is what the mobile bottom-sheet flow needs.
+   Tighter vertical rhythm because chrome now costs viewport, not just
+   scroll distance. Footer dropped for the same reason. #}
+{% block body_class %}app-shell{% endblock %}
+{% block main_class %}py-6{% endblock %}
+{% block footer %}{% endblock %}
+
 {% block content %}
 
 {# JSON metadata for reactive filters — separate script tag to avoid
@@ -16,6 +28,7 @@
        discoveryComplete: {{ (not discovery_in_progress) | tojson }},
        discoveryTaskId: '{{ discovery_task_id or '' }}',
        autoSnapped: false,
+       autoSelected: false,
        totalJobs: {{ total_jobs }},
        init() {
          // Reset filters that bleed in from other pages or aren't relevant here.
@@ -82,6 +95,10 @@
            newMeta.forEach(m => this.jobs.push(m));
            this.pendingScoreCount += addedPending || 0;
            this.totalJobs += newMeta.length;
+           // On an early redirect the page can render with zero cards, so
+           // the first selectable job may only arrive here. Retry the
+           // auto-selection on every growth batch; it self-guards.
+           this.$nextTick(() => this.autoSelectFirst());
          };
          // Called by the /growth terminator script when discovery is
          // done. Flips discoveryComplete which reveals the filter and
@@ -97,6 +114,29 @@
          if (this.pendingScoreCount === 0 && this.discoveryComplete && !this.isFreshView) {
            this.autoSnapped = true;
          }
+         // Runs after the filter defaults above are applied, so the
+         // first VISIBLE job is picked rather than jobs[0] — on a fresh
+         // view hideViewed is on and jobs[0] may well be hidden.
+         this.$nextTick(() => this.autoSelectFirst());
+       },
+       autoSelectFirst() {
+         // REQ-012: land the user on a populated detail pane instead of a
+         // large empty prompt. Fires at most once per page load.
+         if (this.autoSelected) return;
+         // Desktop only. Below lg, select() opens the modal bottom sheet
+         // — auto-selecting there would drop a modal over the list before
+         // the user has touched anything.
+         if (!window.matchMedia('(min-width: 1024px)').matches) return;
+         // Never override a choice the user already made.
+         if (this.$store.selectedJob.id) return;
+         const first = this.jobs.find(j => this.$store.filters.matches(j));
+         if (!first) return;
+         this.autoSelected = true;
+         // markViewed:false is the whole point — viewed is an engagement
+         // signal, not UI state (ADR-012). A card the app picked was
+         // never read, so it must not feed hideViewed, the fresh-view
+         // counts, or the BI funnel.
+         this.$store.selectedJob.select(first.id, { markViewed: false });
        },
        maybeAnnounceAllScored() {
          // Gate: BOTH scoring done AND discovery done. Fires exactly
@@ -146,26 +186,31 @@
          if (window.__jobotAppendJobs) delete window.__jobotAppendJobs;
          if (window.__jobotOnDiscoveryDone) delete window.__jobotOnDiscoveryDone;
        }
-     }">
+     }"
+     class="workspace-root">
 
-{# ── Header ── #}
-<div class="mb-6">
-  <a href="/jobs" class="text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer inline-flex items-center gap-1"><i class="ph-thin ph-arrow-left i-4"></i>{{ _('nav.back_to_search') }}</a>
-  <div class="flex items-start justify-between gap-4 mt-3">
-    <div class="min-w-0">
-      <h1 class="text-display truncate">{{ label }}</h1>
-      {% if is_fresh_view %}
-      <div class="text-xs text-body-muted mt-1 inline-flex items-center gap-1.5">
-        <span style="width:6px;height:6px;border-radius:50%;background:hsl(140 60% 45%);display:inline-block;"></span>
-        {{ _('results.fresh_view') }} — <a href="/jobs/results/{{ cache_key }}" class="underline hover:text-base-content">{{ _('results.switch_to_full') }}</a>
-      </div>
-      {% elif total_new_since_expand > 0 %}
-      <div class="text-xs text-body-muted mt-1">
-        {{ _('results.new_since_expand', n=total_new_since_expand) }} ·
-        <a href="/jobs/results/{{ cache_key }}?view=fresh" class="underline hover:text-base-content">{{ _('results.view_just_those') }}</a>
-      </div>
-      {% endif %}
-    </div>
+{# ── Workspace chrome (ADR-012) ──
+   Everything from here to the grid is `shrink-0`: on the fixed shell it
+   costs viewport, not scroll distance, so it is deliberately dense. The
+   old layout spent five stacked rows plus a full-width banner plus a
+   filter card before the first job card. Same information, three rows.
+
+   Row 1 — identity: back-link, title, Expand.
+   Row 2 — state: counts, scoring progress, freshness, warnings.
+   Row 3 — filters, as a toolbar rather than a card. #}
+<div class="shrink-0">
+
+  {# ── Row 1: back · title · expand ── #}
+  <div class="flex items-center gap-3 min-w-0">
+    <a href="/jobs"
+       class="text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer inline-flex items-center gap-1 shrink-0"
+       title="{{ _('nav.back_to_search') }}">
+      <i class="ph-thin ph-arrow-left i-4"></i>
+      <span class="hidden sm:inline">{{ _('nav.back_to_search') }}</span>
+    </a>
+    <span class="text-base-content/20 shrink-0">/</span>
+    <h1 class="text-xl font-semibold tracking-tight truncate min-w-0 flex-1">{{ label }}</h1>
+
     {# Expand: deeper scrape on the same query (2× results_wanted, 2×
      hours_old, 2× distance). Opens a NEW TAB pointing at a dedicated
      loading page that self-redirects to ?view=fresh when done. Plain
@@ -179,7 +224,7 @@
               class="btn btn-sm btn-outline whitespace-nowrap"
               title="{{ _('action.expand_search.tooltip') }}">
         <i class="ph-thin ph-arrows-out"></i>
-        {{ _('action.expand_search') }}
+        <span class="hidden sm:inline">{{ _('action.expand_search') }}</span>
       </button>
     </form>
   </div>
@@ -208,106 +253,104 @@
        hx-swap="outerHTML"></div>
   {% endif %}
 
-  {# Two-line header: primary "X of Y visible" + secondary contextual line.
-     Replaces the older 4-column grid. The fork's UX doc has the full state
-     matrix; here we branch by fresh-view vs. all-view, then by scoring state. #}
-  <div class="mt-4">
-    {# Primary line — the one number that always matters. #}
-    <div class="text-metric-sm">
+  {# ── Row 2: one status line ──
+     Was five stacked blocks (count / secondary / progress bar / fetched
+     line / discovery banner). All of it still renders — it just flows
+     inline and wraps, separated by hairline dots, instead of each
+     claiming its own row. Order is by decreasing importance so the
+     things that get pushed to a second line on narrow screens are the
+     ones that matter least. #}
+  <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-body-muted">
+
+    {# Primary count — the one number that always matters. #}
+    <span class="text-base-content font-semibold tabular-nums">
       <span x-text="$store.filters.visibleCount(jobs)">{{ total_jobs }}</span>
-      <span class="text-base-content/30 font-normal text-base">{{ _('results.of_visible', total=total_jobs) }}</span>
-      <span x-show="pendingScoreCount > 0 && !isFreshView"
-            x-cloak
-            class="text-base font-normal text-body-muted ml-2">· {{ _('results.ranking_rest') }}</span>
-    </div>
+      <span class="text-base-content/30 font-normal">{{ _('results.of_visible', total=total_jobs) }}</span>
+    </span>
 
-    {# Secondary line — either scoring progress or filter/view summary. #}
-    <div class="text-sm text-body-muted mt-1.5">
-      {% if is_fresh_view %}
-        {# Fresh-view breakdown: 3 groups, 1 visible by default. #}
-        <span>
-          {{ _('results.new_since_expand_short', n=total_new_since_expand) }}
-          {% if total_unviewed_from_before > 0 %}· {{ _('results.unviewed_from_before', n=total_unviewed_from_before) }}{% endif %}
-          {% if total_viewed > 0 %}
-            · {{ _('results.already_viewed', n=total_viewed) }}
-            <button type="button"
-                    class="underline hover:text-base-content ml-0.5"
-                    @click="$store.filters.hideViewed = false">{{ _('action.show') }}</button>
-          {% endif %}
-        </span>
-      {% else %}
-        {# All-view secondary: switches between scoring progress and filter summary. #}
-        <span x-show="pendingScoreCount > 0" x-cloak
-              x-html="`<span>${totalJobs - pendingScoreCount}</span> {{ _('results.ranked') }} · <span>${pendingScoreCount}</span> {{ _('results.still_evaluating') }}`"></span>
-        <span x-show="pendingScoreCount === 0" x-cloak>
-          <span x-show="$store.filters.minScore >= 60"
-                x-html="`{{ _('results.filtered_score_60') }} · <span>${jobs.filter(j => j.score < 60).length}</span> {{ _('results.hidden') }} · <button type='button' class='underline hover:text-base-content' onclick='Alpine.store(&quot;filters&quot;).minScore = 0'>{{ _('action.show_all') }}</button>`"></span>
-          <span x-show="$store.filters.minScore < 60">
-            {{ _('results.all_ranked_sorted') }}
-          </span>
-        </span>
+    {% if is_fresh_view %}
+      {# Fresh-view breakdown: 3 groups, 1 visible by default. #}
+      <span class="inline-flex items-center gap-1.5">
+        <span style="width:6px;height:6px;border-radius:50%;background:hsl(140 60% 45%);display:inline-block;"></span>
+        {{ _('results.fresh_view') }}
+      </span>
+      <span>
+        {{ _('results.new_since_expand_short', n=total_new_since_expand) }}
+        {% if total_unviewed_from_before > 0 %}· {{ _('results.unviewed_from_before', n=total_unviewed_from_before) }}{% endif %}
+        {% if total_viewed > 0 %}
+          · {{ _('results.already_viewed', n=total_viewed) }}
+          <button type="button"
+                  class="underline hover:text-base-content cursor-pointer"
+                  @click="$store.filters.hideViewed = false">{{ _('action.show') }}</button>
+        {% endif %}
+      </span>
+      <a href="/jobs/results/{{ cache_key }}" class="underline hover:text-base-content">{{ _('results.switch_to_full') }}</a>
+    {% else %}
+      {# All-view: switches between scoring progress and filter summary. #}
+      <span x-show="pendingScoreCount > 0" x-cloak
+            x-html="`<span>${totalJobs - pendingScoreCount}</span> {{ _('results.ranked') }} · <span>${pendingScoreCount}</span> {{ _('results.still_evaluating') }}`"></span>
+      <span x-show="pendingScoreCount === 0" x-cloak>
+        <span x-show="$store.filters.minScore >= 60"
+              x-html="`{{ _('results.filtered_score_60') }} · <span>${jobs.filter(j => j.score < 60).length}</span> {{ _('results.hidden') }} · <button type='button' class='underline hover:text-base-content cursor-pointer' onclick='Alpine.store(&quot;filters&quot;).minScore = 0'>{{ _('action.show_all') }}</button>`"></span>
+        <span x-show="$store.filters.minScore < 60">{{ _('results.all_ranked_sorted') }}</span>
+      </span>
+      {% if total_new_since_expand > 0 %}
+      <span>
+        {{ _('results.new_since_expand', n=total_new_since_expand) }} ·
+        <a href="/jobs/results/{{ cache_key }}?view=fresh" class="underline hover:text-base-content">{{ _('results.view_just_those') }}</a>
+      </span>
       {% endif %}
-    </div>
+    {% endif %}
 
-    {# Progress bar — visible only while scoring, matches the secondary
-       line's "N ranked / M evaluating" data. Thin so it doesn't dominate. #}
-    <div x-show="pendingScoreCount > 0 && !isFreshView"
-         x-cloak
-         class="mt-2 w-full h-1 rounded-full overflow-hidden"
-         style="background: hsl(0 0% 92%);">
-      <div class="h-full transition-all duration-500 ease-out"
-           style="background: oklch(var(--p));"
-           :style="'width: ' + progressPct() + '%'"></div>
-    </div>
+    {# Discovery-in-progress (ADR-011 Slice 5a). Was a full-width banner
+       box; now an inline chip carrying the same message + refresh escape
+       hatch. Hidden once onDiscoveryDone() flips discoveryComplete. #}
+    <span x-show="!discoveryComplete" x-cloak
+          class="inline-flex items-center gap-2 rounded-full px-2.5 py-0.5 text-xs"
+          style="background: hsl(200 65% 96%); border: 1px solid hsl(200 55% 85%);">
+      <span class="loading loading-spinner loading-xs" style="color: hsl(200 60% 40%);"></span>
+      {{ _('results.still_finding') }}
+      <button type="button"
+              onclick="window.location.reload()"
+              class="underline hover:text-base-content cursor-pointer">{{ _('action.refresh') }}</button>
+    </span>
 
-    {# Secondary status line: fetched-at + scoring health notes. Compact. #}
-    <div class="text-xs text-body-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-      <span>{{ _('results.fetched') }} {{ fetched_at | humanize }}</span>
-      {% if quota_exhausted %}
-        <span style="color: hsl(28 75% 32%);">·  {{ _('results.scoring_paused') }}</span>
-      {% elif not has_resume %}
-        <span>· {{ _('results.upload_resume_prompt') }} <a href="/profile" class="underline">{{ _('nav.profile') }}</a></span>
-      {% elif not has_api_key %}
-        <span>· {{ _('results.add_key_prompt') }} <a href="/profile" class="underline">{{ _('nav.profile') }}</a></span>
+    <span class="text-xs">{{ _('results.fetched') }} {{ fetched_at | humanize }}</span>
+    {% if quota_exhausted %}
+      <span class="text-xs" style="color: hsl(28 75% 32%);">{{ _('results.scoring_paused') }}</span>
+      {% if exhausted_models %}
+      <span class="text-xs">{{ _('results.models_tried_today', models=exhausted_models|join(', ')) }}</span>
       {% endif %}
-    </div>
-    {% if quota_exhausted and exhausted_models %}
-      <div class="mt-2 text-xs text-body-muted">
-        {{ _('results.models_tried_today', models=exhausted_models|join(', ')) }}
-      </div>
-    {% elif scoring_error %}
-      <div class="mt-2 text-sm text-error/80">{{ scoring_error }}</div>
+    {% elif not has_resume %}
+      <span class="text-xs">{{ _('results.upload_resume_prompt') }} <a href="/profile" class="underline">{{ _('nav.profile') }}</a></span>
+    {% elif not has_api_key %}
+      <span class="text-xs">{{ _('results.add_key_prompt') }} <a href="/profile" class="underline">{{ _('nav.profile') }}</a></span>
+    {% endif %}
+    {% if scoring_error %}
+      <span class="text-xs text-error/80">{{ scoring_error }}</span>
     {% endif %}
   </div>
-</div>
 
-{# ── Discovery-in-progress banner (ADR-011 Slice 5a) ──
-     Shown when the user landed on this page early — before all
-     sources finished. Subtle, not alarming: they DO have results,
-     more will keep arriving (Slice 5b polls) or a manual refresh
-     will pick them up (Slice 5a fallback). Hidden once
-     onDiscoveryDone() flips discoveryComplete. #}
-<div x-show="!discoveryComplete" x-cloak
-     class="mb-6 rounded-lg p-3 flex items-center gap-3 text-sm"
-     style="background: hsl(200 65% 96%); border: 1px solid hsl(200 55% 85%);">
-  <div class="loading loading-spinner loading-xs" style="color: hsl(200 60% 40%);"></div>
-  <div class="flex-1 text-body-muted">
-    Still finding more jobs · showing what we have so far
+  {# Scoring progress — hairline under the status row. Same data as the
+     "N ranked · M evaluating" text above, so it carries no information
+     of its own; kept thin deliberately. #}
+  <div x-show="pendingScoreCount > 0 && !isFreshView"
+       x-cloak
+       class="mt-2 w-full rounded-full overflow-hidden"
+       style="height: 2px; background: hsl(0 0% 92%);">
+    <div class="h-full transition-all duration-500 ease-out"
+         style="background: oklch(var(--p));"
+         :style="'width: ' + progressPct() + '%'"></div>
   </div>
-  <button type="button"
-          onclick="window.location.reload()"
-          class="text-xs underline hover:text-base-content">
-    Refresh
-  </button>
-</div>
 
-{# ── Filters ──
-   Order matters: the min-score slider goes LAST because it's the only
-   filter that appears late (gated on discovery+scoring complete). If
-   it sat first it would push every other filter right when it finally
-   showed — reads as a layout shift bug (user feedback 2026-08-26). #}
-<div class="card-quiet mb-6">
-  <div class="flex flex-wrap items-center gap-6">
+  {# ── Row 3: filter toolbar ──
+     Was a `card-quiet` panel; now a single bordered strip. Order still
+     matters: the min-score slider goes LAST because it is the only
+     control that appears late (gated on discovery + scoring complete).
+     If it sat first it would push every other filter right when it
+     finally showed — reads as a layout shift bug (user feedback
+     2026-08-26). #}
+  <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 py-2 px-3 rounded-lg border border-base-300 bg-base-100">
     {# "Hide french" only makes sense in a mixed-language market (Ottawa/
        Montréal). A Spanish-speaking user (Colombia, España) sees FR jobs
        as noise the wrong way — the toggle labelled "ocultar francés"
@@ -315,19 +358,19 @@
        UI=es. Mehran 2026-08-25. #}
     {% if current_ui_language() != 'es' %}
     <label class="flex items-center gap-2 cursor-pointer select-none">
-      <input type="checkbox" x-model="$store.filters.hideFrench" class="checkbox checkbox-sm">
+      <input type="checkbox" x-model="$store.filters.hideFrench" class="checkbox checkbox-xs">
       <span class="text-sm">{{ _('filters.hide_french') }}</span>
     </label>
     {% endif %}
     <label class="flex items-center gap-2 cursor-pointer select-none"
            title="{{ _('filters.only_new.tooltip') }}">
-      <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
-      <span class="text-sm inline-flex items-center gap-1"><i class="ph-fill ph-sparkle i-4" style="color: oklch(var(--a));"></i>{{ _('filters.only_new') }}</span>
+      <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-xs">
+      <span class="text-sm inline-flex items-center gap-1"><i class="ph-fill ph-sparkle i-3" style="color: oklch(var(--a));"></i>{{ _('filters.only_new') }}</span>
     </label>
     <label class="flex items-center gap-2 cursor-pointer select-none"
            title="{{ _('filters.hide_viewed.tooltip') }}">
-      <input type="checkbox" x-model="$store.filters.hideViewed" class="checkbox checkbox-sm">
-      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-eye-slash i-4"></i>{{ _('filters.hide_viewed') }}</span>
+      <input type="checkbox" x-model="$store.filters.hideViewed" class="checkbox checkbox-xs">
+      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-eye-slash i-3"></i>{{ _('filters.hide_viewed') }}</span>
     </label>
     {# "Hide dismissed" only appears when the user actually has dismissed
        jobs in the current result set. Desktop has no dismiss button
@@ -336,84 +379,108 @@
     <label class="flex items-center gap-2 cursor-pointer select-none"
            x-show="jobs.some(j => j.dismissed)" x-cloak
            title="{{ _('filters.hide_dismissed.tooltip') }}">
-      <input type="checkbox" x-model="$store.filters.hideDismissed" class="checkbox checkbox-sm">
-      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-x-circle i-4"></i>{{ _('filters.hide_dismissed') }}</span>
+      <input type="checkbox" x-model="$store.filters.hideDismissed" class="checkbox checkbox-xs">
+      <span class="text-sm inline-flex items-center gap-1"><i class="ph-thin ph-x-circle i-3"></i>{{ _('filters.hide_dismissed') }}</span>
     </label>
-    <div>
-      <label class="text-label block mb-1">{{ _('filters.remote') }}</label>
-      <select x-model="$store.filters.remoteFilter" class="select select-bordered select-sm cursor-pointer">
+
+    <label class="flex items-center gap-2">
+      <span class="text-sm text-body-muted">{{ _('filters.remote') }}</span>
+      <select x-model="$store.filters.remoteFilter" class="select select-bordered select-xs cursor-pointer">
         <option value="any">{{ _('filters.remote.any') }}</option>
         <option value="remote">{{ _('filters.remote.remote') }}</option>
         <option value="onsite">{{ _('filters.remote.onsite') }}</option>
       </select>
-    </div>
+    </label>
+
     {# Min-score slider LAST — hidden until BOTH discovery is complete
        AND all jobs have final scores (ADR-011 gate rule). Filtering a
        still-loading result set removes cards as they land under the
        threshold, which reads as the app losing results (user feedback
        2026-08-26). Once both conditions are true, the slider appears
        alongside the toast. #}
-    <div class="flex-1 min-w-[200px]"
-         x-show="pendingScoreCount === 0 && discoveryComplete"
-         x-cloak>
-      <label class="text-label block mb-2">
-        {{ _('filters.min_score') }}:
+    <label class="flex items-center gap-2 flex-1 min-w-[180px] max-w-[320px] ml-auto"
+           x-show="pendingScoreCount === 0 && discoveryComplete"
+           x-cloak>
+      <span class="text-sm text-body-muted whitespace-nowrap">
+        {{ _('filters.min_score') }}
         <span class="text-base-content font-semibold tabular-nums" x-text="$store.filters.minScore"></span>
-      </label>
+      </span>
       <input type="range" min="0" max="100" step="5"
              x-model.number="$store.filters.minScore"
-             class="range range-sm range-primary cursor-pointer">
-    </div>
+             class="range range-xs range-primary cursor-pointer flex-1">
+    </label>
   </div>
 </div>
 
-{# ── Split viewport: cards left, detail right ──
-   Layout intent (Andrea 2026-08-25, after sticky-in-grid + fixed both
-   fell over): detail pane's top edge lines up with the clicked card's
-   top edge; they both scroll with the document, so once user sees a
-   click land, the detail stays paired to the card as they scroll away.
-   Click a different card → pane jumps to that card's Y.
+{# ── Two-pane workspace (ADR-012) ──
+   `workspace-grid` / `workspace-col` / `workspace-pane` are defined in
+   app.css and only do anything at lg+ with ≥560px of viewport height.
+   Outside that they are inert class names and this is an ordinary
+   stacked layout — which is what the mobile bottom-sheet flow expects.
 
-   Implementation: grid is `relative`; aside is `absolute` inside it
-   with `right: 0` + `width: calc(50% - 12px)` (half the grid minus
-   half the gap-6), so it overlays the reserved right column. JS sets
-   its `top` from the card's bounding rect on each click. #}
-<div id="jobs-results-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start lg:relative">
+   The 32/68 split (REQ-012) rather than the old 50/50: the left pane
+   only has to support "which of these do I look at next", the right
+   one carries a full job description.
 
-  {# LEFT: job list.
-     id="jobs-list-container" — ADR-011 Slice 5b: /growth endpoint
-     OOB-appends new cards here as later sources finish. #}
-  <div id="jobs-list-container" class="space-y-3 min-w-0 cascade-in">
-    {% for job in jobs %}
-      {% include "partials/job_card.html" %}
-    {% else %}
-      <div id="empty-results-placeholder" class="card-quiet text-center py-12">
-        <div class="text-body-muted">{{ _('results.no_jobs') }}</div>
+   Note what is NOT here any more: the grid used to be `lg:relative`
+   with `lg:items-start`, and the aside was `position: absolute` with
+   its `top` set from JS on every card click. That existed to fake a
+   stable pane inside a scrolling document. The document no longer
+   scrolls, so the pane is just a grid cell. #}
+<div id="jobs-results-grid"
+     class="workspace-grid grid grid-cols-1 lg:grid-cols-[minmax(0,32fr)_minmax(0,68fr)] gap-6 mt-4">
+
+  {# LEFT: job list. #}
+  <div class="workspace-col min-w-0">
+    <div id="jobs-list-scroll"
+         class="workspace-pane"
+         tabindex="0"
+         role="region"
+         aria-label="{{ _('results.pane.list') }}">
+
+      {# id="jobs-list-container" — ADR-011 Slice 5b: /growth OOB-appends
+         new cards here with `beforeend`. Everything that is NOT a job
+         card now lives outside it, so an append always lands after the
+         last card rather than after a placeholder. #}
+      <div id="jobs-list-container"
+           class="space-y-3 min-w-0 cascade-in"
+           role="listbox"
+           aria-label="{{ _('results.pane.list') }}">
+        {% for job in jobs %}
+          {% include "partials/job_card.html" %}
+        {% endfor %}
+        {% if not jobs %}
+        <div id="empty-results-placeholder" class="card-quiet text-center py-12">
+          <div class="text-body-muted">{{ _('results.no_jobs') }}</div>
+        </div>
+        {% endif %}
       </div>
-    {% endfor %}
-    <div x-show="$store.filters.visibleCount(jobs) === 0 && jobs.length > 0"
-         x-cloak
-         class="card-quiet text-center py-8">
-      <div class="text-body-muted text-sm">{{ _('results.all_hidden', n=total_jobs) }}</div>
-      <button class="mt-2 text-sm text-primary hover:underline cursor-pointer"
-              @click="$store.filters.minScore = 0; $store.filters.hideFrench = false; $store.filters.remoteFilter = 'any'; $store.filters.hideViewed = false;">
-        {{ _('action.reset_filters') }}
-      </button>
+
+      <div x-show="$store.filters.visibleCount(jobs) === 0 && jobs.length > 0"
+           x-cloak
+           class="card-quiet text-center py-8 mt-3">
+        <div class="text-body-muted text-sm">{{ _('results.all_hidden', n=total_jobs) }}</div>
+        <button class="mt-2 text-sm text-primary hover:underline cursor-pointer"
+                @click="$store.filters.minScore = 0; $store.filters.hideFrench = false; $store.filters.remoteFilter = 'any'; $store.filters.hideViewed = false;">
+          {{ _('action.reset_filters') }}
+        </button>
+      </div>
     </div>
   </div>
 
-  {# RIGHT: absolute-position detail pane on lg+. Placed here (inside
-     grid) so its containing block is #jobs-results-grid (which is
-     `relative`). `top` is driven by JS on each card click; width +
-     right offset live in CSS since the grid geometry doesn't change
-     per-click. Internal scroll caps height to viewport so a long JD
-     doesn't spill past the fold. #}
-  <aside id="jobs-detail-aside"
-         class="hidden lg:block"
-         style="position: absolute; top: 0; right: 0; width: calc(50% - 12px);">
+  {# RIGHT: detail pane. `hidden lg:flex` — below lg the mobile bottom
+     sheet owns detail viewing (partials/mobile_detail_sheet.html), so
+     rendering this column there would just be an invisible HTMX target.
+     #job-detail-scroll keeps its id: selectedJob.select() resets its
+     scrollTop on every selection, and it is now a genuinely independent
+     scroll container rather than a max-height'd div. #}
+  <aside id="jobs-detail-aside" class="hidden lg:block workspace-col">
     <div id="job-detail-scroll"
-         class="overflow-y-auto"
-         style="max-height: calc(100vh - 6rem);">
+         class="workspace-pane"
+         tabindex="0"
+         role="region"
+         aria-label="{{ _('results.pane.detail') }}"
+         aria-live="polite">
       <div id="job-detail-pane" class="card-quiet min-h-[300px]">
         <div class="text-body-muted text-sm text-center py-16">
           {{ _('results.click_prompt') }}

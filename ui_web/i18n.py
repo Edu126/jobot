@@ -310,6 +310,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "results.no_jobs": "No jobs in this search.",
         "results.all_hidden": "All {n} jobs hidden by current filters.",
         "results.click_prompt": "Click a job on the left to see full details here.",
+        "results.pane.list": "Job list",
+        "results.pane.detail": "Job detail",
+        "results.still_finding": "Still finding more jobs · showing what we have so far",
+        "results.select_job": "Select this job to see its full details",
         # Profile page
         "profile.title": "Profile",
         "profile.subtitle": "Your resume, scored.",
@@ -628,6 +632,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "results.no_jobs": "No hay empleos en esta búsqueda.",
         "results.all_hidden": "Los {n} empleos están ocultos por los filtros actuales.",
         "results.click_prompt": "Toca un empleo a la izquierda para ver los detalles aquí.",
+        "results.pane.list": "Lista de empleos",
+        "results.pane.detail": "Detalle del empleo",
+        "results.still_finding": "Seguimos buscando más empleos · mostrando lo que tenemos por ahora",
+        "results.select_job": "Selecciona este empleo para ver el detalle completo",
         # Perfil
         "profile.title": "Perfil",
         "profile.subtitle": "Tu currículum, puntuado.",
