@@ -120,11 +120,6 @@
          Rendered from a partial so the lazy-scoring endpoint can OOB-swap. #}
       {% include "partials/job_gaps.html" %}
 
-      {# Warning strip for FR-required #}
-      {% if job.french_required %}
-      <div class="mt-3 text-xs text-base-content/50 inline-flex items-center gap-1"><i class="ph-thin ph-warning i-3"></i>Posting requires French — will be hidden if filter is on.</div>
-      {% endif %}
-
       {# Actions row — visible only BELOW lg breakpoint. On desktop the detail
          pane covers Open posting / Tailor / full JD, so a per-card action row
          would be redundant clutter. On mobile it stays for direct access. #}

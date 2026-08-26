@@ -13,6 +13,8 @@
        jobs: JSON.parse(document.getElementById('jobs-meta-data').textContent),
        pendingScoreCount: {{ pending_score_count | default(0) }},
        isFreshView: {{ is_fresh_view | tojson }},
+       discoveryComplete: {{ (not discovery_in_progress) | tojson }},
+       discoveryTaskId: '{{ discovery_task_id or '' }}',
        autoSnapped: false,
        totalJobs: {{ total_jobs }},
        init() {
@@ -20,32 +22,43 @@
          $store.filters.maxAgeDays = null;
          $store.filters.onlyNew = false;
          // Fresh view (post-expand) hides jobs the user has already read.
-         // Regular view starts fully open — score-based auto-snap arrives later.
+         // Regular view starts fully open — score-based filtering is
+         // user-driven, not auto-applied. See init tail comment.
          $store.filters.hideViewed = this.isFreshView;
-         // Start with everything visible. In the all-view, once all scores
-         // arrive we auto-snap to minScore=60 (with a dismissible toast) so
-         // the settled page defaults to 'quality only'. In the fresh view we
-         // don't auto-snap — the user came here to see fresh material.
+         // Start (and stay) at 0 so nothing is hidden while scores are
+         // still arriving. Auto-snap-to-60 was removed 2026-08-26 per
+         // user feedback: it looked odd because cards vanish under the
+         // user's cursor. The min-score slider is also hidden until
+         // all-scored (search feels alive first, then filter appears).
          $store.filters.minScore = 0;
-         // hideFrench default (true) is a Canadian bilingual-market
-         // assumption. On UI=es the toggle is hidden entirely (Colombian /
-         // Spanish users have no use for it), so keep the underlying value
-         // consistent with the missing UI — otherwise Andrea saw an
-         // invisible active filter hiding ~25 of 31 jobs (2026-08-25).
-         {% if current_ui_language() == 'es' %}
+         // hideFrench default flipped to false 2026-08-26 (was true).
+         // Old default silently hid up to ~half the results in Ottawa
+         // without a visible cue and the redundant per-card warning
+         // strip was removed at the same time — user opts in via the
+         // checkbox on the filter bar if they want FR jobs hidden.
+         // The explicit `= false` below is a defensive belt to survive
+         // any session-persisted store state; harmless when default
+         // already matches.
          $store.filters.hideFrench = false;
-         {% endif %}
          // Score updater called by OOB batch script per newly-scored job.
          // Each call = one previously-pending job now has a real score, so
-         // we decrement the pending counter and auto-snap when it hits 0.
+         // we decrement the pending counter and fire the completion toast
+         // when it hits 0. autoSnapped is now the already-announced guard
+         // so we don't fire the toast twice.
+         // NOTE (2026-08-26): this whole x-data block is inside an HTML
+         // attribute; any literal double-quote in a comment terminates
+         // the attribute and drops the rest of the payload as text on
+         // the page. Keep comments quote-free. See feedback memory.
          window.__jobotUpdateScore = (id, score) => {
            const j = this.jobs.find(x => x.id === id);
            if (j) j.score = score;
            if (this.pendingScoreCount > 0) this.pendingScoreCount--;
-           if (this.pendingScoreCount === 0 && !this.autoSnapped && !this.isFreshView) {
-             this.autoSnapped = true;
-             this.snapToQualityFilter();
-           }
+           // ADR-011: also require discoveryComplete. Otherwise the
+           // toast + filter reveal could fire during a lull between
+           // sources (all-first-batch-scored, more coming). Slice 5b
+           // flips discoveryComplete via onDiscoveryDone when the
+           // /growth endpoint returns its terminator.
+           this.maybeAnnounceAllScored();
          };
          // Called by the swipe handler after a save / dismiss / undo POST
          // completes. Mutates the reactive jobs array so the client-side
@@ -58,21 +71,61 @@
            else if (action === 'undismissed') { j.dismissed = 0; }
            else if (action === 'unsaved') { /* no client-side undo state today */ }
          };
-         // If we loaded with everything already scored, auto-snap after paint.
-         if (this.pendingScoreCount === 0 && !this.isFreshView) {
-           this.$nextTick(() => this.snapToQualityFilter());
+         // ADR-011 Slice 5b: called by the /growth endpoint response
+         // script every time new cards land. newMeta is the jobs_meta
+         // patch (one entry per newly-appended card); addedPending is
+         // how many of those need scoring. We push into the reactive
+         // jobs array so cardVisible + visibleCount stay accurate, and
+         // we bump pendingScoreCount so the filter-gate + toast logic
+         // waits for the new arrivals to also be scored.
+         window.__jobotAppendJobs = (newMeta, addedPending) => {
+           newMeta.forEach(m => this.jobs.push(m));
+           this.pendingScoreCount += addedPending || 0;
+           this.totalJobs += newMeta.length;
+         };
+         // Called by the /growth terminator script when discovery is
+         // done. Flips discoveryComplete which reveals the filter and
+         // hides the still-finding banner.
+         window.__jobotOnDiscoveryDone = () => {
+           this.onDiscoveryDone();
+         };
+         // If we loaded with everything already scored AND discovery
+         // is already done (cache-hit path or all-done at first render),
+         // the toast has no news — mark as already-announced so a later
+         // score-batch event can not retroactively fire it. NOTE: no
+         // literal double-quotes in comments inside this x-data block.
+         if (this.pendingScoreCount === 0 && this.discoveryComplete && !this.isFreshView) {
+           this.autoSnapped = true;
          }
        },
-       snapToQualityFilter() {
-         if ($store.filters.minScore >= 60) return;
-         $store.filters.minScore = 60;
-         const hidden = this.jobs.filter(j => j.score < 60).length;
-         if (hidden > 0) {
-           Alpine.store('toast').show(
-             'Filtered to score ≥ 60 · ' + hidden + ' hidden — drag the slider to show more',
-             'info'
-           );
-         }
+       maybeAnnounceAllScored() {
+         // Gate: BOTH scoring done AND discovery done. Fires exactly
+         // once via the autoSnapped guard.
+         if (this.autoSnapped) return;
+         if (this.pendingScoreCount !== 0) return;
+         if (!this.discoveryComplete) return;
+         if (this.isFreshView) return;
+         this.autoSnapped = true;
+         this.announceAllScored();
+       },
+       onDiscoveryDone() {
+         // Called by Slice 5b growth polling when the /growth endpoint
+         // returns its terminator. Flips discoveryComplete which reveals
+         // the filter slider and drops the still-finding banner. Then
+         // re-checks whether all-scored has ALSO been reached — if yes,
+         // fire the completion toast (single-shot).
+         if (this.discoveryComplete) return;
+         this.discoveryComplete = true;
+         this.maybeAnnounceAllScored();
+       },
+       announceAllScored() {
+         // Fires exactly once, when the last pending score lands and the
+         // page transitions from scoring to all-done. Filter stays at 0
+         // — user opts into filtering via the slider that becomes
+         // visible at the same moment. (No double-quotes in this comment
+         // block: lives inside an x-data attribute; a stray one breaks
+         // Alpine init silently.)
+         Alpine.store('toast').show('All jobs scored', 'success');
        },
        progressPct() {
          if (this.totalJobs === 0) return 100;
@@ -90,6 +143,8 @@
        destroy() {
          if (window.__jobotUpdateScore) delete window.__jobotUpdateScore;
          if (window.__jobotMarkJob) delete window.__jobotMarkJob;
+         if (window.__jobotAppendJobs) delete window.__jobotAppendJobs;
+         if (window.__jobotOnDiscoveryDone) delete window.__jobotOnDiscoveryDone;
        }
      }">
 
@@ -138,6 +193,18 @@
   <div id="score-batch-trigger"
        hx-get="/jobs/results/{{ cache_key }}/score-batch"
        hx-trigger="load"
+       hx-swap="outerHTML"></div>
+  {% endif %}
+
+  {# ADR-011 Slice 5b: growth polling. Only rendered when discovery
+     is still in flight (early-redirect landed the user here mid-scrape).
+     Each poll can OOB-append new cards to #jobs-list-container, patch
+     the client-side jobs meta via window.__jobotAppendJobs, and either
+     self-refire (discovery still going) or fire onDiscoveryDone (done). #}
+  {% if discovery_in_progress %}
+  <div id="growth-trigger"
+       hx-get="/jobs/results/{{ cache_key }}/growth?since={{ total_jobs }}"
+       hx-trigger="load delay:2s"
        hx-swap="outerHTML"></div>
   {% endif %}
 
@@ -214,18 +281,33 @@
   </div>
 </div>
 
-{# ── Filters ── #}
+{# ── Discovery-in-progress banner (ADR-011 Slice 5a) ──
+     Shown when the user landed on this page early — before all
+     sources finished. Subtle, not alarming: they DO have results,
+     more will keep arriving (Slice 5b polls) or a manual refresh
+     will pick them up (Slice 5a fallback). Hidden once
+     onDiscoveryDone() flips discoveryComplete. #}
+<div x-show="!discoveryComplete" x-cloak
+     class="mb-6 rounded-lg p-3 flex items-center gap-3 text-sm"
+     style="background: hsl(200 65% 96%); border: 1px solid hsl(200 55% 85%);">
+  <div class="loading loading-spinner loading-xs" style="color: hsl(200 60% 40%);"></div>
+  <div class="flex-1 text-body-muted">
+    Still finding more jobs · showing what we have so far
+  </div>
+  <button type="button"
+          onclick="window.location.reload()"
+          class="text-xs underline hover:text-base-content">
+    Refresh
+  </button>
+</div>
+
+{# ── Filters ──
+   Order matters: the min-score slider goes LAST because it's the only
+   filter that appears late (gated on discovery+scoring complete). If
+   it sat first it would push every other filter right when it finally
+   showed — reads as a layout shift bug (user feedback 2026-08-26). #}
 <div class="card-quiet mb-6">
   <div class="flex flex-wrap items-center gap-6">
-    <div class="flex-1 min-w-[200px]">
-      <label class="text-label block mb-2">
-        {{ _('filters.min_score') }}:
-        <span class="text-base-content font-semibold tabular-nums" x-text="$store.filters.minScore"></span>
-      </label>
-      <input type="range" min="0" max="100" step="5"
-             x-model.number="$store.filters.minScore"
-             class="range range-sm range-primary cursor-pointer">
-    </div>
     {# "Hide french" only makes sense in a mixed-language market (Ottawa/
        Montréal). A Spanish-speaking user (Colombia, España) sees FR jobs
        as noise the wrong way — the toggle labelled "ocultar francés"
@@ -265,6 +347,23 @@
         <option value="onsite">{{ _('filters.remote.onsite') }}</option>
       </select>
     </div>
+    {# Min-score slider LAST — hidden until BOTH discovery is complete
+       AND all jobs have final scores (ADR-011 gate rule). Filtering a
+       still-loading result set removes cards as they land under the
+       threshold, which reads as the app losing results (user feedback
+       2026-08-26). Once both conditions are true, the slider appears
+       alongside the toast. #}
+    <div class="flex-1 min-w-[200px]"
+         x-show="pendingScoreCount === 0 && discoveryComplete"
+         x-cloak>
+      <label class="text-label block mb-2">
+        {{ _('filters.min_score') }}:
+        <span class="text-base-content font-semibold tabular-nums" x-text="$store.filters.minScore"></span>
+      </label>
+      <input type="range" min="0" max="100" step="5"
+             x-model.number="$store.filters.minScore"
+             class="range range-sm range-primary cursor-pointer">
+    </div>
   </div>
 </div>
 
@@ -281,12 +380,14 @@
    its `top` from the card's bounding rect on each click. #}
 <div id="jobs-results-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start lg:relative">
 
-  {# LEFT: job list #}
-  <div class="space-y-3 min-w-0 cascade-in">
+  {# LEFT: job list.
+     id="jobs-list-container" — ADR-011 Slice 5b: /growth endpoint
+     OOB-appends new cards here as later sources finish. #}
+  <div id="jobs-list-container" class="space-y-3 min-w-0 cascade-in">
     {% for job in jobs %}
       {% include "partials/job_card.html" %}
     {% else %}
-      <div class="card-quiet text-center py-12">
+      <div id="empty-results-placeholder" class="card-quiet text-center py-12">
         <div class="text-body-muted">{{ _('results.no_jobs') }}</div>
       </div>
     {% endfor %}

@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 from jobspy import scrape_jobs
 
@@ -124,14 +125,66 @@ class Job:
 def search_jobs(params: JobSearchParams) -> list[Job]:
     """Scrape jobs and return a list of cleaned Job dicts.
 
+    Bundled (all sites in one jobspy call). Kept for API compatibility —
+    the multi-search + expand paths still use it. The interactive single-
+    query path now streams via `scrape_jobs_per_source` (ADR-010, Slice 2)
+    so results land in the cache as each site returns.
+
     Raises RuntimeError on hard failure; returns [] if the scrape succeeds
     but finds nothing. On any failure we emit a search.blocked event so the
     Journey tab (or a future ops dashboard) can spot patterns — e.g.
     LinkedIn blocking us 3 days in a row = time for a mitigation.
     """
+    jobs = _scrape_bundled(params, sites=list(params.sites))
+    return _dedup_across_sources(jobs)
+
+
+def scrape_jobs_per_source(params: JobSearchParams) -> Iterator[tuple[str, list[Job]]]:
+    """Scrape each configured site as its own jobspy call **in parallel**,
+    yielding `(site, jobs)` as each thread finishes so callers can feed
+    downstream stages (upsert, cache merge, scoring queue) without waiting
+    for the slowest source.
+
+    Wall-clock matches jobspy's internal bundled behavior — jobspy also
+    uses a ThreadPoolExecutor over sites internally (see jobspy/__init__.py).
+    The reason for this wrapper isn't parallelism; it's per-source
+    visibility. Doing our own pool lets the caller run bookkeeping
+    (upsert, cache save, task-progress message) between site completions
+    instead of only after the bundled call returns.
+
+    Per-site failures yield an empty list and emit `search.blocked` with
+    known attribution (`site_hint`), so we don't have to guess from the
+    error text. One source dying doesn't kill the run; the caller sees
+    which returned data.
+
+    Jobs from earlier sources are NOT re-yielded when a later source
+    completes — dedup is the caller's responsibility (keeps this helper
+    stateless).
+    """
+    sites = list(params.sites)
+    if not sites:
+        return
+
+    def _work(site: str) -> tuple[str, list[Job]]:
+        try:
+            return (site, _scrape_bundled(params, sites=[site]))
+        except RuntimeError:
+            return (site, [])
+
+    with ThreadPoolExecutor(max_workers=len(sites)) as pool:
+        futures = [pool.submit(_work, s) for s in sites]
+        for fut in as_completed(futures):
+            yield fut.result()
+
+
+def _scrape_bundled(params: JobSearchParams, sites: list[str]) -> list[Job]:
+    """Single jobspy call over the given site list. Returns raw Jobs
+    (NOT deduped — the caller decides scope of dedup, since the per-source
+    path dedupes across previously-yielded results not this batch alone).
+    """
     try:
         df = scrape_jobs(
-            site_name=params.sites,
+            site_name=sites,
             search_term=params.query,
             google_search_term=f"{params.query} jobs near {params.location} in the past week",
             location=params.location,
@@ -145,9 +198,10 @@ def search_jobs(params: JobSearchParams) -> list[Job]:
     except Exception as exc:
         # Try to attribute the block to a specific site so we know WHO
         # rate-limited us. jobspy's exceptions often mention the source
-        # in their str form ("linkedin: ...", "indeed: ..." etc).
-        _emit_blocked_event(params, str(exc))
-        raise RuntimeError(f"jobspy scrape failed: {exc}") from exc
+        # in their str form ("linkedin: ...", "indeed: ..." etc). When
+        # we're scraping a single site we know the attribution for sure.
+        _emit_blocked_event(params, str(exc), site_hint=(sites[0] if len(sites) == 1 else None))
+        raise RuntimeError(f"jobspy scrape failed ({','.join(sites)}): {exc}") from exc
 
     if df is None or len(df) == 0:
         return []
@@ -159,6 +213,13 @@ def search_jobs(params: JobSearchParams) -> list[Job]:
         except Exception:
             # one bad row shouldn't kill the whole result set
             continue
+    return jobs
+
+
+def dedup_across_sources(jobs: list[Job]) -> list[Job]:
+    """Public alias for `_dedup_across_sources` — needed by the progressive
+    per-source path in `_run_single_background`, which accumulates yields
+    from `scrape_jobs_per_source` and dedupes after each site returns."""
     return _dedup_across_sources(jobs)
 
 
@@ -231,21 +292,24 @@ def _norm_key(s: str, *, is_company: bool = False) -> str:
 
 # ---------- normalization ----------
 
-def _emit_blocked_event(params: JobSearchParams, err_msg: str) -> None:
+def _emit_blocked_event(params: JobSearchParams, err_msg: str, *, site_hint: Optional[str] = None) -> None:
     """Log a search.blocked event so the Journey view surfaces scraper
     friction. Attribution is best-effort — we look for site names in the
-    error message. Import is local so search.py stays importable if
-    events.py ever grows a hard dependency."""
+    error message. When called from the per-source path we already know
+    the site (`site_hint`) so we don't have to guess. Import is local
+    so search.py stays importable if events.py ever grows a hard
+    dependency."""
     try:
         from core import events
     except Exception:  # noqa: BLE001
         return
     lower = err_msg.lower()
-    site = "unknown"
-    for candidate in ("linkedin", "indeed", "google", "glassdoor", "zip"):
-        if candidate in lower:
-            site = candidate
-            break
+    site = site_hint or "unknown"
+    if site == "unknown":
+        for candidate in ("linkedin", "indeed", "google", "glassdoor", "zip"):
+            if candidate in lower:
+                site = candidate
+                break
     # Rough block-category heuristic — help future filtering without a
     # human having to parse raw errors.
     reason = "other"

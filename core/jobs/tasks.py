@@ -118,6 +118,35 @@ def mark_failed(task_id: str, error: str) -> None:
     update(task_id, status="failed", error=error, message=error[:180])
 
 
+def get_running_by_cache_key(cache_key: str) -> Optional[dict]:
+    """Return the newest running/queued task whose payload references
+    this cache_key, or None. Used by the results page (ADR-011) to
+    detect "discovery still in progress for this cache" without needing
+    a task_id URL query param.
+
+    Legacy rows (created before Slice 5a) don't have `cache_key` in
+    their payload and are silently skipped — those searches just get
+    the pre-Slice-5 behavior (no auto-append banner) on refresh.
+
+    The `LIKE` on payload_json is a pragmatic shortcut: cache_key
+    values are 16 hex chars (see JobSearchParams.cache_key) so
+    collisions against unrelated JSON fragments are astronomically
+    unlikely. If concurrent-task volume ever grows, promote
+    cache_key to its own indexed column (schema v15) — flagged as
+    tech debt in project_sprint_state."""
+    needle = f'%"cache_key": "{cache_key}"%'
+    with db.connect() as conn:
+        row = conn.execute(
+            """SELECT id FROM search_tasks
+               WHERE status IN ('running', 'queued')
+                 AND payload_json LIKE ?
+               ORDER BY updated_at DESC
+               LIMIT 1""",
+            (needle,),
+        ).fetchone()
+    return get(row["id"]) if row else None
+
+
 # ── internals ──────────────────────────────────────────────────────────
 
 def _sweep() -> None:

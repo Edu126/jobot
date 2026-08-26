@@ -760,6 +760,24 @@ def get_applied_job_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str
     return {r["job_id"] for r in rows}
 
 
+def get_application_statuses(job_ids: Iterable[str], path: Path = DB_PATH) -> dict[str, str]:
+    """Batch version of get_application_by_job — returns `{job_id: status}`
+    for every job that has an application row (any status, not just
+    applied+). Replaces per-row `get_application_by_job` in enrichment
+    loops (fix for the /jobs/results/.../growth N+1, 2026-08-26)."""
+    ids = list(job_ids)
+    if not ids:
+        return {}
+    with connect(path) as conn:
+        placeholders = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT job_id, status FROM applications "
+            f"WHERE job_id IN ({placeholders})",
+            ids,
+        ).fetchall()
+    return {r["job_id"]: r["status"] for r in rows}
+
+
 def get_jobs(job_ids: Iterable[str], path: Path = DB_PATH) -> list[dict]:
     """Batch-load full job rows for a set of ids. Order matches `job_ids`
     (rows missing from the DB are silently skipped — treat as a stale cache

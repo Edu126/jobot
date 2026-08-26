@@ -7,8 +7,10 @@ Every result has: score (0-100), verdict (enum), one-sentence reasoning,
 top matched skills, top gaps. Cached in SQLite per (resume_id, job_id).
 
 Cost/latency:
-- Batched 6 jobs per call (~2-4s vs ~15s doing them one by one)
-- Free tier: 1500 req/day → ~9000 unique jobs/day at batch=6
+- Batched 5 jobs per call (~2-4s vs ~15s doing them one by one) — ADR-010
+  fixes this at 5 as the single source of truth (route imports
+  DEFAULT_BATCH_SIZE from here so there's one number to change).
+- Free tier: 1500 req/day → ~7500 unique jobs/day at batch=5
 - Cache hits are free (SQLite lookup)
 
 Reliability:
@@ -36,7 +38,7 @@ def _resolve_lang(lang: str | None) -> str:
     return lang if lang is not None else get_reasoning_language()
 
 
-DEFAULT_BATCH_SIZE = 6
+DEFAULT_BATCH_SIZE = 5
 MAX_JD_CHARS = 2500       # truncate very long JDs — key reqs are near the top
 # v0.5: bumped from 4000 → 12000 so certifications / additional-info / older
 # roles at the tail of long resumes are still in the window Gemini reads.

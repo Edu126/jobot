@@ -33,6 +33,16 @@ PAGE_HIDDEN            = "page_hidden"          # tab lost focus (visibilitychan
 SEARCH_BROAD           = "search.broad"         # /jobs/run/multi
 SEARCH_URL_IMPORT      = "search.url_import"    # /jobs/from-url
 SEARCH_REFRESH         = "search.refresh"       # /jobs/refresh/{key}
+# REQ-011 / ADR-010 instrumentation — TTFJ / TTFS / search completion.
+# `submitted` fires at task creation; `discovery_done` when scrape+dedupe
+# finish (payload carries `duration_ms` + `jobs_found` + `cache_key`);
+# `score_batch_done` fires once per LLM batch return (payload carries
+# `duration_ms`, `batch_size`, `remaining_after`). Aggregation lives in
+# whatever query we write when we actually want to look — no dashboard
+# code lands with the instrumentation itself.
+SEARCH_SUBMITTED       = "search.submitted"
+SEARCH_DISCOVERY_DONE  = "search.discovery_done"
+SEARCH_SCORE_BATCH     = "search.score_batch_done"
 # Job interactions
 JOB_DETAIL_VIEWED      = "job.detail_viewed"
 JOB_SAVED              = "job.saved"

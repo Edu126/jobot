@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% set is_expand = task.kind == "expand" %}
-{% block title %}{% if is_expand %}Expanding search{% else %}Running multi-search{% endif %} — Jobot{% endblock %}
+{% set is_single = task.kind == "single" %}
+{% block title %}{% if is_expand %}Expanding search{% elif is_single %}Running search{% else %}Running multi-search{% endif %} — Jobot{% endblock %}
 {% block container_class %}max-w-3xl{% endblock %}
 
 {% block content %}
@@ -17,15 +18,19 @@
      @htmx:after-request.window="
        const xhr = $event.detail.xhr;
        if (xhr && xhr.getResponseHeader && xhr.getResponseHeader('HX-Redirect')) {
-         const isExpand = kind === 'expand';
-         Alpine.store('notif').fire(
-           isExpand ? 'Jobot: expand done' : 'Jobot: multi-search done',
-           isExpand ? 'Fresh results merged into your original search.' : 'Your results are ready.'
-         );
-         Alpine.store('toast').show(
-           isExpand ? 'Expand complete — showing fresh results' : 'Multi-search complete — loading results',
-           'success'
-         );
+         const titles = {
+           expand: ['Jobot: expand done', 'Fresh results merged into your original search.'],
+           single: ['Jobot: search done', 'Your results are ready.'],
+           multi:  ['Jobot: multi-search done', 'Your results are ready.'],
+         };
+         const toasts = {
+           expand: 'Expand complete — showing fresh results',
+           single: 'Search complete — loading results',
+           multi:  'Multi-search complete — loading results',
+         };
+         const [nt, nb] = titles[kind] || titles.multi;
+         Alpine.store('notif').fire(nt, nb);
+         Alpine.store('toast').show(toasts[kind] || toasts.multi, 'success');
        }
      ">
 
@@ -39,6 +44,12 @@
       Deeper scrape on <span class="font-medium">"{{ task.query }}"</span> — 2× the results window,
       2× the time range, 2× the geographic radius. Takes about 15-30 seconds.
       When done, this tab flips to the fresh view (new + unviewed jobs only).
+    </p>
+  {% elif is_single %}
+    <h2 class="text-title mt-6">Finding jobs for you</h2>
+    <p class="text-body-muted mt-2 max-w-md mx-auto">
+      Scraping Indeed, LinkedIn, and Google for <span class="font-medium">"{{ task.query }}"</span>.
+      Takes about 30-60 seconds. When done, this tab flips to your results.
     </p>
   {% else %}
     <h2 class="text-title mt-6">Running your searches</h2>
@@ -64,6 +75,11 @@
   <div class="mt-8 pt-6 border-t border-base-300 max-w-md mx-auto">
     {% if is_expand %}
       <div class="text-label mb-2">Based on</div>
+      <div class="flex flex-wrap justify-center gap-2">
+        <span class="chip chip-neutral">{{ task.query }}</span>
+      </div>
+    {% elif is_single %}
+      <div class="text-label mb-2">Searching for</div>
       <div class="flex flex-wrap justify-center gap-2">
         <span class="chip chip-neutral">{{ task.query }}</span>
       </div>

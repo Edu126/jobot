@@ -19,6 +19,7 @@ State:
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import re
 import threading
@@ -39,7 +40,13 @@ from core.jobs.from_url import (
     extract_job_from_text,
     fetch_page_text,
 )
-from core.jobs.search import Job, JobSearchParams, search_jobs
+from core.jobs.search import (
+    Job,
+    JobSearchParams,
+    dedup_across_sources,
+    scrape_jobs_per_source,
+    search_jobs,
+)
 from core.llm.gemini import (
     DEFAULT_MODEL,
     GeminiClient,
@@ -50,7 +57,9 @@ from core.llm.gemini import (
 )
 from core.llm.prompts import Level
 from core.llm.rewrite import rewrite_resume, tailored_to_text
+from core.matching.affinity import compute_affinity, resume_hints
 from core.matching.semantic_score import (
+    DEFAULT_BATCH_SIZE as _SCORE_BATCH_SIZE,
     ScoreResult,
     score_jobs as score_jobs_batch,
     score_single_no_cache,
@@ -462,11 +471,15 @@ async def jobs_run(
     custom_query: Optional[str] = Form(None),
     custom_location: Optional[str] = Form("Ottawa, Ontario, Canada"),
 ):
-    """Execute a jobspy scrape. Sync (30-90s) — HTMX spinner covers the wait.
+    """Kick off a jobspy scrape as a background task; redirect to the
+    loading page which polls status and flips to the results page when done.
 
-    Returns an HX-Redirect header to the results page. HTMX will do a full
-    navigation on receiving it; regular form submitters get a 200 with the
-    link exposed so we don't fall over.
+    Slice 1 of ADR-010: the actual scrape is still one bundled
+    `search_jobs(sites=[...])` call (Slice 2 replaces it with per-source
+    sub-calls), but by moving it off the request thread the browser no
+    longer stares at a spinner for 30-60 s. Cache short-circuit stays
+    synchronous — a recent-hit is fast enough that bouncing through the
+    loading page would be pure overhead.
     """
     if feature_flags.is_scrape_disabled():
         return _scrape_disabled_response()
@@ -507,7 +520,8 @@ async def jobs_run(
     # Cache short-circuit: identical params submitted within 6h skips the
     # scrape and jumps straight to results. Saves rate-limit budget on
     # accidental double-submits and back-button retries. `?force=1`
-    # bypasses (Refresh button, admin re-run).
+    # bypasses (Refresh button, admin re-run). Kept synchronous — no
+    # point spawning a thread + loading page just to redirect.
     force = request.query_params.get("force", "0") == "1"
     if not force:
         cached = jobs_cache.load(params)
@@ -518,27 +532,134 @@ async def jobs_run(
                 resp.headers["HX-Redirect"] = f"/jobs/results/{params.cache_key()}"
                 return resp
 
-    try:
-        jobs = search_jobs(params)
-    except RuntimeError as exc:
-        return HTMLResponse(
-            f'''<div class="rounded-lg p-3 my-3 flex items-start gap-3 text-sm"
-                     style="background: hsl(0 60% 96%); border: 1px solid hsl(0 50% 88%);">
-                  <i class="ph-thin ph-warning-octagon" style="font-size: 1.25rem; color: hsl(0 60% 45%);"></i>
-                  <div>
-                    <div class="font-semibold">Search failed</div>
-                    <div class="text-body-muted mt-0.5">{exc}</div>
-                  </div>
-                </div>''',
-            status_code=200,
-        )
+    # Kick off the scrape in the background. Task state is durable
+    # (SQLite) — survives Fly `auto_stop_machines` cycling so a user who
+    # closes the tab and returns still resolves.
+    task_id = str(uuid.uuid4())[:8]
+    # Compute cache_key upfront and stash in the task payload so:
+    #   - loading-status can HX-Redirect once cache has ≥1 job (ADR-011
+    #     Slice 5a early redirect),
+    #   - the results page can look up "is discovery still running for
+    #     me?" without a URL query param (via
+    #     search_tasks.get_running_by_cache_key).
+    cache_key_precomputed = params.cache_key()
+    search_tasks.create(
+        task_id,
+        kind="single",
+        payload={
+            # `queries` (list of one) keeps the loading template's shared
+            # rendering paths happy without a special-case branch.
+            "queries": [params.query],
+            "query": params.query,
+            "location": params.location,
+            "label": label,
+            "cache_key": cache_key_precomputed,
+            "message": "Starting…",
+        },
+    )
+    events.track(
+        events.SEARCH_SUBMITTED,
+        task_id=task_id,
+        kind="single",
+        query=params.query,
+    )
+    threading.Thread(
+        target=_run_single_background,
+        args=(task_id, params, label),
+        daemon=True,
+    ).start()
 
-    # Auto-widen on empty results: retry once with doubled hours_old +
-    # distance. Small firms + niche titles often have nothing in 168h/50 km
-    # but plenty in 336h/100 km. Cache is written against the widened
-    # params so a second submit hits the short-circuit above.
-    widened_note = ""
+    return Response(
+        status_code=200,
+        headers={"HX-Redirect": f"/jobs/loading/{task_id}"},
+    )
+
+
+def _run_single_background(task_id: str, params: JobSearchParams, label: str) -> None:
+    """Worker for the async single-query search.
+
+    Slice 2: uses `scrape_jobs_per_source` to run each site in its own
+    thread (jobspy already parallelizes internally — we mirror the same
+    parallelism but keep per-site visibility). After each site returns
+    we dedupe across everything so far, upsert new jobs, rewrite the
+    cache with the growing accumulated list, and update the task message
+    with per-site + running-total counts. Wall-clock matches the
+    pre-Slice-2 bundled path (both are max(site_durations)); what's new
+    is the "Indeed: 15 · LinkedIn: 22 · Google: 34" progress the loading
+    page can render live.
+
+    On total emptiness (every site returned zero), retry once with a
+    widened bundle — same rationale as pre-Slice-1: niche titles in
+    small markets often need a bigger window.
+
+    Emits `search.discovery_done` on every completion including empty
+    ones. Per-source counts land in the payload so we can spot patterns
+    like "LinkedIn returns 0 three days running" in the Pulse baseline
+    without adding a separate event type."""
+    if search_tasks.get(task_id) is None:
+        return
+
+    started = time.monotonic()
+    accumulated: list[Job] = []
+    per_source_counts: dict[str, int] = {}
+    remaining = len(params.sites)
+
+    # Initial message shown before any site completes. The polling UI
+    # fires ~immediately on loading-page load, so we set something
+    # informative up-front instead of the previous stale "Searching
+    # for X…" that stayed until the first site returned.
+    search_tasks.update(
+        task_id,
+        status="running",
+        message=f"Searching {len(params.sites)} sources for '{params.query}'…",
+    )
+
+    for site, site_jobs in scrape_jobs_per_source(params):
+        # per_source_counts still populated for the discovery_done
+        # event payload — the Pulse baseline needs per-site numbers
+        # even though the loading UI no longer surfaces them (user
+        # feedback 2026-08-26: per-source counts look bad when the
+        # working reality is that only LinkedIn contributes meaningfully
+        # and Google/Indeed report 0 for niche queries).
+        per_source_counts[site] = len(site_jobs)
+        remaining -= 1
+        if site_jobs:
+            # Dedupe across everything accumulated so far. `dedup_across_sources`
+            # is O(n) via seen-dict — cheap at n≤~90 (3 sites × 30 each).
+            # Note: dedup mutates winner entries in place (opportunistic
+            # upgrade of job_url_direct / description from later-source
+            # dupes), so the full accumulated list must be re-upserted
+            # not just the tail — a delta upsert would drop those
+            # in-place upgrades. Cheap enough at n≤~90.
+            accumulated = dedup_across_sources(accumulated + site_jobs)
+            db.upsert_jobs([j.to_dict() for j in accumulated])
+            jobs_cache.save(params, accumulated, label=label)
+
+        # Loading-page message: running total + how many sources are
+        # still in flight. No per-source names or counts — the visible
+        # story becomes "still finding" not "Google returned 0 again".
+        if remaining > 0:
+            source_line = (
+                f"still searching {remaining} more source" + ("s" if remaining != 1 else "")
+            )
+            search_tasks.update(
+                task_id,
+                message=f"Found {len(accumulated)} · {source_line}…",
+            )
+        else:
+            search_tasks.update(
+                task_id,
+                message=f"Found {len(accumulated)} jobs.",
+            )
+
+    jobs = accumulated
+
+    # Auto-widen on total emptiness. Widen is a bundled retry (single
+    # jobspy call) — no per-source progress there; the loading UI shows
+    # a plain "trying a wider search" line. Simpler + widen is the
+    # exceptional path anyway.
     if not jobs:
+        search_tasks.update(task_id, message="Nothing yet — trying a wider search…")
         time.sleep(_SCRAPE_COOLDOWN_S)
         widened = JobSearchParams(
             query=params.query,
@@ -558,40 +679,126 @@ async def jobs_run(
         if jobs:
             params = widened
             label = f"{label} (widened)"
-            widened_note = " widened to " + f"{widened.hours_old // 24}d/{widened.distance}km"
+            db.upsert_jobs([j.to_dict() for j in jobs])
+            jobs_cache.save(params, jobs, label=label)
 
-    # Still nothing after widening — surface the same "no results" message
-    # the original code showed, with a note that we widened once.
+    duration_ms = int((time.monotonic() - started) * 1000)
+
     if not jobs:
-        return HTMLResponse(
-            f'''<div class="rounded-lg p-4 my-3 flex items-start gap-3 text-sm"
-                     style="background: hsl(35 85% 96%); border: 1px solid hsl(35 70% 82%);">
-                  <i class="ph-thin ph-magnifying-glass" style="font-size: 1.25rem; color: hsl(28 75% 42%);"></i>
-                  <div>
-                    <div class="font-semibold">No results for "{params.query}"</div>
-                    <div class="text-body-muted mt-1">
-                      We also tried a wider search — still nothing. Try broader terms
-                      (e.g. "Coordinator" instead of "Coordinator I") or a nearby city.
-                    </div>
-                  </div>
-                </div>''',
-            status_code=200,
+        events.track(
+            events.SEARCH_DISCOVERY_DONE,
+            task_id=task_id,
+            kind="single",
+            jobs_found=0,
+            duration_ms=duration_ms,
         )
+        search_tasks.mark_failed(
+            task_id,
+            f'No results for "{params.query}". We also tried a wider search — '
+            'still nothing. Try broader terms (e.g. "Coordinator" instead of '
+            '"Coordinator I") or a nearby city.',
+        )
+        return
 
-    # DB upsert must precede the cache save — cache files now store pointers
-    # (job_ids), and the results page hydrates those ids from `db.jobs`.
-    db.upsert_jobs([j.to_dict() for j in jobs])
-    jobs_cache.save(params, jobs, label=label)
-
-    target = f"/jobs/results/{params.cache_key()}"
-    resp = Response(status_code=200)
-    resp.headers["HX-Redirect"] = target
-    return resp
+    # No trailing upsert/save — the per-source loop above (and the widen
+    # branch) already wrote the final cache state. What's left is
+    # emitting the discovery_done event and flipping the task to done.
+    cache_key = params.cache_key()
+    events.track(
+        events.SEARCH_DISCOVERY_DONE,
+        task_id=task_id,
+        kind="single",
+        jobs_found=len(jobs),
+        duration_ms=duration_ms,
+        cache_key=cache_key,
+        # Per-source breakdown lands on the event so we can spot
+        # patterns like "LinkedIn = 0 three days running" without a
+        # separate event type. Empty dict when the widen path took over.
+        per_source=per_source_counts,
+    )
+    search_tasks.mark_done(
+        task_id,
+        result_url=f"/jobs/results/{cache_key}",
+        message=f"Done — {len(jobs)} jobs.",
+    )
 
 
 # ─────────────────────────────────────────────────────────────
 # Results page
 # ─────────────────────────────────────────────────────────────
+
+
+def _enrich_jobs_for_render(
+    job_dicts: list[dict],
+    *,
+    resume: Optional[dict],
+    api_key: str,
+    new_since_expand_ids: set[str],
+) -> int:
+    """Attach every `_*` field the job_card partial reads. Mutates in
+    place. Returns the pending-scoring count.
+
+    Extracted from `jobs_results` + `jobs_growth` (2026-08-26 /simplify)
+    so both paths batch DB lookups the same way — the previous inline
+    duplication had already drifted (jobs_growth used a per-row
+    `get_application_by_job`, i.e. an N+1)."""
+    if not job_dicts:
+        return 0
+
+    all_ids = [j["id"] for j in job_dicts]
+    viewed_ids = db.get_viewed_ids(all_ids)
+    dismissed_ids = db.get_dismissed_ids(all_ids)
+    applied_ids = db.get_applied_job_ids(all_ids)
+    first_seens = db.get_first_seen_batch(all_ids)
+    app_statuses = db.get_application_statuses(all_ids)
+
+    ai_scores: dict[str, ScoreResult] = {}
+    if resume:
+        from core.matching.semantic_score import _row_to_result
+        cached_rows = db.get_cached_scores(int(resume["id"]), all_ids, get_reasoning_language())
+        for jid, row in cached_rows.items():
+            ai_scores[jid] = _row_to_result(row)
+
+    can_score_async = bool(resume and api_key)
+    hints = resume_hints(resume["parsed"].get("raw_text", "")) if resume else frozenset()
+    now = datetime.utcnow()
+    pending = 0
+
+    for j in job_dicts:
+        r = ai_scores.get(j["id"])
+        if r:
+            j["_score"] = r.score
+            j["_verdict"] = r.verdict
+            j["_reasoning"] = r.reasoning
+            j["_matched"] = r.matched
+            j["_gaps"] = r.gaps
+            j["_pending_score"] = False
+        else:
+            j["_score"] = 0
+            j["_verdict"] = "none"
+            j["_reasoning"] = ""
+            j["_matched"] = []
+            j["_gaps"] = []
+            j["_pending_score"] = can_score_async
+            if can_score_async:
+                pending += 1
+        j["_affinity"] = compute_affinity(j, hints)
+        j["_experience"] = _extract_experience(j.get("description", ""))
+        j["_is_viewed"] = j["id"] in viewed_ids
+        j["_is_dismissed"] = j["id"] in dismissed_ids
+        j["_is_applied"] = j["id"] in applied_ids
+        j["_is_new_since_expand"] = j["id"] in new_since_expand_ids
+        j["_is_new"] = False
+        fs = first_seens.get(j["id"])
+        if fs:
+            try:
+                fs_dt = datetime.fromisoformat(fs.rstrip("Z"))
+                j["_is_new"] = (now - fs_dt).total_seconds() < 48 * 3600
+            except Exception:
+                pass
+        j["_app_status"] = app_statuses.get(j["id"])
+
+    return pending
 
 @router.get("/jobs/results/{cache_key}")
 @limiter.limit("60/hour")
@@ -622,90 +829,44 @@ async def jobs_results(request: Request, cache_key: str):
     jobs_dicts = [j.to_dict() for j in cached.jobs]
     db.upsert_jobs(jobs_dicts)   # ensure FK for scoring
 
-    # Load viewed + dismissed + "new since expand" sets in one shot for
-    # the whole cache. All three drive per-card flags AND the header stats.
-    all_ids = [j["id"] for j in jobs_dicts]
-    viewed_ids = db.get_viewed_ids(all_ids)
-    dismissed_ids = db.get_dismissed_ids(all_ids)
-    # `applied_ids` = jobs with status='applied' / interviewing / offer.
-    # Same batch pattern; drives the small-card "Applied" badge which
-    # replaces New/Viewed once the user marks the job (per user 2026-08-21).
-    applied_ids = db.get_applied_job_ids(all_ids)
     new_since_expand_ids = set(cached.last_expand_added_ids)
-
     resume = db.get_current_resume()
     api_key = resolve_api_key()
 
-    ai_scores: dict[str, ScoreResult] = {}
+    # Batch DB lookups + per-job enrichment lives in _enrich_jobs_for_render
+    # (2026-08-26 /simplify: was inline here + duplicated in jobs_growth).
+    pending_score_count = _enrich_jobs_for_render(
+        jobs_dicts,
+        resume=resume,
+        api_key=api_key,
+        new_since_expand_ids=new_since_expand_ids,
+    )
+
+    all_ids = [j["id"] for j in jobs_dicts]
+
+    # Compose the header note describing the initial scoring state.
+    # Real scoring status arrives later via OOB swaps.
     scoring_note: str = ""
     scoring_error: Optional[str] = None
     quota_exhausted: bool = False
-    pending_score_count = 0
-
     if resume and jobs_dicts:
-        all_ids = [j["id"] for j in jobs_dicts]
-        from core.matching.semantic_score import _row_to_result
-        cached_rows = db.get_cached_scores(int(resume["id"]), all_ids, get_reasoning_language())
-        for jid, row in cached_rows.items():
-            ai_scores[jid] = _row_to_result(row)
-
-        pending_score_count = len(jobs_dicts) - len(ai_scores)
-
-        # Compose the header note. Real scoring status arrives later via
-        # OOB swaps; here we describe the initial state.
+        from_cache = len(jobs_dicts) - pending_score_count
         if not api_key:
-            scoring_note = f"{len(ai_scores)} from cache · no Gemini key set"
+            scoring_note = f"{from_cache} from cache · no Gemini key set"
         elif pending_score_count > 0:
-            scoring_note = f"{len(ai_scores)} from cache · {pending_score_count} scoring…"
+            scoring_note = f"{from_cache} from cache · {pending_score_count} scoring…"
         else:
-            scoring_note = f"all {len(ai_scores)} from cache"
+            scoring_note = f"all {from_cache} from cache"
 
-    # Batch first_seen lookup for "New job" flag
-    from datetime import datetime as _dt2
-    now2 = _dt2.utcnow()
-    first_seens = db.get_first_seen_batch([j["id"] for j in jobs_dicts])
-
-    # Attach score + verdict + experience to each job for template convenience.
-    # `_pending_score` distinguishes "genuinely un-scorable (no resume/key)"
-    # from "scored async by the batch endpoint". The score_badge partial
-    # renders a spinner when pending, "—" when unscorable.
-    can_score_async = bool(resume and api_key)
-    for j in jobs_dicts:
-        r = ai_scores.get(j["id"])
-        if r:
-            j["_score"] = r.score
-            j["_verdict"] = r.verdict
-            j["_reasoning"] = r.reasoning
-            j["_matched"] = r.matched
-            j["_gaps"] = r.gaps
-            j["_pending_score"] = False
-        else:
-            j["_score"] = 0
-            j["_verdict"] = "none"
-            j["_reasoning"] = ""
-            j["_matched"] = []
-            j["_gaps"] = []
-            j["_pending_score"] = can_score_async
-        j["_experience"] = _extract_experience(j.get("description", ""))
-        j["_is_viewed"] = j["id"] in viewed_ids
-        j["_is_dismissed"] = j["id"] in dismissed_ids
-        j["_is_applied"] = j["id"] in applied_ids
-        j["_is_new_since_expand"] = j["id"] in new_since_expand_ids
-
-        # "New" flag — first_seen within 48h
-        j["_is_new"] = False
-        fs = first_seens.get(j["id"])
-        if fs:
-            try:
-                fs_dt = _dt2.fromisoformat(fs.rstrip("Z"))
-                j["_is_new"] = (now2 - fs_dt).total_seconds() < 48 * 3600
-            except Exception:
-                pass
-
-        app = db.get_application_by_job(j["id"])
-        j["_app_status"] = app["status"] if app else None
-
-    jobs_dicts.sort(key=lambda x: (x["_score"], x.get("date_posted") or ""), reverse=True)
+    # Sort: LLM score first (scored jobs float to top as their badges
+    # land), then affinity for the unscored bulk (which all have _score=0
+    # initially), then date_posted as a stable tiebreaker. ADR-010 rule:
+    # scores arriving via OOB swaps update badges IN PLACE and do NOT
+    # trigger a re-sort — this initial order IS the DOM order.
+    jobs_dicts.sort(
+        key=lambda x: (x["_score"], x["_affinity"], x.get("date_posted") or ""),
+        reverse=True,
+    )
 
     # Compact metadata array for Alpine — used by the client-side filter to
     # compute visible count reactively without a server round-trip.
@@ -727,14 +888,22 @@ async def jobs_results(request: Request, cache_key: str):
         for j in jobs_dicts
     ]
 
-    # Aggregate counts for the fresh-view header. Computed server-side so
-    # the template doesn't need Alpine reactivity for them.
+    # Aggregate counts for the fresh-view header. Computed server-side
+    # from the already-enriched dicts so we don't re-query the DB.
     total_new_since_expand = len(new_since_expand_ids & set(all_ids))
-    total_viewed = len(viewed_ids)
+    total_viewed = sum(1 for j in jobs_dicts if j["_is_viewed"])
     total_unviewed_from_before = sum(
         1 for j in jobs_dicts
         if not j["_is_new_since_expand"] and not j["_is_viewed"]
     )
+
+    # ADR-011 Slice 5a: is discovery still in flight for this cache?
+    # If yes, the template renders in progressive mode — banner + growth
+    # polling + filter gate deferred. `discovery_task_id` powers the
+    # /growth polling in Slice 5b; today's Slice 5a only uses the boolean.
+    active_task = search_tasks.get_running_by_cache_key(cache_key)
+    discovery_in_progress = bool(active_task)
+    discovery_task_id = active_task["id"] if active_task else None
 
     return templates.TemplateResponse(
         request,
@@ -759,18 +928,153 @@ async def jobs_results(request: Request, cache_key: str):
             "total_new_since_expand": total_new_since_expand,
             "total_unviewed_from_before": total_unviewed_from_before,
             "total_viewed": total_viewed,
+            "discovery_in_progress": discovery_in_progress,
+            "discovery_task_id": discovery_task_id,
         },
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# ADR-011 Slice 5b — growth polling endpoint
+# ─────────────────────────────────────────────────────────────
+
+# How long the growth trigger waits between polls while discovery is
+# still in flight. 2s matches the loading-page polling cadence — same
+# server load characteristic, just now targeting the results page.
+_GROWTH_POLL_DELAY_MS = 2000
+
+
+@router.get("/jobs/results/{cache_key}/growth")
+@limiter.limit("300/hour")
+async def jobs_growth(request: Request, cache_key: str, since: int = 0):
+    """Poll for cards added by later discovery sources.
+
+    Called from the results page's growth-trigger div while a discovery
+    task is still running for this cache_key. Response shape:
+
+      - OOB-append fragments for cache.jobs[since:] into
+        #jobs-list-container (each card rendered via partials/job_card.html
+        with the same enrichment pipeline as jobs_results).
+      - Inline <script> patching the client-side jobs meta array via
+        window.__jobotAppendJobs so filter reactivity + pending counter
+        stay in sync.
+      - Fresh score-batch trigger if any new cards need scoring.
+      - Either a fresh growth-trigger (discovery still running) OR a
+        terminator script that calls window.__jobotOnDiscoveryDone()
+        and stops polling."""
+    cached = jobs_cache.load_by_key(cache_key)
+    if cached is None:
+        return HTMLResponse("")
+
+    active_task = search_tasks.get_running_by_cache_key(cache_key)
+    discovery_ongoing = bool(active_task)
+
+    all_jobs = cached.jobs
+    since = max(0, int(since))
+    new_jobs = all_jobs[since:] if since < len(all_jobs) else []
+
+    fragments: list[str] = []
+
+    if new_jobs:
+        resume = db.get_current_resume()
+        api_key = resolve_api_key()
+        new_dicts = [j.to_dict() for j in new_jobs]
+        db.upsert_jobs(new_dicts)
+
+        added_pending = _enrich_jobs_for_render(
+            new_dicts,
+            resume=resume,
+            api_key=api_key,
+            new_since_expand_ids=set(cached.last_expand_added_ids),
+        )
+
+        # Render each card into an OOB fragment appending to the list.
+        card_tmpl = templates.env.get_template("partials/job_card.html")
+        for j in new_dicts:
+            card_html = card_tmpl.render(job=j)
+            # HTMX OOB targeting: element becomes a child of
+            # #jobs-list-container at beforeend. We wrap the article
+            # in a div carrying the OOB attribute so the article's own
+            # attributes stay untouched (score_badge OOB targeting
+            # elsewhere reads by ID + we don't want to double-attribute).
+            fragments.append(
+                f'<div hx-swap-oob="beforeend:#jobs-list-container">{card_html}</div>'
+            )
+
+        # If the initial render showed the empty-state placeholder,
+        # kill it — new cards make it stale. Silent no-op when it wasn't
+        # rendered (initial cache non-empty).
+        fragments.append(
+            '<div id="empty-results-placeholder" hx-swap-oob="outerHTML"></div>'
+        )
+
+        # jobs_meta patch — mirrors what jobs_results.jobs_meta contains
+        # per row so client-side filter counts stay accurate. Same fields
+        # (id, score, french, remote, is_new, viewed, dismissed,
+        # new_since_expand, age_days).
+        meta_patch = [
+            {
+                "id": j["id"],
+                "score": j["_score"],
+                "french": int(bool(j.get("french_required")) or j.get("detected_language") == "fr"),
+                "remote": int(bool(j.get("is_remote"))),
+                "is_new": int(bool(j.get("_is_new"))),
+                "viewed": int(bool(j.get("_is_viewed"))),
+                "dismissed": int(bool(j.get("_is_dismissed"))),
+                "new_since_expand": int(bool(j.get("_is_new_since_expand"))),
+                "age_days": j.get("_age_days"),
+            }
+            for j in new_dicts
+        ]
+        import json as _json
+        meta_json = _json.dumps(meta_patch, ensure_ascii=False)
+        fragments.append(
+            f'<script>window.__jobotAppendJobs && window.__jobotAppendJobs({meta_json}, {added_pending});</script>'
+        )
+
+        # Re-fire the score-batch chain so new pending cards get scored.
+        # semantic_score already dedupes on job_scores cache — if the
+        # chain was still running (rare), a duplicate call scores 0
+        # jobs (all picked already) and stops. See ADR-011 consequences.
+        if added_pending > 0 and resume and api_key:
+            fragments.append(
+                f'<div hx-get="/jobs/results/{cache_key}/score-batch"'
+                f' hx-trigger="load delay:100ms"'
+                f' hx-swap="outerHTML"></div>'
+            )
+
+    # Continuation: keep polling if discovery still going, terminate
+    # otherwise. The trigger has a fixed id so its outerHTML swap
+    # replaces the previous trigger cleanly.
+    new_since = len(all_jobs)
+    if discovery_ongoing:
+        fragments.append(
+            f'<div id="growth-trigger"'
+            f' hx-get="/jobs/results/{cache_key}/growth?since={new_since}"'
+            f' hx-trigger="load delay:{_GROWTH_POLL_DELAY_MS}ms"'
+            f' hx-swap="outerHTML"></div>'
+        )
+    else:
+        # Terminator: fire onDiscoveryDone AND leave a stub div so the
+        # outerHTML swap on #growth-trigger doesn't wipe the element
+        # without replacement (HTMX would keep the old attrs otherwise
+        # in some edge cases).
+        fragments.append(
+            '<script>window.__jobotOnDiscoveryDone && window.__jobotOnDiscoveryDone();</script>'
+        )
+        fragments.append('<div id="growth-trigger" data-terminated="1"></div>')
+
+    return HTMLResponse("\n".join(fragments))
 
 
 # ─────────────────────────────────────────────────────────────
 # Lazy scoring — batch endpoint that streams scored fragments
 # ─────────────────────────────────────────────────────────────
 
-# How many pending jobs to score per batch call. Small enough that the
-# first badges appear quickly, large enough that the chain doesn't
-# thrash the server. Fits ~1s scoring on Gemini's Flash-Lite tier.
-_SCORE_BATCH_SIZE = 5
+# `_SCORE_BATCH_SIZE` is imported from core.matching.semantic_score
+# (DEFAULT_BATCH_SIZE) so the route slice and the scorer stay in sync
+# — previously each held its own literal (5 vs 6) with the smaller one
+# silently winning. ADR-010 fixes it at 5.
 
 
 @router.get("/jobs/results/{cache_key}/score-batch")
@@ -807,12 +1111,18 @@ async def jobs_score_batch(request: Request, cache_key: str):
     all_ids = [j.id for j in cached.jobs]
     already_scored_ids = set(db.get_cached_scores(resume_id, all_ids, get_reasoning_language()).keys())
 
-    # Pending = jobs still uncached against THIS resume. Order matches
-    # the cached list order so the visual "spinner → badge" cascade
-    # matches the render order.
+    # Pending = jobs still uncached against THIS resume. Slice 3
+    # (ADR-010): pick the next batch by descending affinity so LLM
+    # budget lands on jobs most likely to matter first. Ties fall back
+    # to cache order (which mirrors scraped order — no re-sort of the
+    # DOM happens as scores arrive, so visual cascade order is set by
+    # this pick, not the eventual score value).
     pending = [j.to_dict() for j in cached.jobs if j.id not in already_scored_ids]
     if not pending:
         return HTMLResponse("")
+
+    hints = resume_hints(resume["parsed"].get("raw_text", ""))
+    pending.sort(key=lambda j: compute_affinity(j, hints), reverse=True)
 
     batch = pending[:_SCORE_BATCH_SIZE]
 
@@ -821,8 +1131,18 @@ async def jobs_score_batch(request: Request, cache_key: str):
     except GeminiError:
         return HTMLResponse("")
 
+    batch_started = time.monotonic()
     try:
-        results = score_jobs_batch(
+        # asyncio.to_thread is critical: score_jobs_batch does a
+        # synchronous Gemini call that blocks for 1-3s. If we ran it
+        # directly inside this `async def`, the entire FastAPI event
+        # loop would freeze — every other request (card clicks →
+        # /jobs/detail/{id}, growth polling, healthz) would queue
+        # until scoring returned. User feedback 2026-08-26: "clicking
+        # a job to expand did not load, waiting for the rest of the
+        # page." Root cause was this call, not the browser.
+        results = await asyncio.to_thread(
+            score_jobs_batch,
             resume_id=resume_id,
             resume_text=resume["parsed"].get("raw_text", ""),
             jobs=batch,
@@ -835,6 +1155,21 @@ async def jobs_score_batch(request: Request, cache_key: str):
     except GeminiError:
         # Some transient issue — stop chain to avoid tight loops.
         return HTMLResponse("")
+
+    # REQ-011: emit one event per batch. First occurrence for a cache_key
+    # is the TTFS observation; last-with-remaining_after=0 is search-
+    # completion. We compute both later by grouping on cache_key, so no
+    # first/last flag is stored — just the raw batch data.
+    batch_ms = int((time.monotonic() - batch_started) * 1000)
+    remaining_after = len(pending) - len(batch)
+    events.track(
+        events.SEARCH_SCORE_BATCH,
+        cache_key=cache_key,
+        batch_size=len(batch),
+        scored_returned=len(results),
+        remaining_after=remaining_after,
+        duration_ms=batch_ms,
+    )
 
     # Build OOB swaps for each scored job in this batch + a tiny script
     # that pushes the new score into the client-side jobs_meta array so
@@ -866,7 +1201,8 @@ async def jobs_score_batch(request: Request, cache_key: str):
         fragments.append(f'<script>{pushes}</script>')
 
     # Chain continuation: are there more pending after this batch?
-    remaining_after = len(pending) - len(batch)
+    # `remaining_after` was hoisted above so the score_batch_done event
+    # payload matches the chain decision below.
     if remaining_after > 0:
         fragments.append(
             f'<div hx-get="/jobs/results/{cache_key}/score-batch"'
@@ -952,6 +1288,12 @@ async def jobs_run_multi(
             "message": "Starting…",
         },
     )
+    events.track(
+        events.SEARCH_SUBMITTED,
+        task_id=task_id,
+        kind="multi",
+        query_count=len(queries),
+    )
     thread = threading.Thread(
         target=_run_multi_background,
         args=(task_id, queries, location),
@@ -977,6 +1319,7 @@ def _run_multi_background(task_id: str, queries: list[str], location: str) -> No
         return
 
     search_tasks.update(task_id, status="running")
+    started = time.monotonic()
     merged: dict[str, Job] = {}
     successes: list[str] = []
     failures: list[str] = []
@@ -997,6 +1340,15 @@ def _run_multi_background(task_id: str, queries: list[str], location: str) -> No
             failures.append(f"{q}: {exc}")
 
     if not merged:
+        events.track(
+            events.SEARCH_DISCOVERY_DONE,
+            task_id=task_id,
+            kind="multi",
+            jobs_found=0,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            query_count=len(queries),
+            failure_count=len(failures),
+        )
         search_tasks.mark_failed(
             task_id,
             "No results from any of the searches. " + (
@@ -1014,16 +1366,32 @@ def _run_multi_background(task_id: str, queries: list[str], location: str) -> No
     db.upsert_jobs([j.to_dict() for j in merged_list])
     jobs_cache.save(bulk_params, merged_list, label=bulk_label)
 
+    cache_key = bulk_params.cache_key()
+    duration_ms = int((time.monotonic() - started) * 1000)
+
+    # SEARCH_BROAD stays for the activity-timeline humanizer at
+    # events.py:_humanize_event; SEARCH_DISCOVERY_DONE is the machine-
+    # readable timing sibling REQ-011 needs. Same event, different lens.
     events.track(
         events.SEARCH_BROAD,
         queries=successes,
         result_count=len(merged_list),
         failure_count=len(failures),
     )
+    events.track(
+        events.SEARCH_DISCOVERY_DONE,
+        task_id=task_id,
+        kind="multi",
+        jobs_found=len(merged_list),
+        duration_ms=duration_ms,
+        cache_key=cache_key,
+        query_count=len(queries),
+        failure_count=len(failures),
+    )
 
     search_tasks.mark_done(
         task_id,
-        result_url=f"/jobs/results/{bulk_params.cache_key()}",
+        result_url=f"/jobs/results/{cache_key}",
         message=f"Done — {len(merged_list)} jobs across {len(successes)} searches.",
     )
 
@@ -1044,10 +1412,16 @@ async def jobs_loading_page(request: Request, task_id: str):
 
 @router.get("/jobs/loading/{task_id}/status")
 async def jobs_loading_status(request: Request, task_id: str):
-    """Polled every 2s by the loading page for both multi-search and
-    expand tasks. Returns HTML fragment for the running/failed states;
-    on done, returns HX-Redirect so HTMX drives the browser to the
-    task's result URL (results page or ?view=fresh for expand)."""
+    """Polled every 2s by the loading page for search + expand tasks.
+    Returns HTML fragment for running/failed states; on done, returns
+    HX-Redirect so HTMX drives the browser to the task's result URL.
+
+    ADR-011 Slice 5a: for `kind='single'` tasks, also HX-Redirect
+    early if the cache already has ≥1 job — the user shouldn't wait
+    for LinkedIn to finish alone once Indeed has already returned
+    anything. The results page detects the still-running task via
+    `search_tasks.get_running_by_cache_key` and renders in
+    discovery-in-progress mode."""
     task = search_tasks.get(task_id)
     if task is None:
         return HTMLResponse('<div class="text-error">Task not found.</div>', status_code=200)
@@ -1058,7 +1432,18 @@ async def jobs_loading_status(request: Request, task_id: str):
             f'<div class="text-error text-sm">{task.get("error", "Unknown error")}</div>',
             status_code=200,
         )
-    # Still running
+    # Still running. Early-redirect check: single-kind + cache_key
+    # known + cache already has jobs → send the user to the results
+    # page NOW; discovery continues in the background, results page
+    # picks it up via get_running_by_cache_key.
+    cache_key = task.get("cache_key")
+    if task.get("kind") == "single" and cache_key:
+        cached = jobs_cache.load_by_key(cache_key)
+        if cached and cached.jobs:
+            return Response(
+                status_code=200,
+                headers={"HX-Redirect": f"/jobs/results/{cache_key}"},
+            )
     message = task.get("message", "Working…")
     try:
         started = datetime.fromisoformat((task.get("started_at") or "").rstrip("Z"))
