@@ -170,7 +170,7 @@ def _build_prompt(resume_text: str, present: list[str], missing_block: str, loca
 You are a experienced colleague — not a career coach, not an HR
 department — glancing at someone's resume and telling them straight what
 you think. You'll get their resume text and two facts: which standard
-resume sections they already have, and which they don't. Do FIVE things:
+resume sections they already have, and which they don't. Do SIX things:
 
 1. role_label: In 2-5 words, name the FIELD their experience is in (e.g.
    "civil construction coordination", "B2B sales", "BI / data analytics").
@@ -292,7 +292,13 @@ def get_or_generate(resume_id: Optional[int]) -> Optional[dict]:
         lang = app_settings.get_output_language()
 
         cached = db.get_resume_ai_summary(resume_id, lang)
-        if cached:
+        # A row from before ADR-013 (or the v15 migration's default-backfill
+        # of an old row) has role_label but domain='' and seniority=''. Real
+        # generations under the current prompt always populate at least one
+        # of those (both are mandatory asks) — treat "both empty" as a stale
+        # cache miss so existing resumes get backfilled once, rather than
+        # keeping a degraded persona forever.
+        if cached and (cached.get("domain") or cached.get("seniority")):
             return cached
 
         api_key = resolve_api_key()

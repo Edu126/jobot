@@ -399,7 +399,13 @@ def _score_batch_grounded(
     if not retry_jobs:
         return grounded
 
-    retried = _score_batch(resume, retry_jobs, client, lang=lang, persona=persona)
+    try:
+        retried = _score_batch(resume, retry_jobs, client, lang=lang, persona=persona)
+    except QuotaExhaustedError:
+        # Quota ran out mid-retry — keep the already-grounded results from
+        # this batch rather than losing them; the caller's next-batch
+        # `client.all_models_exhausted()` check stops further batches.
+        return grounded
     for r in retried:
         if _grounding_ok(r, resume_norm, resume_stems):
             grounded.append(r)
@@ -669,7 +675,14 @@ def _parse_hard_requirements(raw: Any) -> list[HardRequirement]:
         status = str(item.get("status", "")).strip().lower()
         if status not in HARD_REQ_STATUSES:
             status = "unknown"
-        evidence = str(item.get("evidence", "")).strip()[:240]
+        evidence = str(item.get("evidence", "")).strip()
+        if len(evidence) > 240:
+            # Cut at a word boundary, not mid-word — a hard cutoff can chop
+            # a real quote in half and make it fail the grounding check
+            # below (_term_grounded splits on whitespace and stems each
+            # word; a fragment like "p" from a severed "P.E." has no stem
+            # match, so a truthful quote would wrongly fail grounding).
+            evidence = evidence[:240].rsplit(" ", 1)[0]
         out.append(HardRequirement(name=name, status=status, evidence=evidence))
         if len(out) >= 10:
             break
