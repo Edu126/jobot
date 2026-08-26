@@ -269,14 +269,17 @@
 </div>
 
 {# ── Split viewport: cards left, detail right ──
-   The right pane is `position: fixed` on lg+ (see #jobs-detail-aside
-   + the position script at the bottom of this block). We tried
-   `sticky top-20` with `self-start` + `items-start` first — Andrea's
-   viewport kept dropping the pane out of view on click (2026-08-25),
-   so we cut over to fixed geometry computed from the grid parent's
-   bounding rect. The grid still reserves the right column visually
-   (only one child, but grid-cols-2 keeps left at half width). #}
-<div id="jobs-results-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start">
+   Layout intent (Andrea 2026-08-25, after sticky-in-grid + fixed both
+   fell over): detail pane's top edge lines up with the clicked card's
+   top edge; they both scroll with the document, so once user sees a
+   click land, the detail stays paired to the card as they scroll away.
+   Click a different card → pane jumps to that card's Y.
+
+   Implementation: grid is `relative`; aside is `absolute` inside it
+   with `right: 0` + `width: calc(50% - 12px)` (half the grid minus
+   half the gap-6), so it overlays the reserved right column. JS sets
+   its `top` from the card's bounding rect on each click. #}
+<div id="jobs-results-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start lg:relative">
 
   {# LEFT: job list #}
   <div class="space-y-3 min-w-0 cascade-in">
@@ -298,56 +301,27 @@
     </div>
   </div>
 
-</div>
-
-{# RIGHT: fixed-position detail pane on lg+.
-   Rendered OUTSIDE the grid because `position: fixed` ignores document
-   flow anyway. The grid's second column stays empty (grid-cols-2 with
-   one child = left at half width), reserving the visual right column
-   space; the aside is positioned into that space via #jobs-results-grid's
-   bounding rect. See the script below. #}
-<aside id="jobs-detail-aside"
-       class="hidden lg:block"
-       style="position: fixed; top: 5rem;">
-  <div id="job-detail-scroll"
-       class="overflow-y-auto"
-       style="max-height: calc(100vh - 6rem);">
-    <div id="job-detail-pane" class="card-quiet min-h-[300px]">
-      <div class="text-body-muted text-sm text-center py-16">
-        {{ _('results.click_prompt') }}
+  {# RIGHT: absolute-position detail pane on lg+. Placed here (inside
+     grid) so its containing block is #jobs-results-grid (which is
+     `relative`). `top` is driven by JS on each card click; width +
+     right offset live in CSS since the grid geometry doesn't change
+     per-click. Internal scroll caps height to viewport so a long JD
+     doesn't spill past the fold. #}
+  <aside id="jobs-detail-aside"
+         class="hidden lg:block"
+         style="position: absolute; top: 0; right: 0; width: calc(50% - 12px);">
+    <div id="job-detail-scroll"
+         class="overflow-y-auto"
+         style="max-height: calc(100vh - 6rem);">
+      <div id="job-detail-pane" class="card-quiet min-h-[300px]">
+        <div class="text-body-muted text-sm text-center py-16">
+          {{ _('results.click_prompt') }}
+        </div>
       </div>
     </div>
-  </div>
-</aside>
+  </aside>
 
-<script>
-  // Position the fixed detail aside over the (visually reserved) right
-  // grid column. Runs on load, resize, and grid-shape changes (HTMX card
-  // swaps can change the grid width via scrollbar appearance).
-  (function() {
-    const GAP_PX = 24;   // matches gap-6 on #jobs-results-grid
-    function positionDetailAside() {
-      const grid = document.getElementById('jobs-results-grid');
-      const aside = document.getElementById('jobs-detail-aside');
-      if (!grid || !aside) return;
-      // Only apply on lg+ (aside is display:none below lg via `hidden lg:block`).
-      if (!window.matchMedia('(min-width: 1024px)').matches) return;
-      const r = grid.getBoundingClientRect();
-      const colW = (r.width - GAP_PX) / 2;
-      aside.style.left = `${Math.round(r.left + colW + GAP_PX)}px`;
-      aside.style.width = `${Math.round(colW)}px`;
-    }
-    positionDetailAside();
-    window.addEventListener('resize', positionDetailAside);
-    // Grid width can change when cards mutate (e.g. after a batch swap
-    // introduces a scrollbar). ResizeObserver catches that without
-    // a scroll-wheel event.
-    if (window.ResizeObserver) {
-      const grid = document.getElementById('jobs-results-grid');
-      if (grid) new ResizeObserver(positionDetailAside).observe(grid);
-    }
-  })();
-</script>
+</div>
 
 </div>
 

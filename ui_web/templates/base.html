@@ -96,22 +96,21 @@
           const scroll = document.getElementById(isMobile ? 'mobile-detail-scroll' : 'job-detail-scroll');
           if (scroll) scroll.scrollTop = 0;
 
-          // Desktop: pin the clicked card to the top of the viewport so
-          // the sticky detail pane appears right next to it (not floating
-          // near card #1 when the user clicked card #15). scroll-margin-top
-          // covers the sticky header. Skip on mobile — the bottom sheet
-          // covers the list entirely.
-          //
-          // Instant (not smooth) scroll because smooth-scroll races with
-          // position:sticky reflow — the sticky aside can end up at its
-          // natural position (off-screen) while the smooth animation is
-          // still in flight. rAF gives the layout one frame to settle.
+          // Desktop: line up the detail pane's top edge with the clicked
+          // card's top edge. #jobs-detail-aside is `position: absolute`
+          // inside the (`position: relative`) grid — we just set its top
+          // to the card's Y offset within the grid. Card and pane then
+          // scroll together with the document (see jobs_results.html
+          // layout intent comment). Skip on mobile — bottom sheet covers
+          // the list entirely.
           if (!isMobile) {
             const card = document.querySelector(`[data-job-id="${CSS.escape(id)}"]`);
-            if (card) {
-              requestAnimationFrame(() => {
-                card.scrollIntoView({ behavior: 'auto', block: 'start' });
-              });
+            const grid = document.getElementById('jobs-results-grid');
+            const aside = document.getElementById('jobs-detail-aside');
+            if (card && grid && aside) {
+              const gridRect = grid.getBoundingClientRect();
+              const cardRect = card.getBoundingClientRect();
+              aside.style.top = `${Math.max(0, Math.round(cardRect.top - gridRect.top))}px`;
             }
           }
 
