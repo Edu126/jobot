@@ -439,9 +439,12 @@
          aria-label="{{ _('results.pane.list') }}">
 
       {# id="jobs-list-container" — ADR-011 Slice 5b: /growth OOB-appends
-         new cards here with `beforeend`. Everything that is NOT a job
-         card now lives outside it, so an append always lands after the
-         last card rather than after a placeholder. #}
+         new cards here with `beforeend`. It holds job cards and nothing
+         else, for two reasons: an append always lands after the last
+         card, and `role="listbox"` may only own `role="option"`
+         children. The empty-state placeholder therefore sits OUTSIDE it
+         (below) — /growth still clears it by id with an outerHTML OOB
+         swap, which works wherever the element lives. #}
       <div id="jobs-list-container"
            class="space-y-3 min-w-0 cascade-in"
            role="listbox"
@@ -449,12 +452,13 @@
         {% for job in jobs %}
           {% include "partials/job_card.html" %}
         {% endfor %}
-        {% if not jobs %}
-        <div id="empty-results-placeholder" class="card-quiet text-center py-12">
-          <div class="text-body-muted">{{ _('results.no_jobs') }}</div>
-        </div>
-        {% endif %}
       </div>
+
+      {% if not jobs %}
+      <div id="empty-results-placeholder" class="card-quiet text-center py-12">
+        <div class="text-body-muted">{{ _('results.no_jobs') }}</div>
+      </div>
+      {% endif %}
 
       <div x-show="$store.filters.visibleCount(jobs) === 0 && jobs.length > 0"
            x-cloak

@@ -18,7 +18,13 @@
          tabindex="0"
          role="option"
          :aria-selected="$store.selectedJob.id === '{{ job.id }}' ? 'true' : 'false'"
-         aria-label="{{ _('results.select_job') }}"
+         {# The accessible name must identify THIS option. A fixed string
+            like "select this job" names every card identically, which
+            makes the listbox unnavigable by screen reader — you hear the
+            same sentence N times instead of the job. Title + company +
+            location is what a sighted user scans, so it is what we
+            announce. #}
+         aria-label="{{ job.title }} · {{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}"
          @keydown.enter.prevent="$store.selectedJob.select('{{ job.id }}')"
          @keydown.space.prevent="$store.selectedJob.select('{{ job.id }}')"
          x-data="{
