@@ -34,11 +34,60 @@ the same missing-`lang` bug class we fixed for `job_scores`.
 Flagged in [llm-surface.md](architecture/llm-surface.md) under
 "Known drift risks."
 
-## 2026-08-25 PM — Mehran feedback dump (post-hotfix)
+## 2026-08-25 PM — Mehran feedback dump (post-hotfix) — SHIPPED
 
-Second round of feedback from Mehran the same evening as the
-hotfix ship. Six buckets. REQs filed for the top-severity three;
-the rest wait until those land.
+**Status: shipped 2026-08-25.** Deployed to all 4 Fly apps (Melissa
+`jobbotv2`, Mehran `-hermana`, Andrea `-andrea`, Sara `-melissa`).
+Andrea validated end-to-end in her live session; Melissa hit + we
+fixed one regression during rollout (see hotfixes below); Mehran /
+Sara validation still pending on their own time.
+
+**Sprint hygiene:** user explicitly skipped `/simplify` +
+`/code-review` for this detour to move to a separate concern. If
+we come back to it, run `/code-review low` (or `ultra`) — memory
+`feedback_sprint_hygiene` says never `medium`.
+
+**Andrea's open validation task:** confirm whether the 54→98 score
+jump reproduces from "regenerate cleanly" alone (would be an
+invalidation bug not covered by REQ-009) vs. from re-uploading the
+PDF (expected — new `resume_id` = cache miss).
+
+**Shipped scope:**
+- REQ-007 destructive-action modals (`a0a7659`).
+- REQ-008 jobs_results filter reactivity + card meta lookup (`a0a7659`).
+- REQ-009 cache-key lang parity + schema v14 migration (`a0a7659`).
+- REQ-010 + ADR-009 language-onboarding architectural doc (`a0a7659`).
+- Bucket D — jobs UX polish (hide fr toggle on ES, hide dismissed on
+  empty dataset, broaden `onlyNew` semantic, i18n load stages,
+  personalised role placeholder, city placeholder incl. country) (`a0a7659`).
+- Bucket F — full tailor-flow i18n sweep, 44 EN/ES keys (`a0a7659`).
+
+**In-session hotfixes (rollout regressions):**
+- `990132f` — tojson in x-data attribute broke jobs.html and
+  tailor_panel.html (Melissa's browser leaked raw x-data as text).
+  Fixed via `<script>` window globals; memory
+  `feedback_tojson_in_html_attribute` updated with both patterns.
+- `4b4e1ec` — `hideFrench: true` store default was invisibly active
+  on UI=es after Bucket D hid the toggle. Coupled the value to UI
+  language in `init()`.
+- `3dcbc0b` → `3ebf9c4` → `7696df1` → `6b5dece` — four iterations
+  on the split-viewport detail pane. Started with `sticky top-20 +
+  self-start`, tried `items-start`-belt, cut to `position: fixed`
+  (visually ugly overlap), landed on user proposal: aside is
+  `position: absolute` inside a `relative` grid, JS sets `top` from
+  clicked card's Y — card and pane share document flow, scroll
+  together. Ships as `6b5dece`.
+
+**Deferred / left as follow-up work:**
+- Andrea's validation of the score-jump mechanic.
+- Mehran / Sara feedback on all shipped fixes.
+- `/simplify` + `/code-review low|ultra` sweep of the detour.
+- REQ-010 implementation (docs only in this detour; the actual
+  language-onboarding banner extension is its own sprint).
+
+---
+
+### Original PM dump (kept for retro)
 
 **Filed as REQs (this session):**
 - [REQ-007](requirements/REQ-007-restore-destructive-action-modals.md)
