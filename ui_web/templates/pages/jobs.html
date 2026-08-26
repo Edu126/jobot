@@ -394,16 +394,7 @@
 <section
   x-data="{
     jobs: JSON.parse(document.getElementById('top-matches-meta').textContent),
-    init() { $store.filters.maxAgeDays = null; $store.filters.onlyNew = false; },
-    // job_card.html binds x-show to cardVisible(). This section reuses
-    // that partial, so without a local definition every top-matches card
-    // threw an Alpine expression error on render. Same semantics as the
-    // results page: read the REACTIVE meta entry, not a server-baked
-    // literal, so filter changes re-evaluate.
-    cardVisible(jobId) {
-      const m = this.jobs.find(x => x.id === jobId);
-      return m ? this.$store.filters.matches(m) : true;
-    }
+    init() { $store.filters.maxAgeDays = null; $store.filters.onlyNew = false; }
   }">
   <div class="flex items-baseline justify-between mb-4 flex-wrap gap-3">
     <div>

@@ -88,7 +88,7 @@
          // script every time new cards land. newMeta is the jobs_meta
          // patch (one entry per newly-appended card); addedPending is
          // how many of those need scoring. We push into the reactive
-         // jobs array so cardVisible + visibleCount stay accurate, and
+         // jobs array so the filter visibility + visibleCount stay accurate, and
          // we bump pendingScoreCount so the filter-gate + toast logic
          // waits for the new arrivals to also be scored.
          window.__jobotAppendJobs = (newMeta, addedPending) => {
@@ -170,15 +170,6 @@
        progressPct() {
          if (this.totalJobs === 0) return 100;
          return Math.round(((this.totalJobs - this.pendingScoreCount) / this.totalJobs) * 100);
-       },
-       // Per-card visibility. Cards call this via their x-show so that
-       // filter evaluation reads the REACTIVE jobs_meta entry — not a
-       // server-baked literal. Without this, __jobotUpdateScore mutates
-       // the meta but each card's x-show still holds the initial score,
-       // so cards stay hidden while the header count says otherwise.
-       cardVisible(jobId) {
-         const m = this.jobs.find(x => x.id === jobId);
-         return m ? this.$store.filters.matches(m) : true;
        },
        destroy() {
          if (window.__jobotUpdateScore) delete window.__jobotUpdateScore;
@@ -413,10 +404,14 @@
 </div>
 
 {# ── Two-pane workspace (ADR-012) ──
-   `workspace-grid` / `workspace-col` / `workspace-pane` are defined in
-   app.css and only do anything at lg+ with ≥560px of viewport height.
-   Outside that they are inert class names and this is an ordinary
-   stacked layout — which is what the mobile bottom-sheet flow expects.
+   `workspace-grid` and `workspace-pane` are defined in app.css and only
+   do anything at lg+ with ≥560px of viewport height. Outside that they
+   are inert class names and this is an ordinary stacked layout — which
+   is what the mobile bottom-sheet flow expects.
+
+   Each pane IS the grid item: a grid child already stretches to the row
+   height, so it needs no wrapper to flex inside. One element per column
+   means one fewer link in the min-height:0 chain to get wrong.
 
    The 32/68 split (REQ-012) rather than the old 50/50: the left pane
    only has to support "which of these do I look at next", the right
@@ -427,16 +422,14 @@
    its `top` set from JS on every card click. That existed to fake a
    stable pane inside a scrolling document. The document no longer
    scrolls, so the pane is just a grid cell. #}
-<div id="jobs-results-grid"
-     class="workspace-grid grid grid-cols-1 lg:grid-cols-[minmax(0,32fr)_minmax(0,68fr)] gap-6 mt-4">
+<div class="workspace-grid grid grid-cols-1 lg:grid-cols-[minmax(0,32fr)_minmax(0,68fr)] gap-6 mt-4">
 
   {# LEFT: job list. #}
-  <div class="workspace-col min-w-0">
-    <div id="jobs-list-scroll"
-         class="workspace-pane"
-         tabindex="0"
-         role="region"
-         aria-label="{{ _('results.pane.list') }}">
+  <div id="jobs-list-scroll"
+       class="workspace-pane min-w-0"
+       tabindex="0"
+       role="region"
+       aria-label="{{ _('results.pane.list') }}">
 
       {# id="jobs-list-container" — ADR-011 Slice 5b: /growth OOB-appends
          new cards here with `beforeend`. It holds job cards and nothing
@@ -469,26 +462,23 @@
           {{ _('action.reset_filters') }}
         </button>
       </div>
-    </div>
   </div>
 
-  {# RIGHT: detail pane. `hidden lg:flex` — below lg the mobile bottom
+  {# RIGHT: detail pane. `hidden lg:block` — below lg the mobile bottom
      sheet owns detail viewing (partials/mobile_detail_sheet.html), so
      rendering this column there would just be an invisible HTMX target.
-     #job-detail-scroll keeps its id: selectedJob.select() resets its
-     scrollTop on every selection, and it is now a genuinely independent
-     scroll container rather than a max-height'd div. #}
-  <aside id="jobs-detail-aside" class="hidden lg:block workspace-col">
-    <div id="job-detail-scroll"
-         class="workspace-pane"
+     The aside itself carries #job-detail-scroll because it IS the
+     scroll container: selectedJob.select() resets that element's
+     scrollTop on every selection. #}
+  <aside id="job-detail-scroll"
+         class="hidden lg:block workspace-pane"
          tabindex="0"
          role="region"
          aria-label="{{ _('results.pane.detail') }}"
          aria-live="polite">
-      <div id="job-detail-pane" class="card-quiet min-h-[300px]">
-        <div class="text-body-muted text-sm text-center py-16">
-          {{ _('results.click_prompt') }}
-        </div>
+    <div id="job-detail-pane" class="card-quiet min-h-[300px]">
+      <div class="text-body-muted text-sm text-center py-16">
+        {{ _('results.click_prompt') }}
       </div>
     </div>
   </aside>

@@ -169,6 +169,18 @@
         visibleCount(jobs) {
           return jobs.filter(j => this.matches(j)).length;
         },
+        // partials/job_card.html is shared by /jobs (top matches) and
+        // /jobs/results, and binds its x-show to this. It lives on the
+        // store — the one piece of filter JS both pages already share —
+        // rather than being redefined in each page's x-data: a page that
+        // forgot the copy threw an Alpine error on every card, and a page
+        // with a stale copy would silently stop reacting to a new filter.
+        // `jobs` comes from the including page's scope; the card only
+        // knows its own id.
+        visibleIn(jobs, jobId) {
+          const m = jobs.find(j => j.id === jobId);
+          return m ? this.matches(m) : true;
+        },
       });
 
       // Toast queue — surface transient success/info messages bottom-right.

@@ -1602,18 +1602,14 @@ html { scroll-behavior: smooth; }
     flex: 1 1 auto;
     min-height: 0;
   }
-  /* A column of the grid. Grid children stretch by default, so this
-     gets the full row height — which is what bounds the pane inside. */
-  .workspace-col {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  /* The actual scroll container. `overscroll-behavior: contain` stops
-     a pane reaching its end from chaining the scroll to the body,
-     which on a fixed shell reads as the whole app twitching. */
+  /* A column of the grid AND the scroll container — the grid item
+     itself, with no wrapper. A grid child already stretches to the row
+     height, so there is nothing for a wrapper to flex inside; skipping
+     it keeps one fewer invisible link in the min-height:0 chain.
+     `overscroll-behavior: contain` stops a pane reaching its end from
+     chaining the scroll to the body, which on a fixed shell reads as
+     the whole app twitching. */
   .workspace-pane {
-    flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1628,7 +1624,13 @@ html { scroll-behavior: smooth; }
    only — capped height with its own scroll, document scrolls normally.
    The list is left to flow so it doesn't become a second sliver. */
 @media (min-width: 1024px) and (max-height: 559.98px) {
-  #job-detail-scroll {
+  /* Scoped to `body.app-shell` on purpose: pages/jobs.html has always
+     used this same id for its own top-matches detail pane, with its own
+     sticky + inline max-height mechanism. An unscoped `#job-detail-scroll`
+     here would silently reach into a page this rule knows nothing about.
+     Every other rule in this file's workspace block is class-scoped for
+     the same reason. */
+  body.app-shell #job-detail-scroll {
     max-height: calc(100dvh - 6rem);
     overflow-y: auto;
   }
