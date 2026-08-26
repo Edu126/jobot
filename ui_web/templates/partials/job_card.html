@@ -4,8 +4,23 @@
 
    Card is clickable: sets $store.selectedJob so the split-viewport right pane
    loads this job's details. Highlighted via ring when selected. #}
+{# Keyboard selection (ADR-012 slice 4). The card was mouse-only: no
+   tabindex, no key handler, and on desktop the per-card action row below
+   is `lg:hidden` — so a keyboard user could not reach anything inside a
+   card at all. `role="option"` + `aria-selected` describes what this
+   actually is (one choice in the results listbox) better than a button
+   would. Known imperfection, accepted deliberately: an option should not
+   contain interactive descendants, and this one holds the save button
+   and the mobile action row. Proper fix is to make the title the single
+   focusable control; deferred rather than pretended away. #}
 <article class="card-quiet cursor-pointer transition-shadow job-swipeable scroll-mt-20"
          data-job-id="{{ job.id }}"
+         tabindex="0"
+         role="option"
+         :aria-selected="$store.selectedJob.id === '{{ job.id }}' ? 'true' : 'false'"
+         aria-label="{{ _('results.select_job') }}"
+         @keydown.enter.prevent="$store.selectedJob.select('{{ job.id }}')"
+         @keydown.space.prevent="$store.selectedJob.select('{{ job.id }}')"
          x-data="{
            ageDays: {% if job._age_days is defined %}{{ job._age_days }}{% else %}null{% endif %}
          }"

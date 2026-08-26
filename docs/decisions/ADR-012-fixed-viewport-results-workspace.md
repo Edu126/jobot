@@ -1,7 +1,7 @@
 # ADR-012: Fixed-viewport results workspace — page stops scrolling, panes own their scroll
 
 Date: 2026-08-26
-Status: Proposed
+Status: Accepted
 Relates to: REQ-012
 Supersedes (in part): the detail-pane positioning landed in `6b5dece`
 (absolute pane + JS-computed `top`), which this removes.
@@ -51,6 +51,18 @@ leave everything below `lg` exactly as it is.
   it viewed.** `selectedJob.select(id, { markViewed })` gains the option;
   auto-selection passes `false`. Mobile never auto-selects — the sheet is a
   modal and would open over the list on load.
+
+  The governing principle, in the product owner's words:
+
+  > **Viewed = user engagement, not UI state.**
+
+  This is broader than this feature and should outlive it. `viewed_jobs`
+  feeds the `hideViewed` filter, the fresh-view breakdown counts, and the
+  BI agent's funnel question ("search → view → save → tailor → apply").
+  Anything the system does on the user's behalf — auto-selection today,
+  a restored session or a prefetch tomorrow — must not write to it. Only
+  a deliberate act by the user, sustained past the existing 3-second
+  threshold, counts as a view.
 
 Server contracts are untouched: `/jobs/results/{key}`, `/growth`,
 `/score-batch`, `/jobs/detail/{id}`, the `jobs_meta` shape, the batch size

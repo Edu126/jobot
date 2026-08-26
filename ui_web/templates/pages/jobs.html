@@ -394,7 +394,16 @@
 <section
   x-data="{
     jobs: JSON.parse(document.getElementById('top-matches-meta').textContent),
-    init() { $store.filters.maxAgeDays = null; $store.filters.onlyNew = false; }
+    init() { $store.filters.maxAgeDays = null; $store.filters.onlyNew = false; },
+    // job_card.html binds x-show to cardVisible(). This section reuses
+    // that partial, so without a local definition every top-matches card
+    // threw an Alpine expression error on render. Same semantics as the
+    // results page: read the REACTIVE meta entry, not a server-baked
+    // literal, so filter changes re-evaluate.
+    cardVisible(jobId) {
+      const m = this.jobs.find(x => x.id === jobId);
+      return m ? this.$store.filters.matches(m) : true;
+    }
   }">
   <div class="flex items-baseline justify-between mb-4 flex-wrap gap-3">
     <div>
@@ -439,7 +448,11 @@
 
   {# Split viewport: cards left, detail right (email-style) #}
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <div class="space-y-3 min-w-0 cascade-in">
+    {# role="listbox": job_card.html renders each card as role="option"
+       (ADR-012 slice 4), which is only valid inside a listbox owner. #}
+    <div class="space-y-3 min-w-0 cascade-in"
+         role="listbox"
+         aria-label="{{ _('jobs.top_matches.title') }}">
       {% for job in top_matches %}
         {% include "partials/job_card.html" %}
       {% endfor %}
