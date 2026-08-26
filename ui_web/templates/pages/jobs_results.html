@@ -269,7 +269,12 @@
 </div>
 
 {# ── Split viewport: cards left, detail right ── #}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+{# `items-start` on the grid parent prevents the aside from stretching
+   vertically to match the (very tall) left column. Without it, `sticky`
+   on the aside has no room to detach and pin. Belt + `self-start` on
+   the aside itself for browsers where grid alignment inheritance is
+   flaky. #}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start">
 
   {# LEFT: job list #}
   <div class="space-y-3 min-w-0 cascade-in">

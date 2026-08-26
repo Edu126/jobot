@@ -101,9 +101,18 @@
           // near card #1 when the user clicked card #15). scroll-margin-top
           // covers the sticky header. Skip on mobile — the bottom sheet
           // covers the list entirely.
+          //
+          // Instant (not smooth) scroll because smooth-scroll races with
+          // position:sticky reflow — the sticky aside can end up at its
+          // natural position (off-screen) while the smooth animation is
+          // still in flight. rAF gives the layout one frame to settle.
           if (!isMobile) {
             const card = document.querySelector(`[data-job-id="${CSS.escape(id)}"]`);
-            if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (card) {
+              requestAnimationFrame(() => {
+                card.scrollIntoView({ behavior: 'auto', block: 'start' });
+              });
+            }
           }
 
           // Start the 3-second "actually read this" timer. Only POSTs if
