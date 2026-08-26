@@ -38,7 +38,7 @@
          {% endif %}
          :class="$store.selectedJob.id === '{{ job.id }}' ? 'card-quiet--selected' : ''"
          @click="$store.selectedJob.select('{{ job.id }}')"
-         x-show="cardVisible('{{ job.id }}')">
+         x-show="$store.filters.visibleIn(jobs, '{{ job.id }}')">
 
   <div class="flex items-start gap-4">
 
