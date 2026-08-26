@@ -45,12 +45,12 @@ Reliability:
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from core import db, events
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
+from core.matching.lexical import normalize as _norm_text, stems as _term_stems
 from core.resume import ai_summary
 from core.settings import get_reasoning_language
 
@@ -166,7 +166,7 @@ def score_jobs(
     results: dict[str, ScoreResult] = {}
 
     if use_cache:
-        cached = db.get_cached_scores(resume_id, all_ids, lang, PROMPT_VERSION, SCORING_VERSION)
+        cached = get_cached_scores(resume_id, all_ids, lang)
         for jid, row in cached.items():
             results[jid] = _row_to_result(row)
 
@@ -181,6 +181,7 @@ def score_jobs(
 
     resume_snippet = resume_text.strip()[:MAX_RESUME_CHARS]
     persona = ai_summary.persona_line(resume_id)
+    resume_norm, resume_stems = _resume_ground_index(resume_snippet)
 
     for batch in _chunks(uncached, batch_size):
         # Re-check between batches — the first batch may have exhausted
@@ -190,7 +191,7 @@ def score_jobs(
         try:
             batch_results = _score_batch_grounded(
                 resume_snippet, batch, client, lang=lang, persona=persona,
-                resume_id=resume_id,
+                resume_id=resume_id, resume_norm=resume_norm, resume_stems=resume_stems,
             )
         except QuotaExhaustedError:
             # Fallback chain exhausted mid-run — stop cleanly with partial data.
@@ -198,10 +199,7 @@ def score_jobs(
         for r in batch_results:
             results[r.job_id] = r
         if batch_results:
-            db.save_scores(
-                resume_id, [r.to_dict() for r in batch_results], lang,
-                PROMPT_VERSION, SCORING_VERSION,
-            )
+            save_scores(resume_id, [r.to_dict() for r in batch_results], lang)
 
     return results
 
@@ -213,16 +211,19 @@ def score_single_no_cache(
     *,
     lang: str | None = None,
     resume_id: int | None = None,
+    persona: str | None = None,
 ) -> ScoreResult | None:
     """One-shot score for arbitrary resume text vs a single job. Does NOT
     touch the DB cache — used to re-score a *tailored* resume where we don't
     want to pollute `job_scores` (which is keyed on the original resume_id).
 
-    `resume_id`, when the caller has one, is used only to look up the
-    persona line (role/domain/seniority) — even a tailored resume's
-    persona comes from the original resume's profile, since tailoring
-    doesn't change who the candidate is. Falls back to a generic persona
-    when omitted (e.g. no originating resume_id in scope).
+    `resume_id`, when the caller has one, resolves the persona line (role/
+    domain/seniority) — even a tailored resume's persona comes from the
+    original resume's profile, since tailoring doesn't change who the
+    candidate is. Pass `persona` directly instead when the caller already
+    resolved it (e.g. the tailor route also calls `rewrite_resume` for the
+    same resume_id in the same request — resolve once, pass to both,
+    rather than triggering `ai_summary.persona_line` twice).
 
     Returns None if the model refuses / quota is out / response is malformed.
     """
@@ -232,10 +233,13 @@ def score_single_no_cache(
         return None
     lang = _resolve_lang(lang)
     resume_snippet = resume_text.strip()[:MAX_RESUME_CHARS]
-    persona = ai_summary.persona_line(resume_id) if resume_id else ai_summary.GENERIC_PERSONA
+    if persona is None:
+        persona = ai_summary.persona_line(resume_id)
+    resume_norm, resume_stems = _resume_ground_index(resume_snippet)
     try:
         results = _score_batch_grounded(
             resume_snippet, [job], client, lang=lang, persona=persona, resume_id=resume_id,
+            resume_norm=resume_norm, resume_stems=resume_stems,
         )
     except QuotaExhaustedError:
         return None
@@ -251,11 +255,24 @@ def score_stats(
     """Small helper for the UI: how many scores came from cache vs fresh in
     this render. Doesn't hit Gemini — pure SQLite lookup."""
     lang = _resolve_lang(lang)
-    cached = db.get_cached_scores(resume_id, all_job_ids, lang, PROMPT_VERSION, SCORING_VERSION)
+    cached = get_cached_scores(resume_id, all_job_ids, lang)
     total = len(all_job_ids)
     from_cache = sum(1 for jid in all_job_ids if jid in cached)
     fresh = sum(1 for jid in all_job_ids if jid in results and jid not in cached)
     return {"total": total, "from_cache": from_cache, "fresh": fresh}
+
+
+def get_cached_scores(resume_id: int, job_ids: list[str], lang: str) -> dict[str, dict]:
+    """`db.get_cached_scores` with `PROMPT_VERSION`/`SCORING_VERSION` baked
+    in. Callers outside this module (routes) shouldn't need to know
+    scoring is versioned or import the constants themselves — this is the
+    one place that spells them out."""
+    return db.get_cached_scores(resume_id, job_ids, lang, PROMPT_VERSION, SCORING_VERSION)
+
+
+def save_scores(resume_id: int, scores: list[dict], lang: str) -> int:
+    """`db.save_scores` with `PROMPT_VERSION`/`SCORING_VERSION` baked in."""
+    return db.save_scores(resume_id, scores, lang, PROMPT_VERSION, SCORING_VERSION)
 
 
 # ---------- backend math (ADR-006) ----------
@@ -295,43 +312,19 @@ def _aggregate_top(sections: dict[str, SectionScore], attr: str, max_items: int 
 
 
 # ---------- REQ-005 grounding guard-rail ----------
+# Normalize/stem via `core.matching.lexical` (dependency-free — no
+# scikit-learn/numpy on this hot path). `core.matching.tfidf_match` uses
+# the same shared functions instead of its own copy.
 
-_NON_ALNUM_RE = re.compile(r"[^a-z0-9+#\s]")
-_WS_RE = re.compile(r"\s+")
-
-
-def _norm_text(text: str) -> str:
-    """Lowercase, collapse whitespace, drop punctuation (keep + and # so
-    tokens like 'c++'/'c#' survive). Small and local on purpose — the
-    grounding check only needs substring/stem matching, not vectorization,
-    so this doesn't pull in `core.matching.tfidf_match`'s scikit-learn/
-    numpy dependency, which isn't otherwise on the live scoring path."""
-    text = text.lower()
-    text = _NON_ALNUM_RE.sub(" ", text)
-    return _WS_RE.sub(" ", text).strip()
-
-
-def _term_stems(word: str) -> set[str]:
-    """`word` plus plausible stem variants (plural/verb-tense), for
-    tolerant matching without a real lemmatizer. Deliberately narrow —
-    a backstop against flagrant mismatches, not a general stemmer."""
-    w = word.lower().rstrip("'s")
-    if len(w) <= 3:
-        return {w}
-    out = {w}
-    if w.endswith("ies"):
-        out.add(w[:-3] + "y")
-    if w.endswith("ing") and len(w) > 4:
-        out.add(w[:-3])
-        out.add(w[:-3] + "e")
-    if w.endswith("ed") and len(w) > 3:
-        out.add(w[:-2])
-        out.add(w[:-1])
-    if w.endswith("es") and len(w) > 3:
-        out.add(w[:-2])
-    if w.endswith("s") and len(w) > 3 and not w.endswith("ss"):
-        out.add(w[:-1])
-    return out
+def _resume_ground_index(resume: str) -> tuple[str, set[str]]:
+    """One tokenize-and-stem pass over the resume text, reused across a
+    whole `score_jobs` call (and all its batches/retries) instead of
+    recomputing per batch."""
+    norm = _norm_text(resume)
+    stems: set[str] = set()
+    for w in norm.split():
+        stems.update(_term_stems(w))
+    return norm, stems
 
 
 def _term_grounded(term: str, resume_norm: str, resume_stems: set[str]) -> bool:
@@ -380,20 +373,22 @@ def _score_batch_grounded(
     lang: str,
     persona: str,
     resume_id: int | None,
+    resume_norm: str,
+    resume_stems: set[str],
 ) -> list[ScoreResult]:
     """Score `jobs`, then apply the grounding guard-rail on top. Any result
     that fails grounding gets ONE re-score (fresh LLM call on just that
     job); if it's still ungrounded, log it bias-suspect and drop it —
     never cache a result we can't stand behind (ADR-005 pattern: silence
-    beats a lie)."""
+    beats a lie).
+
+    `resume_norm`/`resume_stems` come from `_resume_ground_index(resume)`
+    — computed ONCE by the caller (per `score_jobs`/`score_single_no_cache`
+    call, not per batch) since they're identical across every batch and
+    retry for the same resume."""
     results = _score_batch(resume, jobs, client, lang=lang, persona=persona)
     if not results:
         return results
-
-    resume_norm = _norm_text(resume)
-    resume_stems: set[str] = set()
-    for w in resume_norm.split():
-        resume_stems.update(_term_stems(w))
 
     grounded = [r for r in results if _grounding_ok(r, resume_norm, resume_stems)]
     if len(grounded) == len(results):
@@ -694,26 +689,13 @@ def _coerce_str_list(value: Any, max_items: int) -> list[str]:
 
 
 def _row_to_result(row: dict) -> ScoreResult:
-    """DB row → ScoreResult. JSON blobs live as strings on disk."""
-    sections_raw = _safe_json_dict(row.get("sections_json"))
-    sections = {
-        key: SectionScore(
-            score=int(sections_raw.get(key, {}).get("score", 0)) if isinstance(sections_raw.get(key), dict) else 0,
-            matched=list(sections_raw.get(key, {}).get("matched", [])) if isinstance(sections_raw.get(key), dict) else [],
-            gaps=list(sections_raw.get(key, {}).get("gaps", [])) if isinstance(sections_raw.get(key), dict) else [],
-            reasoning=str(sections_raw.get(key, {}).get("reasoning", "")) if isinstance(sections_raw.get(key), dict) else "",
-        )
-        for key in SECTION_KEYS
-    }
-    hard_requirements = [
-        HardRequirement(
-            name=str(hr.get("name", "")),
-            status=str(hr.get("status", "unknown")),
-            evidence=str(hr.get("evidence", "")),
-        )
-        for hr in _safe_json_list(row.get("hard_requirements_json"))
-        if isinstance(hr, dict)
-    ]
+    """DB row → ScoreResult. JSON blobs live as strings on disk — reuse
+    the same `_parse_sections`/`_parse_hard_requirements` validation used
+    for fresh LLM output, so a malformed cached row gets the same
+    defensive clamping (score range, list caps, status whitelist) instead
+    of a separate, weaker hand-rolled reconstruction."""
+    sections = _parse_sections(_safe_json_dict(row.get("sections_json")))
+    hard_requirements = _parse_hard_requirements(_safe_json_raw(row.get("hard_requirements_json")))
     return ScoreResult(
         job_id=row["job_id"],
         score=int(row["score"]),
@@ -745,6 +727,19 @@ def _safe_json_dict(value: Any) -> dict:
     except (TypeError, ValueError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _safe_json_raw(value: Any) -> Any:
+    """Like `_safe_json_dict`/`_safe_json_list` but returns whatever type
+    decoded (or None on failure) — for callers like `_parse_hard_requirements`
+    that already validate shape themselves and don't want elements coerced
+    to strings."""
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _chunks(seq: list, n: int):

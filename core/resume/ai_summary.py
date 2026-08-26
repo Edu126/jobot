@@ -261,7 +261,7 @@ Return JSON:
 """
 
 
-def get_or_generate(resume_id: int) -> Optional[dict]:
+def get_or_generate(resume_id: Optional[int]) -> Optional[dict]:
     """Role label + domain + seniority + first-impression sentence +
     "worth adding?" judgment on missing standard sections, from a single
     Gemini call. Cached by (resume_id, output_language) — a new upload
@@ -273,20 +273,28 @@ def get_or_generate(resume_id: int) -> Optional[dict]:
     button — regenerate patterns train users to distrust output + invite
     quota-burning spam. Quality lives in the prompt contract + Pydantic
     validation, not in a "try again" affordance.
-    """
-    from core import settings as app_settings
-    # output_language is the correct resolver for LLM-generated text
-    # that's shown to the user verbatim (role_label, first_impression).
-    # Scoring/rewrite callers reuse this same cache for domain/seniority
-    # even though those feed a different-language prompt (ADR-013) — the
-    # descriptor is plain input to the model, not rendered prose, so it
-    # doesn't need to match reasoning_language.
-    lang = app_settings.get_output_language()
 
-    cached = db.get_resume_ai_summary(resume_id, lang)
-    if cached:
-        return cached
+    The whole body is one try/except — including the cache lookup, not
+    just generation — so this function truly never raises; `persona_line`
+    relies on that contract instead of wrapping its own call in a second,
+    redundant try/except.
+    """
+    if not resume_id:
+        return None
     try:
+        from core import settings as app_settings
+        # output_language is the correct resolver for LLM-generated text
+        # that's shown to the user verbatim (role_label, first_impression).
+        # Scoring/rewrite callers reuse this same cache for domain/seniority
+        # even though those feed a different-language prompt (ADR-013) — the
+        # descriptor is plain input to the model, not rendered prose, so it
+        # doesn't need to match reasoning_language.
+        lang = app_settings.get_output_language()
+
+        cached = db.get_resume_ai_summary(resume_id, lang)
+        if cached:
+            return cached
+
         api_key = resolve_api_key()
         if not api_key:
             return None
@@ -351,18 +359,15 @@ def get_or_generate(resume_id: int) -> Optional[dict]:
         return None
 
 
-def persona_line(resume_id: int) -> str:
+def persona_line(resume_id: Optional[int]) -> str:
     """Best-effort one-sentence persona descriptor for scoring/rewrite
     prompts (ADR-007 + ADR-013): "a {seniority} {role_label} candidate
-    with experience in {domain}". Never raises and never blocks its
-    caller on a failed generation — falls back to `GENERIC_PERSONA` when
-    the profile can't be produced (no API key, ungrounded twice, no
-    resume, or a bare role_label with no domain/seniority yet cached)."""
-    try:
-        summary = get_or_generate(resume_id)
-    except Exception:  # noqa: BLE001 — persona must never break scoring
-        summary = None
-
+    with experience in {domain}". Never blocks its caller on a failed
+    generation — falls back to `GENERIC_PERSONA` when the profile can't
+    be produced (no resume_id, no API key, ungrounded twice, no resume,
+    or a bare role_label with no domain/seniority yet cached).
+    `get_or_generate` never raises, so no try/except is needed here."""
+    summary = get_or_generate(resume_id)
     role_label = (summary or {}).get("role_label") or ""
     if not role_label:
         return GENERIC_PERSONA

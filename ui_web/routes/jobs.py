@@ -58,15 +58,15 @@ from core.llm.gemini import (
 from core.llm.prompts import Level
 from core.llm.rewrite import rewrite_resume, tailored_to_text
 from core.matching.affinity import compute_affinity, resume_hints
+from core.matching import semantic_score as ss
 from core.matching.semantic_score import (
     DEFAULT_BATCH_SIZE as _SCORE_BATCH_SIZE,
-    PROMPT_VERSION as _SCORE_PROMPT_VERSION,
-    SCORING_VERSION as _SCORE_SCORING_VERSION,
     ScoreResult,
     score_jobs as score_jobs_batch,
     score_single_no_cache,
 )
 from core.settings import get_reasoning_language
+from core.resume import ai_summary
 from core.resume.writer import render_cover_letter_docx, render_docx
 
 from .. import state
@@ -155,10 +155,7 @@ def _list_top_matches(min_score: int = 65, limit: int = 20) -> tuple[list[dict],
 
     # Single DB query for all scores + first_seen (for "new job" flag)
     all_ids = list({j["id"] for j, _, _ in all_jobs})
-    scores = db.get_cached_scores(
-        resume_id, all_ids, get_reasoning_language(),
-        _SCORE_PROMPT_VERSION, _SCORE_SCORING_VERSION,
-    )
+    scores = ss.get_cached_scores(resume_id, all_ids, get_reasoning_language())
     first_seens = db.get_first_seen_batch(all_ids)
 
     # Dedupe by URL (fallback to id if URL missing). Keep highest score per URL.
@@ -759,13 +756,9 @@ def _enrich_jobs_for_render(
 
     ai_scores: dict[str, ScoreResult] = {}
     if resume:
-        from core.matching.semantic_score import _row_to_result
-        cached_rows = db.get_cached_scores(
-            int(resume["id"]), all_ids, get_reasoning_language(),
-            _SCORE_PROMPT_VERSION, _SCORE_SCORING_VERSION,
-        )
+        cached_rows = ss.get_cached_scores(int(resume["id"]), all_ids, get_reasoning_language())
         for jid, row in cached_rows.items():
-            ai_scores[jid] = _row_to_result(row)
+            ai_scores[jid] = ss._row_to_result(row)
 
     can_score_async = bool(resume and api_key)
     hints = resume_hints(resume["parsed"].get("raw_text", "")) if resume else frozenset()
@@ -1117,10 +1110,7 @@ async def jobs_score_batch(request: Request, cache_key: str):
 
     resume_id = int(resume["id"])
     all_ids = [j.id for j in cached.jobs]
-    already_scored_ids = set(db.get_cached_scores(
-        resume_id, all_ids, get_reasoning_language(),
-        _SCORE_PROMPT_VERSION, _SCORE_SCORING_VERSION,
-    ).keys())
+    already_scored_ids = set(ss.get_cached_scores(resume_id, all_ids, get_reasoning_language()).keys())
 
     # Pending = jobs still uncached against THIS resume. Slice 3
     # (ADR-010): pick the next batch by descending affinity so LLM
@@ -1862,10 +1852,7 @@ async def jobs_from_url(
                 resume_id=int(resume["id"]),
             )
             if result is not None:
-                db.save_scores(
-                    int(resume["id"]), [result.to_dict()], get_reasoning_language(),
-                    _SCORE_PROMPT_VERSION, _SCORE_SCORING_VERSION,
-                )
+                ss.save_scores(int(resume["id"]), [result.to_dict()], get_reasoning_language())
         except Exception:
             # Non-fatal — the analyzed page can render without a score
             pass
@@ -1887,10 +1874,7 @@ async def jobs_analyzed(request: Request, job_id: str):
     resume = db.get_current_resume()
     ai = None
     if resume:
-        cached = db.get_cached_scores(
-            int(resume["id"]), [job_id], get_reasoning_language(),
-            _SCORE_PROMPT_VERSION, _SCORE_SCORING_VERSION,
-        )
+        cached = ss.get_cached_scores(int(resume["id"]), [job_id], get_reasoning_language())
         row = cached.get(job_id)
         if row:
             import json as _json
@@ -1942,10 +1926,7 @@ async def jobs_detail(request: Request, job_id: str):
     resume = db.get_current_resume()
     ai = None
     if resume:
-        cached = db.get_cached_scores(
-            int(resume["id"]), [job_id], get_reasoning_language(),
-            _SCORE_PROMPT_VERSION, _SCORE_SCORING_VERSION,
-        )
+        cached = ss.get_cached_scores(int(resume["id"]), [job_id], get_reasoning_language())
         row = cached.get(job_id)
         if row:
             import json as _json
@@ -2204,6 +2185,13 @@ async def jobs_tailor_generate(
             status_code=200,
         )
 
+    resume_id = int(resume["id"])
+    # Resolved once and passed to both calls below — rewrite_resume and
+    # score_single_no_cache would otherwise each independently trigger
+    # ai_summary.persona_line(resume_id), doubling a possible Gemini
+    # round-trip (persona generation) on a resume's first tailor.
+    persona = ai_summary.persona_line(resume_id)
+
     try:
         client = GeminiClient(api_key=api_key)
         tailored = rewrite_resume(
@@ -2211,7 +2199,7 @@ async def jobs_tailor_generate(
             job.get("description") or "",
             level,
             client,
-            resume_id=int(resume["id"]),
+            persona=persona,
         )
     except GeminiError as exc:
         return HTMLResponse(
@@ -2225,16 +2213,12 @@ async def jobs_tailor_generate(
     # resumes in the score cache, which is keyed on the original resume_id).
     # If the before-score is missing (job wasn't scored yet) or the after-score
     # fails (quota / model error), we degrade gracefully: no match block shown.
-    resume_id = int(resume["id"])
-    before_row = db.get_cached_scores(
-        resume_id, [job_id], get_reasoning_language(),
-        _SCORE_PROMPT_VERSION, _SCORE_SCORING_VERSION,
-    ).get(job_id)
+    before_row = ss.get_cached_scores(resume_id, [job_id], get_reasoning_language()).get(job_id)
     after_result = score_single_no_cache(
         resume_text=tailored_to_text(tailored),
         job=job,
         client=client,
-        resume_id=resume_id,
+        persona=persona,
     )
     if after_result is not None:
         after = {"score": after_result.score, "verdict": after_result.verdict}
