@@ -1,6 +1,15 @@
 # Next Sprint — Scoring rework (Sprint 7)
 
-**Status:** in progress, started 2026-08-26.
+**Status:** implemented 2026-08-26, pushed to `claude/sprint-7-scoring-rework-cekmx3`,
+awaiting PR review. Sprint hygiene done: `/simplify` (4 parallel review
+agents — reuse/simplification/efficiency/altitude, converged on the same
+handful of issues) + `/code-review` (found and fixed 4 real bugs: a
+QuotaExhaustedError-during-retry path that discarded good scores, a
+stale-cache backfill gap for pre-migration `resume_ai_summary` rows, a
+mid-word evidence truncation that could fail its own grounding check,
+and an off-by-one in the AI-summary prompt's item count). All 6 test
+files pass. Three commits: implementation, simplify pass, code-review
+fixes.
 **Date:** 2026-08-26 (current entry). Prior sprint kept below for history.
 **Related:** [REQ-004](requirements/REQ-004-section-based-scoring.md),
 [REQ-005](requirements/REQ-005-remove-aec-scoring-bias.md),
@@ -41,6 +50,36 @@ dependency. Raised as a 3-way architecture question; decided:
    ephemeral per-request send to Gemini that GOV-001 covers. Fixtures
    are clearly labeled synthetic; swappable for real text later if
    provided.
+
+## 2026-08-26 close-out — deferred / skipped items
+
+- **Real resume fixtures.** Synthetic fixtures ship now (see decision 3
+  above); swap in real (anonymized) resume text if/when provided —
+  doesn't block the PR.
+- **Full module split for the grounding guard-rail.** `/simplify`'s
+  altitude review wanted `_grounding_ok`/`_term_grounded`/
+  `_score_batch_grounded` pulled out of `semantic_score.py` into their
+  own module. The actual duplication problem it was pointing at (three
+  near-identical normalize/stem implementations) is fixed by extracting
+  `core/matching/lexical.py`; a further file-size-only split was skipped
+  as risking a `core/matching` import cycle for a stylistic win.
+- **ADR-013's length.** `/code-review` flagged it (and the pre-existing
+  ADR-012) as over CLAUDE.md's "under 150 words" ADR guideline. Left as
+  written — every ADR since ADR-004 already runs well past that budget,
+  and the Alternatives/Consequences sections are the parts the
+  solution-architecture skill calls load-bearing.
+- **Automated regression test for the `ai_summary` stale-cache fix.**
+  `core/resume/ai_summary.py` doesn't accept a DB path override, so
+  `get_or_generate` can't be exercised against an isolated test DB the
+  way the rest of the suite tests `core/db.py` functions directly — the
+  fix is covered by code inspection + the existing grounding test suite,
+  not a dedicated test. Worth a path-injection param if this file grows
+  more test surface.
+- **`ui_web/templates/partials/job_card.html` keyboard-handling bug and
+  ADR-012's word count**, both flagged by `/code-review` — both belong
+  to REQ-012 (Sprint 8's fixed-viewport workspace), already merged to
+  `main` before this branch forked. Out of this sprint's scope; not
+  touched.
 
 ## 2026-08-25 hotfix detour (not Sprint 7)
 Mehran feedback shipped as 6 commits in an unplanned session:
