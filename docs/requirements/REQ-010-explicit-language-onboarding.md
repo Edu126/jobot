@@ -2,7 +2,7 @@
 
 Date: 2026-08-25
 Source: Mehran (2026-08-25 PM feedback dump — bucket B)
-Status: Open
+Status: Building — absorbed into REQ-013 onboarding wizard (step 1)
 
 ## What they asked for
 

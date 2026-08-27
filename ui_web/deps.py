@@ -48,6 +48,7 @@ templates.env.globals["current_ui_language"] = _i18n.current_ui_language
 # geography banner without threading the value through every route.
 from core import settings as _app_settings  # noqa: E402
 templates.env.globals["get_setting"] = _app_settings.get
+templates.env.globals["CHANGELOG_VERSION"] = _app_settings.CHANGELOG_VERSION
 
 
 def _settings_ctx() -> dict:

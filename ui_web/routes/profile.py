@@ -336,6 +336,16 @@ async def update_api_key(request: Request, api_key: str = Form(...)):
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
+@router.post("/onboarding/done")
+async def onboarding_done():
+    """Mark the onboarding wizard as completed for this user. Called by
+    the wizard's 'Done' or 'Skip' path — after this, the wizard never
+    shows again. Does not redirect; the caller handles navigation."""
+    from core import settings as _s
+    _s.set("onboarding_seen", "1")
+    return Response(status_code=204)
+
+
 @router.post("/profile/settings/language")
 async def update_language_settings(
     request: Request,

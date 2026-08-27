@@ -186,5 +186,15 @@
       </div>
 
     </div>
+
+    {# ── App tour re-trigger ── #}
+    <div class="px-6 pt-4 mt-4 border-t border-base-300">
+      <button type="button"
+              class="btn btn-ghost btn-sm w-full justify-start gap-2 cursor-pointer text-body-muted hover:text-base-content"
+              @click="$store.settings.close(); setTimeout(() => $store.onboarding.startTour(), 250)">
+        <i class="ph-thin ph-compass i-4"></i>
+        {{ _('settings.tour.button') }}
+      </button>
+    </div>
   </aside>
 </div>

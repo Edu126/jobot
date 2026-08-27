@@ -38,6 +38,7 @@
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
 
   <link rel="stylesheet" href="{{ static_url('app.css') }}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1/dist/driver.css"/>
 
   {# ── Alpine global stores + reusable components. Loaded once. ── #}
   <script>
@@ -373,6 +374,106 @@
       // already installed. iOS is the special-case because it has no
       // `beforeinstallprompt`; Android Chrome will surface its own
       // native install banner. Dismissal is permanent (localStorage).
+      // Onboarding wizard + Driver.js tour.
+      // `showWizard` is set from the server-rendered `data-onboarding`
+      // attribute on <body>; `startTour()` is also callable from the
+      // settings panel "Get app tour" button.
+      Alpine.store('onboarding', {
+        showWizard: false,
+        showWhatsNew: false,
+        showWhatsNewPanel: false,
+        step: 1,
+        uploading: false,
+        uploadDone: false,
+        uploadError: '',
+        init(hasOnboarding, changelogVersion) {
+          this.showWizard = hasOnboarding;
+          // "What's new" bell: light up when the server version differs
+          // from what the user last acknowledged.
+          try {
+            const seen = localStorage.getItem('jobot_seen_version');
+            if (seen !== changelogVersion) this.showWhatsNew = true;
+          } catch (_) {}
+          // If a previous wizard run set the run-tour flag, fire the tour now.
+          try {
+            if (localStorage.getItem('jobot_run_tour') === '1') {
+              localStorage.removeItem('jobot_run_tour');
+              setTimeout(() => this.startTour(), 400);
+            }
+          } catch (_) {}
+        },
+        // Step 1 → Step 2.
+        nextStep() { this.step = 2; },
+        // Fire Driver.js tour. Targets nav links + gear; always present.
+        startTour() {
+          if (!window.driver) return;
+          const d = window.driver.js.driver({
+            showProgress: true,
+            nextBtnText: '{{ _('onboarding.wizard.next') }}',
+            doneBtnText: '{{ _('tour.done') }}',
+            steps: [
+              {
+                element: '#tour-nav-jobs',
+                popover: {
+                  title: '{{ _('tour.step.jobs.title') }}',
+                  description: '{{ _('tour.step.jobs.body') }}',
+                  side: 'bottom', align: 'start',
+                },
+              },
+              {
+                element: '#tour-nav-journey',
+                popover: {
+                  title: '{{ _('tour.step.journey.title') }}',
+                  description: '{{ _('tour.step.journey.body') }}',
+                  side: 'bottom', align: 'start',
+                },
+              },
+              {
+                element: '#tour-gear',
+                popover: {
+                  title: '{{ _('tour.step.settings.title') }}',
+                  description: '{{ _('tour.step.settings.body') }}',
+                  side: 'bottom', align: 'end',
+                },
+              },
+            ],
+          });
+          d.drive();
+        },
+        // Mark onboarding done on the server (fire-and-forget), then
+        // close the wizard and trigger the tour on the next page load.
+        async finish() {
+          await fetch('/onboarding/done', { method: 'POST' });
+          try { localStorage.setItem('jobot_run_tour', '1'); } catch (_) {}
+          this.showWizard = false;
+          // Start tour immediately (no reload needed — elements are live).
+          setTimeout(() => this.startTour(), 300);
+        },
+        // Upload resume from wizard step 2 using the existing endpoint.
+        async uploadResume(input) {
+          const file = input.files[0];
+          if (!file) return;
+          this.uploading = true;
+          this.uploadError = '';
+          try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const r = await fetch('/profile/resume/upload', { method: 'POST', body: fd });
+            if (!r.ok) throw new Error('http ' + r.status);
+            this.uploadDone = true;
+          } catch (_) {
+            this.uploadError = '{{ _('onboarding.wizard.resume.error') }}';
+          } finally {
+            this.uploading = false;
+          }
+        },
+        // Acknowledge "what's new" and silence the bell.
+        seenWhatsNew(changelogVersion) {
+          this.showWhatsNew = false;
+          try { localStorage.setItem('jobot_seen_version', changelogVersion); } catch (_) {}
+        },
+      });
+
       Alpine.store('a2hs', {
         show: false,
         init() {
@@ -579,6 +680,7 @@
       }));
     });
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/driver.js@1/dist/driver.js.iife.js"></script>
 </head>
 {# `body_class` lets one page opt into the fixed-height workspace shell
    (`app-shell`, see app.css / ADR-012) without changing the layout of
@@ -587,7 +689,13 @@
    scroll. #}
 <body class="bg-base-200 min-h-screen flex flex-col text-base-content {% block body_class %}{% endblock %}"
       style="padding-bottom: env(safe-area-inset-bottom);"
-      x-bind:class="{ 'pb-16 lg:pb-0': true }">
+      x-bind:class="{ 'pb-16 lg:pb-0': true }"
+      data-show-onboarding="{{ 'true' if not get_setting('onboarding_seen') else 'false' }}"
+      data-changelog-version="{{ CHANGELOG_VERSION }}"
+      x-init="$store.onboarding.init(
+        document.body.dataset.showOnboarding === 'true',
+        document.body.dataset.changelogVersion
+      )">
 
   <header class="border-b border-base-300 bg-base-100 sticky top-0 z-30"
           x-data="{ mobileOpen: false }">
@@ -602,8 +710,8 @@
          has a Kanban mode that IS the applications board. /applications
          still redirects to /journey#apps so old bookmarks don't break. #}
       <nav class="hidden sm:flex items-center gap-8">
-        <a href="/jobs" class="nav-tab {% if active_tab == 'jobs' %}active{% endif %}">{{ _('nav.jobs') }}</a>
-        <a href="/journey" class="nav-tab {% if active_tab == 'journey' %}active{% endif %}">{{ _('nav.journey') }}</a>
+        <a id="tour-nav-jobs" href="/jobs" class="nav-tab {% if active_tab == 'jobs' %}active{% endif %}">{{ _('nav.jobs') }}</a>
+        <a id="tour-nav-journey" href="/journey" class="nav-tab {% if active_tab == 'journey' %}active{% endif %}">{{ _('nav.journey') }}</a>
         <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">{{ _('nav.profile') }}</a>
       </nav>
 
@@ -612,7 +720,39 @@
        before 2026-08-20; user asked twice for a floating panel instead
        ("aun no tenemos muchas cosas para tener un single settings
        page"). Language + Notifications + Home location live inside. #}
-      <button type="button"
+      {# "What's new" bell — lights up when CHANGELOG_VERSION differs from
+         localStorage. Sits next to the gear; clicking opens a popover and
+         silences the dot for this version. #}
+      <div x-data class="hidden sm:flex items-center gap-1 relative">
+        <button type="button"
+                id="whats-new-bell"
+                @click="$store.onboarding.showWhatsNew ? null : null"
+                x-show="$store.onboarding.showWhatsNew"
+                x-cloak
+                class="relative inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors cursor-pointer text-base-content/50 hover:text-base-content"
+                aria-label="{{ _('whats_new.title') }}"
+                x-ref="bellBtn"
+                @click.prevent="$store.onboarding.showWhatsNewPanel = !$store.onboarding.showWhatsNewPanel">
+          <i class="ph-thin ph-bell" style="font-size:1.25rem;"></i>
+          <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary"></span>
+        </button>
+        {# What's new popover #}
+        <div x-show="$store.onboarding.showWhatsNewPanel"
+             x-cloak
+             @click.outside="$store.onboarding.showWhatsNewPanel = false"
+             class="absolute right-0 top-11 w-72 bg-base-100 border border-base-300 rounded-xl shadow-lg p-4 z-50">
+          <div class="text-label mb-1">{{ _('whats_new.title') }}</div>
+          <p class="text-sm text-body-muted mb-3">{{ _('whats_new.body') }}</p>
+          <button type="button"
+                  class="btn btn-sm btn-primary cursor-pointer"
+                  @click="$store.onboarding.seenWhatsNew('{{ CHANGELOG_VERSION }}'); $store.onboarding.showWhatsNewPanel = false">
+            {{ _('whats_new.close') }}
+          </button>
+        </div>
+      </div>
+
+      <button id="tour-gear"
+              type="button"
               @click="$store.settings.toggle()"
               :class="$store.settings.open ? 'text-base-content' : 'text-base-content/50'"
               class="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors cursor-pointer"
@@ -692,7 +832,9 @@
      Submits via HTMX to /profile/geo-quick-set which HX-Refreshes; on
      next render `get_setting('home_country')` is set → banner hidden.
      Kept in base.html so it appears from any first visit landing page. #}
-  {% if not get_setting('home_country') %}
+  {# Geo banner only for returning users without a home_country — new
+     users go through the onboarding wizard instead (ADR-013). #}
+  {% if not get_setting('home_country') and get_setting('onboarding_seen') %}
   {% include "partials/geo_first_visit_banner.html" %}
   {% endif %}
 
@@ -842,6 +984,147 @@
       <div class="overlay-caption__meta">
         <span x-text="$store.overlay.elapsed"></span>s · please keep this tab open
       </div>
+    </div>
+  </div>
+
+  {# ── Onboarding wizard modal — shown to users who haven't completed
+     setup (get_setting('onboarding_seen') is falsy). Two steps:
+     1. Language (UI + output). 2. Resume upload. Controlled by
+     Alpine.store('onboarding'). ADR-013. ── #}
+  <div x-data
+       x-show="$store.onboarding.showWizard"
+       x-cloak
+       class="fixed inset-0 z-[200] flex items-center justify-center p-4"
+       role="dialog" aria-modal="true"
+       aria-label="{{ _('onboarding.wizard.title') }}">
+    {# Backdrop #}
+    <div class="absolute inset-0 bg-base-content/30 backdrop-blur-sm"></div>
+
+    {# Panel #}
+    <div class="relative bg-base-100 rounded-2xl shadow-2xl w-full max-w-md p-8
+                flex flex-col gap-6"
+         @keydown.escape.window="$store.onboarding.showWizard && $store.onboarding.finish()">
+
+      {# Header #}
+      <div>
+        <div class="text-xs font-semibold text-primary uppercase tracking-widest mb-1">
+          {{ _('onboarding.wizard.title') }}
+        </div>
+        <p class="text-body-muted text-sm">{{ _('onboarding.wizard.subtitle') }}</p>
+      </div>
+
+      {# Step indicators #}
+      <div class="flex items-center gap-2 text-xs text-body-muted">
+        <span :class="$store.onboarding.step >= 1 ? 'text-primary font-semibold' : ''">
+          1. {{ _('onboarding.wizard.step.language') }}
+        </span>
+        <span class="flex-1 border-t border-base-300"></span>
+        <span :class="$store.onboarding.step >= 2 ? 'text-primary font-semibold' : ''">
+          2. {{ _('onboarding.wizard.step.resume') }}
+        </span>
+      </div>
+
+      {# ── Step 1: Language ── #}
+      <div x-show="$store.onboarding.step === 1">
+        <div class="text-title mb-1">{{ _('onboarding.wizard.lang.title') }}</div>
+        <p class="text-sm text-body-muted mb-4">{{ _('onboarding.wizard.lang.subtitle') }}</p>
+        {# Does NOT use HTMX — /profile/settings/language returns HX-Refresh
+           which would kill the modal. Alpine fetch saves silently; on
+           success nextStep() advances the wizard without a page reload. #}
+        <form id="onboarding-lang-form"
+              class="space-y-4"
+              @submit.prevent="
+                const fd = new FormData($event.target);
+                fetch('/profile/settings/language', { method: 'POST', body: fd })
+                  .then(() => $store.onboarding.nextStep());
+              ">
+          <div>
+            <div class="text-label mb-2">{{ _('profile.settings.ui_language') }}</div>
+            <div class="flex gap-2">
+              {% for code, label in [('en', 'English'), ('es', 'Español')] %}
+              <label class="flex-1 cursor-pointer">
+                <input type="radio" name="ui_language" value="{{ code }}"
+                       {% if (get_setting('ui_language') or 'en') == code %}checked{% endif %}
+                       class="lang-pill__input sr-only">
+                <span class="lang-pill">
+                  <i class="ph-thin ph-check lang-pill__check"></i>{{ label }}
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          <div>
+            <div class="text-label mb-2">{{ _('profile.settings.output_language') }}</div>
+            <div class="flex gap-2">
+              {% for code, label in [('en', 'English'), ('es', 'Español')] %}
+              <label class="flex-1 cursor-pointer">
+                <input type="radio" name="output_language" value="{{ code }}"
+                       {% if (get_setting('output_language') or 'en') == code %}checked{% endif %}
+                       class="lang-pill__input sr-only">
+                <span class="lang-pill">
+                  <i class="ph-thin ph-check lang-pill__check"></i>{{ label }}
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="flex items-center gap-3 pt-2">
+            <button type="submit" class="btn btn-primary btn-sm cursor-pointer">
+              {{ _('onboarding.wizard.next') }}
+            </button>
+            <button type="button"
+                    class="text-sm text-body-muted hover:text-base-content cursor-pointer"
+                    @click="$store.onboarding.nextStep()">
+              {{ _('onboarding.wizard.skip') }}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {# ── Step 2: Resume upload ── #}
+      <div x-show="$store.onboarding.step === 2">
+        <div class="text-title mb-1">{{ _('onboarding.wizard.resume.title') }}</div>
+        <p class="text-sm text-body-muted mb-4">{{ _('onboarding.wizard.resume.subtitle') }}</p>
+
+        <div class="flex flex-col gap-3">
+          <template x-if="!$store.onboarding.uploadDone">
+            <label class="flex flex-col items-center gap-2 border-2 border-dashed border-base-300
+                          rounded-xl p-6 cursor-pointer hover:border-primary transition-colors
+                          text-body-muted text-sm text-center"
+                   :class="$store.onboarding.uploading ? 'opacity-60 pointer-events-none' : ''">
+              <i class="ph-thin ph-upload-simple text-2xl"></i>
+              <span x-show="!$store.onboarding.uploading">PDF · DOCX</span>
+              <span x-show="$store.onboarding.uploading">{{ _('onboarding.wizard.resume.uploading') }}</span>
+              <input type="file" accept=".pdf,.docx" class="sr-only"
+                     @change="$store.onboarding.uploadResume($event.target)">
+            </label>
+          </template>
+          <template x-if="$store.onboarding.uploadDone">
+            <div class="flex items-center gap-2 text-sm font-medium"
+                 style="color: oklch(var(--su));">
+              <i class="ph-fill ph-check-circle text-lg"></i>
+              {{ _('onboarding.wizard.resume.uploaded') }}
+            </div>
+          </template>
+          <div x-show="$store.onboarding.uploadError"
+               x-text="$store.onboarding.uploadError"
+               class="text-error text-sm"></div>
+
+          <div class="flex items-center gap-3 pt-2">
+            <button type="button"
+                    class="btn btn-primary btn-sm cursor-pointer"
+                    @click="$store.onboarding.finish()">
+              {{ _('onboarding.wizard.finish') }}
+            </button>
+            <button type="button"
+                    class="text-sm text-body-muted hover:text-base-content cursor-pointer"
+                    @click="$store.onboarding.finish()">
+              {{ _('onboarding.wizard.skip') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 

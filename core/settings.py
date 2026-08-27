@@ -70,6 +70,11 @@ def clear_cache() -> None:
 SUPPORTED_LANGUAGES = ("en", "es")
 DEFAULT_LANGUAGE = "en"
 
+# Bump this string any time you ship a user-visible change. base.html
+# compares it against localStorage('jobot_seen_version') to light the
+# "what's new" bell. Format: YYYY-MM-DD[-n] for same-day bumps.
+CHANGELOG_VERSION = "2026-08-26"
+
 
 def get_ui_language(accept_language: str = "") -> str:
     """Resolve the UI language for the current request.
