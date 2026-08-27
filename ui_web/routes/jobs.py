@@ -1089,9 +1089,9 @@ async def jobs_score_batch(request: Request, cache_key: str):
       - an empty terminal element when nothing left / no permission /
         quota exhausted (chain stops).
 
-    Per-job scored badges + gaps are emitted as `hx-swap-oob="true"`
-    fragments targeted at `#score-slot-{job_id}` and `#gaps-slot-{job_id}`
-    already present in each rendered card.
+    Per-job scored badges are emitted as `hx-swap-oob="true"`
+    fragments targeted at `#score-slot-{job_id}` already present in
+    each rendered card. Gaps are rendered in the detail pane only.
     """
     if feature_flags.is_llm_disabled():
         # Kill switch — silently stop the chain. Header note already
@@ -1191,8 +1191,17 @@ async def jobs_score_batch(request: Request, cache_key: str):
         j["_pending_score"] = False
         fragments.append(templates.env.get_template("partials/score_badge.html")
                          .render(job=j, oob=True))
-        fragments.append(templates.env.get_template("partials/job_gaps.html")
-                         .render(job=j, oob=True))
+        # OOB-update the open detail pane in place (ring + analysis) if this
+        # job happens to be the one being viewed. These target scoped ids and
+        # no-op when the pane isn't open, so it costs a few bytes per batch and
+        # avoids a whole-pane refetch that would flash the save/applied
+        # spinners (which are DB data, unrelated to the AI score).
+        ai = {"score": r.score, "verdict": r.verdict, "reasoning": r.reasoning,
+              "matched": r.matched, "gaps": r.gaps}
+        fragments.append(templates.env.get_template("partials/detail_ring.html")
+                         .render(job=j, ai=ai, oob=True))
+        fragments.append(templates.env.get_template("partials/detail_analysis.html")
+                         .render(job=j, ai=ai, oob=True))
         scored_ids.append((j["id"], int(r.score)))
     if scored_ids:
         pushes = "".join(
@@ -1204,7 +1213,15 @@ async def jobs_score_batch(request: Request, cache_key: str):
     # Chain continuation: are there more pending after this batch?
     # `remaining_after` was hoisted above so the score_batch_done event
     # payload matches the chain decision below.
-    if remaining_after > 0:
+    #
+    # Only chain if this batch actually scored something. A batch that
+    # returns zero results made no progress — the same jobs stay pending
+    # (nothing was cached), so re-polling would re-score the identical
+    # batch forever. That infinite loop is exactly how the Sprint-7
+    # grounding regression manifested (page "still loading" indefinitely).
+    # No progress ⇒ stop; the unscored cards keep their pending badge but
+    # the browser stops hammering the endpoint.
+    if remaining_after > 0 and results:
         fragments.append(
             f'<div hx-get="/jobs/results/{cache_key}/score-batch"'
             f' hx-trigger="load delay:200ms"'

@@ -462,6 +462,22 @@ html, body {
   color: oklch(var(--bc) / 0.5);
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Score ring — circular progress indicator replacing the square badge
+   ───────────────────────────────────────────────────────────── */
+.score-ring { position: relative; width: 46px; height: 46px; flex-shrink: 0; }
+.score-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.score-ring .ring-track { fill: none; stroke: oklch(var(--b3)); stroke-width: 3.5; }
+.score-ring .ring-fill  { fill: none; stroke-width: 3.5; stroke-linecap: round; transition: stroke-dasharray .5s ease-out; }
+.score-ring .score-num  { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: .95rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.score-ring-strong_fit .ring-fill, .score-ring-workable .ring-fill { stroke: hsl(165 70% 32%); }
+.score-ring-strong_fit .score-num, .score-ring-workable .score-num { color: hsl(165 80% 20%); }
+.score-ring-stretch  .ring-fill { stroke: hsl(30 80% 45%); }
+.score-ring-stretch  .score-num { color: hsl(28 75% 30%); }
+.score-ring-poor_fit .ring-fill { stroke: hsl(358 60% 50%); }
+.score-ring-poor_fit .score-num { color: hsl(358 60% 45%); }
+.score-ring-none .score-num { color: oklch(var(--bc) / .5); }
+
 /* Skill chips — small pill for matched/gaps lists. Padding bumped on
    mobile so a thumb can actually tap chips that are also interactive
    (like the "Fresh" and "Viewed" indicators). */

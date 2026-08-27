@@ -2,7 +2,7 @@
 
 Date: 2026-08-26
 Source: Eduard (product owner)
-Status: Building
+Status: Shipped (2026-08-26)
 
 ## What they asked for
 > "siento que la gente entra a la app y 1) no está claro que es nuevo, y 2) si es un nuevo usuario, no sabe qué hacer, no hemos pensado en como sería el onboarding. vamos con driver.js"

@@ -64,21 +64,26 @@
          // the page. Keep comments quote-free. See feedback memory.
          window.__jobotUpdateScore = (id, score) => {
            const j = this.jobs.find(x => x.id === id);
+           // Idempotent: only count this job down from pending the first
+           // time a real score lands for it. The detail pane re-fires this
+           // to self-heal a card whose OOB ring-update was dropped (scored
+           // before its card was in the DOM), so a naive decrement would
+           // double-count. Treat a falsy prior score as still pending.
+           // NOTE: no literal double-quotes in this x-data block (they
+           // terminate the attribute and dump the script as page text).
+           const wasPending = !j || !j.score;
            if (j) j.score = score;
-           if (this.pendingScoreCount > 0) this.pendingScoreCount--;
+           if (wasPending && this.pendingScoreCount > 0) this.pendingScoreCount--;
            // ADR-011: also require discoveryComplete. Otherwise the
            // toast + filter reveal could fire during a lull between
            // sources (all-first-batch-scored, more coming). Slice 5b
            // flips discoveryComplete via onDiscoveryDone when the
            // /growth endpoint returns its terminator.
            this.maybeAnnounceAllScored();
-           // If the newly-scored job is currently open in the detail
-           // pane, refresh the pane so the score badge updates there
-           // too (the pane was rendered server-side at selection time
-           // and may have shown a pending dash).
-           if (this.$store.selectedJob.id === id) {
-             this.$store.selectedJob.refresh();
-           }
+           // The open pane updates itself now: /score-batch OOB-swaps
+           // detail-ring + detail-analysis in place. We no longer refetch
+           // the whole pane here, which used to light the save/applied
+           // htmx-indicator spinners even though those are DB data.
          };
          // Called by the swipe handler after a save / dismiss / undo POST
          // completes. Mutates the reactive jobs array so the client-side
@@ -429,7 +434,7 @@
    its `top` set from JS on every card click. That existed to fake a
    stable pane inside a scrolling document. The document no longer
    scrolls, so the pane is just a grid cell. #}
-<div class="workspace-grid grid grid-cols-1 lg:grid-cols-[minmax(0,32fr)_minmax(0,68fr)] gap-6 mt-4">
+<div class="workspace-grid grid grid-cols-1 lg:grid-cols-[minmax(0,35fr)_minmax(0,65fr)] gap-6 mt-4">
 
   {# LEFT: job list. #}
   <div id="jobs-list-scroll"

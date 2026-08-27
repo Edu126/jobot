@@ -2,7 +2,7 @@
 
 Date: 2026-08-21
 Source: User (product spec, verbatim in chat)
-Status: Building (implemented 2026-08-26, pending PR review — synthetic fixtures, not the real-resume fixtures originally specified; see next-work.md)
+Status: Shipped (Sprint 7, 2026-08-26 — shipped with synthetic fixtures; real-resume fixture backfill tracked separately)
 
 ## What they asked for
 

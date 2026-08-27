@@ -2,7 +2,7 @@
 
 Date: 2026-08-21
 Source: User (follow-up to REQ-005 during ADR-007 review)
-Status: Building (implemented 2026-08-26, pending PR review)
+Status: Shipped (Sprint 7, 2026-08-26)
 
 ## What they asked for
 

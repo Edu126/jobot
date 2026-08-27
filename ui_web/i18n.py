@@ -223,6 +223,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "chip.viewed": "Viewed",
         "chip.dismissed": "Dismissed",
         "chip.remote": "Remote",
+        # Friendly date label for LinkedIn jobs with no date_posted
+        "jobs.date_recent": "≤24h",
         # Toasts
         "toast.saved_as_interested": "Saved as interested",
         "toast.dismissed": "Dismissed",
@@ -577,6 +579,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "chip.viewed": "Vista",
         "chip.dismissed": "Descartada",
         "chip.remote": "Remoto",
+        # Etiqueta amigable para LinkedIn sin fecha de publicación
+        "jobs.date_recent": "hoy",
         # Notificaciones
         "toast.saved_as_interested": "Guardada como interesante",
         "toast.dismissed": "Descartada",

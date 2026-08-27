@@ -1,0 +1,30 @@
+{# Detail-pane score-dependent analysis (reasoning + matched + gaps).
+   Rendered inside job_detail.html on selection AND OOB-swapped by
+   /score-batch when the open job is scored, so the analysis fills in
+   without a whole-pane refetch. Empty until a score exists. Scoped id so
+   the OOB only lands on the open pane. #}
+<div id="detail-analysis-{{ job.id }}"{% if oob %} hx-swap-oob="true"{% endif %} class="space-y-4 empty:hidden">
+  {% if ai and ai.reasoning %}
+  <p class="text-sm italic text-base-content/85 leading-relaxed quoted">{{ ai.reasoning }}</p>
+  {% endif %}
+  {% if ai and (ai.matched or ai.gaps) %}
+  <div class="grid grid-cols-1 gap-3 text-sm">
+    {% if ai.matched %}
+    <div>
+      <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-check i-3"></i>{{ _('jobs.matched') }}</div>
+      <div class="flex flex-wrap gap-1">
+        {% for m in ai.matched %}<span class="chip chip-matched">{{ m }}</span>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if ai.gaps %}
+    <div>
+      <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-warning i-3"></i>{{ _('jobs.gaps') }}</div>
+      <div class="flex flex-wrap gap-1">
+        {% for g in ai.gaps %}<span class="chip chip-gap">{{ g }}</span>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>

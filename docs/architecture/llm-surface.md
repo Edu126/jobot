@@ -37,7 +37,7 @@ for why.
 
 | # | Site | Trigger | Batched? | Cache | Language | Output |
 |---|---|---|---|---|---|---|
-| 1 | `core/matching/semantic_score.py::_score_batch` | HTMX chain `/jobs/results/.../score-batch` after a search; `score_single_no_cache` also uses this for URL-imported jobs + tailor before/after | Yes (5 jobs/prompt) | `job_scores(resume_id, job_id, lang, prompt_version, scoring_version)` — [ADR-006](../decisions/ADR-006-section-based-scoring-llm-evidence-backend-math.md) | `get_reasoning_language()` | JSON — per-section evidence; backend computes the final score (never returned by the LLM) |
+| 1 | `core/matching/semantic_score.py::_score_batch` | HTMX chain `/jobs/results/.../score-batch` after a search; `score_single_no_cache` also uses this for URL-imported jobs + tailor before/after | Yes (5 jobs/prompt) | `job_scores(resume_id, job_id, lang, prompt_version, scoring_version)` — [ADR-015](../decisions/ADR-015-archive-section-scoring-single-value.md) | `get_reasoning_language()` | JSON — single 0-100 score + one-sentence reasoning + top matched/gaps; backend derives only the verdict band |
 | 2 | `core/llm/rewrite.py::rewrite_resume` | Tailor button on a job card | No (per-run) | Not cached — persisted per-run in tailor state | `get_output_language()` | JSON |
 | 3 | `core/resume/ai_regenerate.py::regenerate_sections` | "Regenerate cleanly" on Profile when PDF parse looks off | No | None (one-shot fix-up) | None (structural extraction — output is section keys, not user prose) | JSON |
 | 4 | `core/jobs/from_url.py::extract_job_from_text` | "From URL" flow + manual-paste fallback | No | None (per-URL) | None (extraction — output is JD fields, not generated prose) | JSON |
@@ -69,13 +69,17 @@ for why.
   before instantiating a client, but a few sites rely on the
   middleware `LlmDisabledError` handler (`ui_web/middleware.py`).
 
-## Section-based scoring + domain-neutral persona (2026-08-26)
+## Scoring: single LLM value + domain-neutral persona (2026-08-27)
 
-Sprint 7 (REQ-004/005/006, ADR-006/007/013) replaced site #1's single
-LLM-owned 0-100 score with five fixed-weight sections the backend
-averages, added a `hard_requirements` list gated out of the average,
-and replaced site #1's and site #2's hardcoded AEC recruiter/editor
-persona with one derived from the candidate's own resume via site #8.
+Site #1 returns a single LLM-owned 0-100 score + one-sentence reasoning +
+top matched/gaps; the backend derives only the verdict band. This reverts
+the Sprint-7 section-based scheme ([ADR-015](../decisions/ADR-015-archive-section-scoring-single-value.md)
+archives ADR-006 / REQ-004 / REQ-005 — the five weighted sections, the
+`hard_requirements` list, and the grounding guard-rail that silently
+dropped results). The domain-neutral persona (ADR-013 — derived from the
+candidate's own resume via site #8, not a hardcoded AEC voice) is KEPT and
+still frames sites #1 and #2. A deterministic redesign is deferred to
+REQ-015 (see `docs/research/RESEARCH-scoring-approaches.md`).
 `PROMPT_VERSION`/`SCORING_VERSION` constants in `semantic_score.py` gate
 `job_scores` cache hits — bump either to logically invalidate every
 cached score without deleting history (old rows just stop matching and
