@@ -90,7 +90,7 @@ OUTPUT — return ONLY this JSON object, no surrounding text:
     "interests":      ["..."],
     "references":     ["..."]
   },
-  "cover_letter": "Full cover letter as a single string. 200-350 words. Plain text only — no markdown, no bullet glyphs, no decorative characters. Use \\n\\n between paragraphs. Address it 'Dear Hiring Manager,' unless the JD names someone specific. Reference 1-2 specific JD requirements and how the candidate's real experience matches. Close with a clear call to next steps (interview, conversation). Sign with the candidate's ACTUAL NAME from the CANDIDATE CONTACT block above — never use placeholders like [Your Name], Your Name, [Name], or [Candidate]. Match the same LEVEL of tailoring as the resume. Canadian professional tone — direct, not flowery.",
+  "cover_letter": "Full cover letter as a single string. 200-350 words. Plain text only — no markdown, no bullet glyphs, no decorative characters, no em-dashes (—). Use \\n\\n between paragraphs. Address it 'Dear Hiring Manager,' unless the JD names someone specific. Reference 1-2 specific JD requirements and how the candidate's real experience matches. Close with a clear call to next steps (interview, conversation). Sign with the candidate's ACTUAL NAME from the CANDIDATE CONTACT block above — never use placeholders like [Your Name], Your Name, [Name], or [Candidate]. Match the same LEVEL of tailoring as the resume. Canadian professional tone — direct, not flowery.",
   "notes": "1–2 sentence summary of what you changed in the resume and why.",
   "warnings": ["any places where the JD asked for something the candidate lacks; leave empty if none"]
 }
@@ -99,7 +99,7 @@ Rules for the sections dict:
 - Use ONLY the section keys above. Omit any section that has no content.
 - Each value is a list of strings. Each string is one bullet OR one
   short paragraph. Do NOT prefix bullets with "-" or "•" — the renderer
-  adds those.
+  adds those. Do not use em-dashes (—) in bullet text.
 - Preserve company names, employer names, school names, and dates from
   the original VERBATIM. Do not translate or rephrase them.
 

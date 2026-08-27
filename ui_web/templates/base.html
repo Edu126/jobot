@@ -128,6 +128,14 @@
             this._viewedTimer = null;
           }, 3000);
         },
+        refresh() {
+          if (!this.id || !window.htmx) return;
+          const isMobile = window.matchMedia('(max-width: 1023.98px)').matches;
+          htmx.ajax('GET', `/jobs/detail/${this.id}`, {
+            target: isMobile ? '#mobile-detail-body' : '#job-detail-pane',
+            swap: 'innerHTML',
+          });
+        },
         closeMobile() {
           this.mobileOpen = false;
           // Cancel any pending viewed timer — user dismissed before
@@ -402,8 +410,15 @@
             }
           } catch (_) {}
         },
-        // Step 1 → Step 2.
-        nextStep() { this.step = 2; },
+        // Step 1 → 2 → 3.
+        nextStep() { this.step = Math.min(this.step + 1, 3); },
+        // Save location (step 3) then finish. Fire-and-forget POST so
+        // no page reload kills the wizard; finish() handles onboarding_done.
+        async saveLocation(form) {
+          const fd = new FormData(form);
+          await fetch('/profile/geo-quick-set', { method: 'POST', body: fd });
+          await this.finish();
+        },
         // Fire Driver.js tour. Targets nav links + gear; always present.
         startTour() {
           if (!window.driver) return;
@@ -444,10 +459,11 @@
         // close the wizard and trigger the tour on the next page load.
         async finish() {
           await fetch('/onboarding/done', { method: 'POST' });
+          // Reload so the page reflects the uploaded resume, language, and
+          // location set during the wizard. jobot_run_tour triggers the
+          // Driver.js tour automatically in init() after the reload.
           try { localStorage.setItem('jobot_run_tour', '1'); } catch (_) {}
-          this.showWizard = false;
-          // Start tour immediately (no reload needed — elements are live).
-          setTimeout(() => this.startTour(), 300);
+          window.location.reload();
         },
         // Upload resume from wizard step 2 using the existing endpoint.
         async uploadResume(input) {
@@ -467,7 +483,20 @@
             this.uploading = false;
           }
         },
-        // Acknowledge "what's new" and silence the bell.
+        // Open the what's-new drawer and immediately mark as seen so the
+        // dot clears regardless of how the user later closes the panel.
+        openWhatsNew() {
+          this.showWhatsNewPanel = true;
+          // Mark dot as seen immediately on open — don't call seenWhatsNew()
+          // here because that also closes the panel.
+          this.showWhatsNew = false;
+          try { localStorage.setItem('jobot_seen_version', document.body.dataset.changelogVersion || ''); } catch (_) {}
+        },
+        closeWhatsNew() {
+          this.showWhatsNewPanel = false;
+        },
+        // Silence the bell dot (called from "Got it" if still present, or
+        // legacy callers). Does NOT close the panel — closeWhatsNew does that.
         seenWhatsNew(changelogVersion) {
           this.showWhatsNew = false;
           try { localStorage.setItem('jobot_seen_version', changelogVersion); } catch (_) {}
@@ -715,64 +744,52 @@
         <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">{{ _('nav.profile') }}</a>
       </nav>
 
-      {# Settings gear — desktop top-right. Opens the floating settings
-       panel (partials/settings_panel.html) — was a link to /profile
-       before 2026-08-20; user asked twice for a floating panel instead
-       ("aun no tenemos muchas cosas para tener un single settings
-       page"). Language + Notifications + Home location live inside. #}
-      {# "What's new" bell — lights up when CHANGELOG_VERSION differs from
-         localStorage. Sits next to the gear; clicking opens a popover and
-         silences the dot for this version. #}
-      <div x-data class="hidden sm:flex items-center gap-1 relative">
+      {# Right-side icon group: bell + gear + mobile hamburger.
+         Wrapped in a single flex container so bell and gear are always
+         adjacent (previously bell was a separate flex child of the
+         justify-between navbar, causing it to appear in the middle). #}
+      <div class="flex items-center gap-1">
+
+        {# "What's new" bell — lights up when CHANGELOG_VERSION differs from
+           localStorage. Clicking opens the left drawer and immediately
+           clears the dot (opening = read). #}
         <button type="button"
                 id="whats-new-bell"
-                @click="$store.onboarding.showWhatsNew ? null : null"
-                x-show="$store.onboarding.showWhatsNew"
-                x-cloak
-                class="relative inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors cursor-pointer text-base-content/50 hover:text-base-content"
+                class="hidden sm:inline-flex relative items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors cursor-pointer text-base-content/50 hover:text-base-content"
                 aria-label="{{ _('whats_new.title') }}"
-                x-ref="bellBtn"
-                @click.prevent="$store.onboarding.showWhatsNewPanel = !$store.onboarding.showWhatsNewPanel">
+                @click.prevent="$store.onboarding.openWhatsNew()">
           <i class="ph-thin ph-bell" style="font-size:1.25rem;"></i>
-          <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary"></span>
+          <span x-show="$store.onboarding.showWhatsNew"
+                x-cloak
+                class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary"></span>
         </button>
-        {# What's new popover #}
-        <div x-show="$store.onboarding.showWhatsNewPanel"
-             x-cloak
-             @click.outside="$store.onboarding.showWhatsNewPanel = false"
-             class="absolute right-0 top-11 w-72 bg-base-100 border border-base-300 rounded-xl shadow-lg p-4 z-50">
-          <div class="text-label mb-1">{{ _('whats_new.title') }}</div>
-          <p class="text-sm text-body-muted mb-3">{{ _('whats_new.body') }}</p>
-          <button type="button"
-                  class="btn btn-sm btn-primary cursor-pointer"
-                  @click="$store.onboarding.seenWhatsNew('{{ CHANGELOG_VERSION }}'); $store.onboarding.showWhatsNewPanel = false">
-            {{ _('whats_new.close') }}
-          </button>
-        </div>
-      </div>
 
-      <button id="tour-gear"
-              type="button"
-              @click="$store.settings.toggle()"
-              :class="$store.settings.open ? 'text-base-content' : 'text-base-content/50'"
-              class="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors cursor-pointer"
-              title="{{ _('nav.settings') }}"
-              aria-label="{{ _('nav.settings') }}"
-              aria-haspopup="dialog">
-        <i class="ph-thin ph-gear" style="font-size:1.25rem;"></i>
-      </button>
+        {# Settings gear — desktop top-right. Opens the floating settings
+           panel (partials/settings_panel.html). #}
+        <button id="tour-gear"
+                type="button"
+                @click="$store.settings.toggle()"
+                :class="$store.settings.open ? 'text-base-content' : 'text-base-content/50'"
+                class="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors cursor-pointer"
+                title="{{ _('nav.settings') }}"
+                aria-label="{{ _('nav.settings') }}"
+                aria-haspopup="dialog">
+          <i class="ph-thin ph-gear" style="font-size:1.25rem;"></i>
+        </button>
 
-      {# Mobile hamburger — visible below sm #}
-      <button class="sm:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors"
-              @click="mobileOpen = !mobileOpen"
-              :aria-expanded="mobileOpen"
-              aria-label="Toggle menu">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path x-show="!mobileOpen" stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-          <path x-show="mobileOpen" x-cloak stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-      </button>
-    </div>
+        {# Mobile hamburger — visible below sm #}
+        <button class="sm:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg hover:bg-base-200 transition-colors"
+                @click="mobileOpen = !mobileOpen"
+                :aria-expanded="mobileOpen"
+                aria-label="Toggle menu">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path x-show="!mobileOpen" stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+            <path x-show="mobileOpen" x-cloak stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+
+      </div>{# /right-side icon group #}
+    </div>{# /navbar inner #}
 
     {# Mobile menu — collapsible below the nav bar #}
     <div class="sm:hidden border-t border-base-300 bg-base-100"
@@ -826,17 +843,13 @@
   {# Floating settings panel — slide-in from the right, opened by gear #}
   {% include "partials/settings_panel.html" %}
 
-  {# First-visit geography banner — shown until the user provides a
-     home country. Without this, non-Canada users (Sara in Spain, sister
-     in Colombia) hit a hardcoded Ottawa default on every search.
-     Submits via HTMX to /profile/geo-quick-set which HX-Refreshes; on
-     next render `get_setting('home_country')` is set → banner hidden.
-     Kept in base.html so it appears from any first visit landing page. #}
-  {# Geo banner only for returning users without a home_country — new
-     users go through the onboarding wizard instead (ADR-013). #}
-  {% if not get_setting('home_country') and get_setting('onboarding_seen') %}
-  {% include "partials/geo_first_visit_banner.html" %}
-  {% endif %}
+  {# What's-new drawer — slide-in from the left, opened by bell #}
+  {% include "partials/whats_new_panel.html" %}
+
+  {# Geo banner removed — onboarding wizard now requires location as a
+     mandatory step 3, so returning users without a location are already
+     handled. The partial (geo_first_visit_banner.html) is kept for
+     reference but no longer rendered. #}
 
   {# Mobile job-detail bottom sheet — controlled by
      Alpine.store('selectedJob').mobileOpen. Rendered once from base so
@@ -988,9 +1001,9 @@
   </div>
 
   {# ── Onboarding wizard modal — shown to users who haven't completed
-     setup (get_setting('onboarding_seen') is falsy). Two steps:
-     1. Language (UI + output). 2. Resume upload. Controlled by
-     Alpine.store('onboarding'). ADR-013. ── #}
+     setup (get_setting('onboarding_seen') is falsy). Three steps:
+     1. Language (UI + output). 2. Resume upload. 3. Home location (mandatory).
+     Controlled by Alpine.store('onboarding'). ADR-013. ── #}
   <div x-data
        x-show="$store.onboarding.showWizard"
        x-cloak
@@ -1021,6 +1034,10 @@
         <span class="flex-1 border-t border-base-300"></span>
         <span :class="$store.onboarding.step >= 2 ? 'text-primary font-semibold' : ''">
           2. {{ _('onboarding.wizard.step.resume') }}
+        </span>
+        <span class="flex-1 border-t border-base-300"></span>
+        <span :class="$store.onboarding.step >= 3 ? 'text-primary font-semibold' : ''">
+          3. {{ _('onboarding.wizard.step.location') }}
         </span>
       </div>
 
@@ -1113,16 +1130,44 @@
           <div class="flex items-center gap-3 pt-2">
             <button type="button"
                     class="btn btn-primary btn-sm cursor-pointer"
-                    @click="$store.onboarding.finish()">
-              {{ _('onboarding.wizard.finish') }}
+                    @click="$store.onboarding.nextStep()">
+              {{ _('onboarding.wizard.next') }}
             </button>
             <button type="button"
                     class="text-sm text-body-muted hover:text-base-content cursor-pointer"
-                    @click="$store.onboarding.finish()">
+                    @click="$store.onboarding.nextStep()">
               {{ _('onboarding.wizard.skip') }}
             </button>
           </div>
         </div>
+      </div>
+
+      {# ── Step 3: Home Location (mandatory — no skip) ── #}
+      <div x-show="$store.onboarding.step === 3">
+        <div class="text-title mb-1">{{ _('onboarding.wizard.location.title') }}</div>
+        <p class="text-sm text-body-muted mb-4">{{ _('onboarding.wizard.location.subtitle') }}</p>
+        {# Alpine fetch so no HX-Refresh kills the modal. #}
+        <form id="onboarding-location-form"
+              class="space-y-3"
+              @submit.prevent="$store.onboarding.saveLocation($event.target)">
+          <select name="home_country" required
+                  class="select select-bordered select-sm w-full cursor-pointer">
+            <option value="" disabled selected>Country…</option>
+            {% for c in ['Canada','United States','United Kingdom','Spain','Colombia','Mexico','Argentina','Chile','France','Germany'] %}
+            <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+          </select>
+          <input type="text" name="home_city" required
+                 placeholder="{{ _('profile.settings.city_placeholder') }}"
+                 autocomplete="off"
+                 class="input input-bordered input-sm w-full">
+          <div class="pt-2">
+            <button type="submit"
+                    class="btn btn-primary btn-sm cursor-pointer">
+              {{ _('onboarding.wizard.location.done') }}
+            </button>
+          </div>
+        </form>
       </div>
 
     </div>

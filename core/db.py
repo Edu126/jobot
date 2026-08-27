@@ -27,7 +27,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
@@ -308,6 +308,20 @@ CREATE TABLE IF NOT EXISTS admin_reports (
     tokens_out    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_admin_reports_generated ON admin_reports(generated_at);
+
+-- v16: persist tailor runs so generated resumes/cover letters survive
+-- Fly auto_stop_machines cycling. Previously lived only in RAM
+-- (ui_web/state.tailored_history) and were lost on machine sleep.
+-- state.py now writes through here and reads back on cache miss.
+CREATE TABLE IF NOT EXISTS tailor_runs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id        TEXT NOT NULL,
+    level         TEXT NOT NULL,
+    language      TEXT NOT NULL DEFAULT '',
+    tailored_json TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tailor_runs_job ON tailor_runs(job_id, created_at DESC);
 """
 
 _SCHEMA_SQL = (
@@ -570,6 +584,11 @@ def update_resume_contact(resume_id: int, contact: dict, path: Path = DB_PATH) -
         if not row:
             return
         parsed = json.loads(row["parsed_json"])
+        # Preserve the parser's original contact on first override so ATS
+        # checks keep reflecting what was actually in the resume file, not
+        # what the user filled in the display form.
+        if "_original_contact" not in parsed:
+            parsed["_original_contact"] = parsed.get("contact", {})
         parsed["contact"] = contact
         conn.execute(
             "UPDATE resumes SET parsed_json = ? WHERE id = ?",
@@ -765,6 +784,39 @@ def list_feedback(limit: int = 50, path: Path = DB_PATH) -> list[dict]:
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def save_tailor_run(job_id: str, level: str, language: str, tailored: dict, path: Path = DB_PATH) -> int:
+    """Persist a tailor run. Returns the new row id."""
+    now = _now()
+    with tx(path) as conn:
+        cur = conn.execute(
+            "INSERT INTO tailor_runs (job_id, level, language, tailored_json, created_at) VALUES (?,?,?,?,?)",
+            (job_id, level, language, json.dumps(tailored), now),
+        )
+    return int(cur.lastrowid)
+
+
+def list_tailor_runs(job_id: str, limit: int = 5, path: Path = DB_PATH) -> list[dict]:
+    """Most recent first. Each entry has keys: id, job_id, level, language, created_at, tailored."""
+    with connect(path) as conn:
+        rows = conn.execute(
+            "SELECT id, job_id, level, language, tailored_json, created_at FROM tailor_runs "
+            "WHERE job_id=? ORDER BY created_at DESC LIMIT ?",
+            (job_id, limit),
+        ).fetchall()
+    return [{**dict(r), "tailored": json.loads(r["tailored_json"])} for r in rows]
+
+
+def get_tailor_run(job_id: str, run_index: int = -1, path: Path = DB_PATH) -> dict | None:
+    """Return the tailored dict at reverse index (default: latest). None if not found."""
+    runs = list_tailor_runs(job_id, path=path)
+    if not runs:
+        return None
+    try:
+        return runs[run_index]["tailored"]
+    except IndexError:
+        return None
 
 
 def get_dismissed_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str]:

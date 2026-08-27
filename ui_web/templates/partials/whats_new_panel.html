@@ -1,0 +1,53 @@
+{# What's-new left drawer — slide-in from the left edge.
+
+   Opened by the bell button in base.html. Mirrors the settings panel
+   pattern (partials/settings_panel.html) but anchors to the left.
+   Opening the panel immediately calls seenWhatsNew so the dot clears
+   whether the user closes via X, backdrop click, or Escape. #}
+<div @open-whats-new.window="$store.onboarding.openWhatsNew()">
+
+  {# Backdrop #}
+  <div x-show="$store.onboarding.showWhatsNewPanel"
+       @click="$store.onboarding.closeWhatsNew()"
+       x-transition:enter="transition-opacity duration-200 ease-out"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition-opacity duration-150 ease-in"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="settings-panel-backdrop"
+       x-cloak></div>
+
+  {# Sliding panel — from the right, same direction as settings. #}
+  <aside x-show="$store.onboarding.showWhatsNewPanel"
+         x-transition:enter="transition-transform duration-250 ease-out"
+         x-transition:enter-start="translate-x-full"
+         x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition-transform duration-200 ease-in"
+         x-transition:leave-start="translate-x-0"
+         x-transition:leave-end="translate-x-full"
+         @keydown.escape.window="$store.onboarding.closeWhatsNew()"
+         class="whats-new-panel"
+         role="dialog"
+         aria-modal="true"
+         aria-label="{{ _('whats_new.title') }}"
+         x-cloak>
+
+    <div class="settings-panel__header">
+      <div class="text-title inline-flex items-center gap-2">
+        <i class="ph-thin ph-bell i-5"></i>{{ _('whats_new.title') }}
+      </div>
+      <button type="button"
+              @click="$store.onboarding.closeWhatsNew()"
+              aria-label="Close"
+              class="text-body-muted hover:text-base-content cursor-pointer p-1">
+        <i class="ph-thin ph-x i-5"></i>
+      </button>
+    </div>
+
+    <div class="settings-panel__body">
+      <p class="text-sm text-base-content/80 leading-relaxed">{{ _('whats_new.body') }}</p>
+    </div>
+
+  </aside>
+</div>

@@ -72,6 +72,13 @@
            // flips discoveryComplete via onDiscoveryDone when the
            // /growth endpoint returns its terminator.
            this.maybeAnnounceAllScored();
+           // If the newly-scored job is currently open in the detail
+           // pane, refresh the pane so the score badge updates there
+           // too (the pane was rendered server-side at selection time
+           // and may have shown a pending dash).
+           if (this.$store.selectedJob.id === id) {
+             this.$store.selectedJob.refresh();
+           }
          };
          // Called by the swipe handler after a save / dismiss / undo POST
          // completes. Mutates the reactive jobs array so the client-side

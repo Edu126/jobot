@@ -45,6 +45,7 @@ Reliability:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -558,7 +559,7 @@ CRITICAL RULES:
 6. Distinguish a real skill gap from a missing keyword — if the resume demonstrates the underlying capability under different wording, it's a match, not a gap.
 7. "reasoning" (per section) = a few words, direct, no fluff.
 8. Use the EXACT job_id string from each <JOB> tag. Do not invent, shorten, or reformat.
-9. Also return ONE overall "reasoning" sentence (max 22 words, direct, no fluff, citing concrete evidence) — a human-readable summary of the fit, not a restatement of a verdict label.
+9. Also return ONE overall "reasoning" sentence (max 22 words, direct, no fluff, citing concrete evidence) — a human-readable summary of the fit. Do not begin it with the verdict label or any variant (strong_fit, Strong fit, workable, stretch, poor_fit, etc.).
 
 JOBS TO SCORE:
 
@@ -619,6 +620,14 @@ def _parse_response(
         sections = _parse_sections(item.get("sections"))
         hard_requirements = _parse_hard_requirements(item.get("hard_requirements"))
         reasoning = str(item.get("reasoning", "")).strip()
+        reasoning = re.sub(
+            r"^(strong[_ ]fit|workable|stretch|poor[_ ]fit)[,:\s]+",
+            "",
+            reasoning,
+            flags=re.IGNORECASE,
+        ).strip()
+        if reasoning:
+            reasoning = reasoning[0].upper() + reasoning[1:]
 
         final_score = _final_score(sections)
         verdict = _verdict_from_score(final_score)

@@ -197,8 +197,11 @@
 
       close() {
         this.open = false;
+        this.submitting = false;
         this.message = '';
         this.clearShot();
+        const slot = document.getElementById('feedback-result');
+        if (slot) slot.innerHTML = '';
       },
 
       // Surface an error in the same slot the success message uses.

@@ -1549,6 +1549,21 @@ html { scroll-behavior: smooth; }
   padding: 0.25rem 1.5rem 2rem;
 }
 
+/* What's-new drawer — same as settings-panel, anchored to the right. */
+.whats-new-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 101;
+  width: 100%;
+  max-width: 26rem;
+  background: oklch(var(--b1));
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.14);
+  overflow-y: auto;
+  will-change: transform;
+}
+
 /* ─────────────────────────────────────────────────────────────
    Results workspace shell — ADR-012
    ───────────────────────────────────────────────────────────── */

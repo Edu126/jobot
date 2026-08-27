@@ -54,6 +54,10 @@ def run_checks(parsed: dict[str, Any]) -> dict[str, Any]:
     issues: list[dict[str, str]] = []
     passed: list[str] = []
 
+    # Use the current contact dict, which includes user-provided overrides
+    # (phone, LinkedIn, etc. added via "What recruiters will see"). Those
+    # fields are injected into every generated artifact, so if the user has
+    # supplied them, the ATS score should reflect their presence.
     contact = parsed.get("contact", {})
     stats = parsed.get("stats", {})
     docx_meta = parsed.get("docx_meta", {})
