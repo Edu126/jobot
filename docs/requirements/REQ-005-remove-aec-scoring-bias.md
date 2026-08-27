@@ -2,7 +2,7 @@
 
 Date: 2026-08-21
 Source: User (product spec, verbatim in chat)
-Status: Shipped (Sprint 7, 2026-08-26 — shipped with synthetic fixtures; real-resume fixture backfill tracked separately)
+Status: Partially archived by ADR-015 (2026-08-27) — the runtime grounding guard-rail was removed (it silently dropped ~100% of results); the domain-neutral persona half (ADR-007/013) is KEPT. Originally shipped Sprint 7, 2026-08-26.
 
 ## What they asked for
 

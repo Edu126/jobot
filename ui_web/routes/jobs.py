@@ -1179,6 +1179,11 @@ async def jobs_score_batch(request: Request, cache_key: str):
     # jobs_meta still says score=0 for it.
     fragments: list[str] = []
     scored_ids: list[tuple[str, int]] = []
+    # Hoist the three template lookups out of the loop — same fragments per
+    # scored job, no need to re-resolve them per iteration.
+    badge_tmpl = templates.env.get_template("partials/score_badge.html")
+    ring_tmpl = templates.env.get_template("partials/detail_ring.html")
+    analysis_tmpl = templates.env.get_template("partials/detail_analysis.html")
     for j in batch:
         r = results.get(j["id"])
         if not r:
@@ -1189,8 +1194,7 @@ async def jobs_score_batch(request: Request, cache_key: str):
         j["_matched"] = r.matched
         j["_gaps"] = r.gaps
         j["_pending_score"] = False
-        fragments.append(templates.env.get_template("partials/score_badge.html")
-                         .render(job=j, oob=True))
+        fragments.append(badge_tmpl.render(job=j, oob=True))
         # OOB-update the open detail pane in place (ring + analysis) if this
         # job happens to be the one being viewed. These target scoped ids and
         # no-op when the pane isn't open, so it costs a few bytes per batch and
@@ -1198,10 +1202,8 @@ async def jobs_score_batch(request: Request, cache_key: str):
         # spinners (which are DB data, unrelated to the AI score).
         ai = {"score": r.score, "verdict": r.verdict, "reasoning": r.reasoning,
               "matched": r.matched, "gaps": r.gaps}
-        fragments.append(templates.env.get_template("partials/detail_ring.html")
-                         .render(job=j, ai=ai, oob=True))
-        fragments.append(templates.env.get_template("partials/detail_analysis.html")
-                         .render(job=j, ai=ai, oob=True))
+        fragments.append(ring_tmpl.render(job=j, ai=ai, oob=True))
+        fragments.append(analysis_tmpl.render(job=j, ai=ai, oob=True))
         scored_ids.append((j["id"], int(r.score)))
     if scored_ids:
         pushes = "".join(

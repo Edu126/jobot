@@ -65,8 +65,6 @@ MAX_JD_CHARS = 2500       # truncate very long JDs — key reqs are near the top
 # Gemini's context is 1M+ tokens — 12k chars is a rounding error.
 MAX_RESUME_CHARS = 12000
 
-VERDICTS = ("strong_fit", "workable", "stretch", "poor_fit")
-
 # Bump PROMPT_VERSION when the instructions change, SCORING_VERSION when the
 # score→verdict mapping changes. Either bump logically invalidates every
 # cached job_scores row (version mismatch on read → recompute) without

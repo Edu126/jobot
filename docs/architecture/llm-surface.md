@@ -1,6 +1,6 @@
 # LLM Surface
 
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 
 Every Gemini call in the app, in one place. If you add or remove a
 call, update this file — [ADR-008](../decisions/ADR-008-prompt-conventions.md)

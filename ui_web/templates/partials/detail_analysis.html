@@ -3,11 +3,12 @@
    /score-batch when the open job is scored, so the analysis fills in
    without a whole-pane refetch. Empty until a score exists. Scoped id so
    the OOB only lands on the open pane. #}
-<div id="detail-analysis-{{ job.id }}"{% if oob %} hx-swap-oob="true"{% endif %} class="space-y-4 empty:hidden">
-  {% if ai and ai.reasoning %}
+<div id="detail-analysis-{{ job.id }}"{% if oob %} hx-swap-oob="true"{% endif %} class="space-y-4{% if not ai %} hidden{% endif %}">
+  {% if ai %}
+  {% if ai.reasoning %}
   <p class="text-sm italic text-base-content/85 leading-relaxed quoted">{{ ai.reasoning }}</p>
   {% endif %}
-  {% if ai and (ai.matched or ai.gaps) %}
+  {% if ai.matched or ai.gaps %}
   <div class="grid grid-cols-1 gap-3 text-sm">
     {% if ai.matched %}
     <div>
@@ -26,5 +27,6 @@
     </div>
     {% endif %}
   </div>
+  {% endif %}
   {% endif %}
 </div>

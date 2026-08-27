@@ -128,14 +128,6 @@
             this._viewedTimer = null;
           }, 3000);
         },
-        refresh() {
-          if (!this.id || !window.htmx) return;
-          const isMobile = window.matchMedia('(max-width: 1023.98px)').matches;
-          htmx.ajax('GET', `/jobs/detail/${this.id}`, {
-            target: isMobile ? '#mobile-detail-body' : '#job-detail-pane',
-            swap: 'innerHTML',
-          });
-        },
         closeMobile() {
           this.mobileOpen = false;
           // Cancel any pending viewed timer — user dismissed before

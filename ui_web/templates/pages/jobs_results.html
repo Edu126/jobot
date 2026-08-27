@@ -62,18 +62,18 @@
          // attribute; any literal double-quote in a comment terminates
          // the attribute and drops the rest of the payload as text on
          // the page. Keep comments quote-free. See feedback memory.
-         window.__jobotUpdateScore = (id, score) => {
+         window.__jobotUpdateScore = (id, score, countDown = true) => {
            const j = this.jobs.find(x => x.id === id);
-           // Idempotent: only count this job down from pending the first
-           // time a real score lands for it. The detail pane re-fires this
-           // to self-heal a card whose OOB ring-update was dropped (scored
-           // before its card was in the DOM), so a naive decrement would
-           // double-count. Treat a falsy prior score as still pending.
+           if (j) j.score = score;
+           // countDown is the score-batch path: each call is one
+           // previously-pending job now scored, so decrement once. The
+           // detail-pane self-heal passes countDown=false — it only
+           // reconciles j.score for the filter; the batch already counted
+           // that job down, and a score of 0 is a valid result we must not
+           // mistake for still-pending.
            // NOTE: no literal double-quotes in this x-data block (they
            // terminate the attribute and dump the script as page text).
-           const wasPending = !j || !j.score;
-           if (j) j.score = score;
-           if (wasPending && this.pendingScoreCount > 0) this.pendingScoreCount--;
+           if (countDown && this.pendingScoreCount > 0) this.pendingScoreCount--;
            // ADR-011: also require discoveryComplete. Otherwise the
            // toast + filter reveal could fire during a lull between
            // sources (all-first-batch-scored, more coming). Slice 5b

@@ -32,7 +32,10 @@ stable per job+resume).
 
 Scoring works again and the code shrinks. We lose the per-section
 breakdown and the grounding backstop against hallucinated matches — an
-accepted interim cost. The proper deterministic redesign is deferred to a
+accepted interim cost. Note this also removes the `SCORING_BIAS_SUSPECT`
+telemetry path (the event constant in `events.py` is now never fired), so
+we are blind to how often the LLM invents a match/gap until REQ-015
+restores a check. Accepted at 4 users; REQ-015 must re-add a signal. The proper deterministic redesign is deferred to a
 future REQ, fed by `docs/research/RESEARCH-scoring-approaches.md` (which
 recommends LLM label-classification → fixed anchor scores). ADR-005
 (quality in the contract layer) still holds — we fix quality in the

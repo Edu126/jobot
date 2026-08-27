@@ -2,7 +2,7 @@
 
 Date: 2026-08-21
 Source: User (product spec, verbatim in chat)
-Status: Shipped (Sprint 7, 2026-08-26)
+Status: Archived by ADR-015 (2026-08-27) — reverted to a single LLM value; shipped Sprint 7 2026-08-26, archived after it proved non-deterministic and silently dropped results
 
 ## What they asked for
 

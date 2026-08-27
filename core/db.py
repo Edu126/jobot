@@ -1355,8 +1355,7 @@ def get_cached_scores(
         placeholders = ",".join("?" * len(job_ids))
         rows = conn.execute(
             f"""SELECT job_id, score, verdict, reasoning,
-                       matched_json, gaps_json, sections_json, hard_requirements_json,
-                       model, scored_at
+                       matched_json, gaps_json, model, scored_at
                 FROM job_scores
                 WHERE resume_id = ? AND lang = ? AND prompt_version = ? AND scoring_version = ?
                       AND job_id IN ({placeholders})""",
@@ -1375,7 +1374,9 @@ def save_scores(
 ) -> int:
     """Upsert a batch of scores for one resume + language. Each score dict
     must have: job_id, score, verdict, reasoning, matched (list),
-    gaps (list), sections (dict), hard_requirements (list), model.
+    gaps (list), model. `sections`/`hard_requirements` are legacy columns
+    (defaulted to empty when absent) — single-value scoring no longer emits
+    them (ADR-015).
 
     `lang` is the UI language the reasoning/matched/gaps were generated in
     (see get_reasoning_language). It joins the PK so a Spanish score and
