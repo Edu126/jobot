@@ -107,6 +107,8 @@ def rewrite_resume(
     level: Level,
     client: GeminiClient,
     company_context: str = "",
+    resume_id: int | None = None,
+    persona: str | None = None,
 ) -> dict[str, Any]:
     """Generate a tailored version of the parsed resume.
 
@@ -116,7 +118,18 @@ def rewrite_resume(
         - "tailoring_level": Level
 
     The original `parsed` is not mutated.
+
+    `resume_id`, when the caller has one, resolves the domain-neutral
+    persona line (ADR-007 + ADR-013) via `core.resume.ai_summary` — the
+    same profile scoring uses, so the candidate reads as the same person
+    across both. Pass `persona` directly instead when the caller already
+    resolved it (e.g. the tailor route also calls `score_single_no_cache`
+    for the same resume_id in the same request — resolve once, pass to
+    both, rather than triggering `ai_summary.persona_line` twice).
     """
+    if persona is None:
+        from core.resume import ai_summary
+        persona = ai_summary.persona_line(resume_id)
     sections = parsed.get("sections", {}) or {}
     contact = parsed.get("contact", {}) or {}
 
@@ -155,6 +168,7 @@ def rewrite_resume(
         level=level,
         company_context=company_context,
         output_language=get_output_language(),
+        persona=persona,
     )
 
     response = client.generate_json(prompt)

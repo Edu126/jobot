@@ -11,23 +11,35 @@ sits on top of this; here we only do retrieval-style matching.
 from __future__ import annotations
 
 import math
-import re
 from typing import Any
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from core.matching.lexical import normalize as _normalize, stems as _stems
 
-# Domain-aware extras for AEC/construction roles the user is targeting.
-# Adds nothing for unrelated jobs; helps the matcher recognize and weight
-# AEC tooling that generic English stopword lists ignore.
+
+# Domain-aware extras across several fields, not tied to any one
+# candidate's industry (REQ-006). Adds nothing for unrelated jobs; helps
+# the matcher recognize and weight domain tooling/vocabulary that generic
+# English stopword lists ignore. AEC terms sit here as one peer domain
+# among several — add more as new domains show up, not as the default.
 DOMAIN_HINTS = {
+    # AEC / construction
     "bim", "revit", "navisworks", "autocad", "civil 3d", "sketchup",
     "tekla", "ifc", "cobie", "lod", "clash detection", "rfi",
     "takeoff", "quantity takeoff", "ms project", "primavera", "p6",
     "pmp", "capm", "gantt", "wbs",
     "estimating", "cost control", "blueprint", "construction documents",
-    "ontario", "ottawa", "bilingual",
+    # Sales / B2B
+    "crm", "salesforce", "hubspot", "pipeline", "quota", "prospecting",
+    "cold outreach", "account management", "b2b", "b2c", "arr", "mrr",
+    # BI / data analytics
+    "sql", "tableau", "power bi", "looker", "etl", "data warehouse",
+    "dashboards", "kpi reporting",
+    # Tech / software
+    "python", "javascript", "react", "aws", "ci/cd", "microservices",
+    "bilingual",
 }
 
 # Words to ignore as "missing keywords" even if they're TF-IDF heavy in the
@@ -52,14 +64,6 @@ EXTRA_NOISE = {
 }
 
 
-def _normalize(text: str) -> str:
-    text = text.lower()
-    # collapse whitespace, drop non-alphanumeric (keep + and #)
-    text = re.sub(r"[^a-z0-9+#\s]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
 def _rescale_similarity(sim: float) -> int:
     """Map cosine similarity → 0–100 score.
 
@@ -78,38 +82,6 @@ def _rescale_similarity(sim: float) -> int:
     if sim <= 0:
         return 0
     return min(100, int(round(math.sqrt(sim) * 150)))
-
-
-def _stems(word: str) -> set[str]:
-    """Return the word plus every plausible stem variant.
-
-    Returning a SET (not a single stem) lets us match both
-    'developed→develop' (strip -ed) and 'coordinated→coordinate'
-    (silent-e past tense, strip just -d) without picking a winner.
-
-    Without a real lemmatizer we can't tell which is right per word,
-    so we keep both and rely on set intersection in the caller.
-    """
-    w = word.lower().rstrip("'s")
-    if len(w) <= 3:
-        return {w}
-    out: set[str] = {w}
-    if w.endswith("ies"):
-        out.add(w[:-3] + "y")
-    if w.endswith("ied"):
-        out.add(w[:-3] + "y")
-    if w.endswith("ing") and len(w) > 4:
-        out.add(w[:-3])           # coordinating → coordinat
-        out.add(w[:-3] + "e")     # coordinating → coordinate
-    if w.endswith("ed") and len(w) > 3:
-        out.add(w[:-2])           # developed → develop
-        out.add(w[:-1])           # coordinated → coordinate (silent-e)
-    if w.endswith("es") and len(w) > 3:
-        out.add(w[:-2])
-        out.add(w[:-1])
-    if w.endswith("s") and len(w) > 3 and not w.endswith("ss"):
-        out.add(w[:-1])
-    return out
 
 
 def match(resume_text: str, job_description: str, top_n_missing: int = 15) -> dict[str, Any]:

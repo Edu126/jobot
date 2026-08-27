@@ -2,7 +2,7 @@
 
 Date: 2026-08-21
 Source: User (product spec, verbatim in chat)
-Status: Open
+Status: Building (implemented 2026-08-26, pending PR review — synthetic fixtures, not the real-resume fixtures originally specified; see next-work.md)
 
 ## What they asked for
 

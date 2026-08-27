@@ -68,6 +68,11 @@ SEARCH_BLOCKED         = "search.blocked"
 # adapter name so silent rot of an ATS adapter shows up in the log before a
 # user reports garbage output.
 EXTRACT_FAILED         = "extract.failed"
+# REQ-005 runtime guard-rail: a scoring result failed the grounding check
+# twice (fresh score + one silent retry) and was dropped rather than
+# cached. Payload carries job_id/resume_id/model so a pattern (one model,
+# one resume) shows up before it needs a user report.
+SCORING_BIAS_SUSPECT   = "scoring.bias_suspect"
 
 
 def track(event_type: str, **payload: Any) -> None:

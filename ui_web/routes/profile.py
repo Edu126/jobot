@@ -22,12 +22,9 @@ from __future__ import annotations
 
 import io
 import os
-import re
-from datetime import date
 from pathlib import Path
 from typing import Optional
 
-import pydantic
 from dotenv import set_key
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
@@ -43,11 +40,8 @@ from core.llm.gemini import (
     request_counts_today,
     resolve_api_key,
 )
-from core.resume.anomalies import (
-    analyze as analyze_anomalies,
-    missing_sections,
-    present_sections,
-)
+from core.resume import ai_summary
+from core.resume.anomalies import analyze as analyze_anomalies
 from core.resume.ai_regenerate import regenerate_sections
 from core.resume.ats import run_checks
 from core.resume.parser import parse_resume
@@ -231,305 +225,21 @@ Return JSON: {{"queries": ["query 1", "query 2", ...]}}
     return queries, None, 0
 
 
-SECTION_SUGGESTIONS_MAX = 3
-_EVIDENCE_MIN_CHARS = 6         # snippets shorter than this are too weak to check
-_EVIDENCE_MAX_CHARS = 200       # snippets longer than this are the model regurgitating
-
-# Module-level compiled patterns for the grounding hot path (used up to
-# 2 attempts × up to 3 evidence snippets per AI-summary call). Python's
-# `re` module caches patterns internally, but a hand-hoisted constant
-# skips the cache dict lookup on every call.
-_WS_RE = re.compile(r"\s+")
-_DIGIT_RE = re.compile(r"\d")
-_TOKEN_RE = re.compile(r"\b[A-Za-z][\w-]{2,}\b")
-
-
-# ── Response schema — Pydantic v2 ─────────────────────────────
-# Rewritten 2026-08-20 after a hallucination burn: the model wrote
-# "sudden pivot to art gallery work" for a resume with no art or
-# gallery content. Users can't fix that by clicking a button; the
-# only real defense is a structured contract that forces the model
-# to CITE the resume, then we verify the citations. See
-# `_grounded_or_none` below.
-
-class _SectionSuggestion(pydantic.BaseModel):
-    section: str
-    reason: str
-
-
-class _ResumeSummaryLLM(pydantic.BaseModel):
-    """Shape of the raw JSON we ask Gemini for. We NEVER trust these
-    fields on face value — `_validate_grounded` cross-checks the
-    evidence snippets against the actual resume text before we
-    persist or render anything."""
-    role_label: str
-    first_impression: str
-    # Verbatim snippets from the resume that back specific claims in
-    # first_impression. Empty list is allowed only if first_impression
-    # itself is generic (no specific claim to defend); a specific-claim
-    # impression with empty evidence fails validation.
-    first_impression_evidence: list[str] = pydantic.Field(default_factory=list)
-    section_suggestions: list[_SectionSuggestion] = pydantic.Field(default_factory=list)
-
-
-def _normalize_for_grounding(s: str) -> str:
-    """Collapse whitespace + lowercase. Substring match against this
-    normalized form is our grounding test — tolerant enough that
-    PDF line-breaks and extra spaces don't cause false negatives,
-    strict enough that fabricated content ("art gallery") won't
-    accidentally match."""
-    return _WS_RE.sub(" ", s.lower().strip())
-
-
-def _looks_specific(impression: str) -> bool:
-    """Heuristic: does the impression make a specific claim that needs
-    evidence? Capitalised words that aren't sentence starts (proper
-    nouns), numbers, or industry/domain terms are red flags for
-    "needs citation". Generic phrasings like 'solid mid-career resume'
-    pass without evidence."""
-    if not impression:
-        return False
-    # Any digit → almost certainly a specific claim (years, counts).
-    if _DIGIT_RE.search(impression):
-        return True
-    tokens = _TOKEN_RE.findall(impression)
-    # Capitalised words not at position 0 → proper noun candidates.
-    # Skip the common start-of-clause stop-words in case a prompt tweak
-    # ever produces "I have..." / "The candidate..." style openers.
-    for i, t in enumerate(tokens):
-        if i == 0:
-            continue
-        if t[0].isupper() and t.lower() not in {"i", "the", "a", "an"}:
-            return True
-    return False
-
-
-def _validate_grounded(
-    summary: _ResumeSummaryLLM, resume_norm: str
-) -> bool:
-    """Every evidence snippet MUST appear in the (already-normalized)
-    resume text. If the impression looks specific but has no evidence,
-    that also fails — a specific claim without a citation is exactly
-    the art-gallery pattern.
-
-    Takes the ALREADY-normalized resume so callers can reuse one
-    normalization across retries (see `_grounded_or_none`)."""
-    for snippet in summary.first_impression_evidence:
-        snip = (snippet or "").strip()
-        if not snip:
-            continue   # empty snippets are ignored, not counted against
-        if len(snip) < _EVIDENCE_MIN_CHARS or len(snip) > _EVIDENCE_MAX_CHARS:
-            return False
-        if _normalize_for_grounding(snip) not in resume_norm:
-            return False
-    # Specific claim + no evidence at all → un-grounded.
-    if not summary.first_impression_evidence and _looks_specific(summary.first_impression):
-        return False
-    return True
-
-
-def _grounded_or_none(
-    prompt: str,
-    api_key: str,
-    resume_text: str,
-) -> Optional[_ResumeSummaryLLM]:
-    """One Gemini call → Pydantic validation → grounding check.
-    Retries ONCE silently on invalid/un-grounded response. Returns
-    None if still bad — the caller renders no summary rather than a
-    lying one. No user-visible retry button; the server owns quality."""
-    from core.llm.gemini import GeminiClient, GeminiError
-    client = GeminiClient(api_key=api_key)
-    # Normalize once — the resume text doesn't change between attempts.
-    resume_norm = _normalize_for_grounding(resume_text)
-    for _attempt in range(2):
-        try:
-            raw = client.generate_json(prompt)
-            summary = _ResumeSummaryLLM.model_validate(raw)
-            if _validate_grounded(summary, resume_norm):
-                return summary
-        except (pydantic.ValidationError, GeminiError):
-            pass
-        # Loop retries once. On the second failure, fall through.
-    return None
-
-
-def _maybe_generate_ai_summary(resume_id: int) -> Optional[dict]:
-    """Role label + first-impression sentence + "worth adding?" judgment on
-    missing standard sections, from a single Gemini call. Called from the
-    lazy-load GET /profile/ai-summary fragment (hx-trigger="load", same
-    pattern as the Updates check) — NOT from upload/switch directly, so the
-    upload response stays instant and the fragment's own spinner covers the
-    1-3s Gemini round-trip.
-
-    Cached by resume_id — a new upload gets a new id and thus a fresh
-    generation. On failure to produce a grounded summary (after one
-    silent retry), returns None; the fragment renders nothing rather
-    than a hallucinated summary. There is DELIBERATELY no user-facing
-    regenerate button — regenerate patterns train users to distrust
-    output + invite quota-burning spam. Quality lives in the prompt
-    contract + Pydantic validation, not in a "try again" affordance.
-    """
-    from core import settings as app_settings
-    # See note above (suggestions path): output_language is the correct
-    # resolver for LLM-generated text. Resolved once; joins the cache PK
-    # (v14) and is passed to the prompt as `lang_line`.
-    lang = app_settings.get_output_language()
-
-    cached = db.get_resume_ai_summary(resume_id, lang)
-    if cached:
-        return cached
-    try:
-        api_key = resolve_api_key()
-        if not api_key:
-            return None
-
-        resume = db.get_resume(resume_id)
-        if not resume:
-            return None
-        parsed = resume["parsed"]
-        resume_text = (parsed.get("raw_text") or "")[:8000].strip()
-        if not resume_text:
-            return None
-
-        present = [t for _, t in present_sections(parsed)]
-        missing = missing_sections(parsed)
-        if not missing:
-            missing_block = "(none — candidate already has every standard section)"
-        else:
-            missing_block = ", ".join(t for _, t in missing)
-        location = (parsed.get("contact") or {}).get("location", "")
-
-        lang_line = app_settings.language_instruction(lang)
-
-        prompt = f"""{lang_line}
-
-You are a experienced colleague — not a career coach, not an HR
-department — glancing at someone's resume and telling them straight what
-you think. You'll get their resume text and two facts: which standard
-resume sections they already have, and which they don't. Do FOUR things:
-
-1. role_label: In 2-5 words, name the FIELD their experience is in (e.g.
-   "civil construction coordination", "B2B sales", "BI / data analytics").
-   Base this only on their work history — resumes get reused across
-   different job applications, so don't assume this is a "target title,"
-   just what their actual experience says they've been doing. Lowercase,
-   no fluff, no corporate label-speak.
-
-2. first_impression: ONE sentence (max 22 words), your real reaction
-   reading this cold. Say whatever is actually true — could be all
-   praise, all criticism, or noting something specific and unusual. Do
-   NOT force a "here's what's good, but here's what's weak" sandwich
-   every time — that pattern reads as a template, not an opinion.
-   Write like you're texting a friend a quick honest take, not writing
-   ad copy.
-
-   ANTI-HALLUCINATION RULE (HARD, enforced by the server): every
-   specific claim in first_impression MUST be backed by a verbatim
-   snippet from the resume in `first_impression_evidence`. If you
-   cannot quote the resume verbatim to support a claim, do not make
-   it. If nothing specific stands out, say something generic-but-true
-   ("solid mid-career resume, no red flags") and leave
-   first_impression_evidence empty. Real user burn: model wrote
-   "sudden pivot to art gallery work" for a resume with zero art or
-   gallery content (2026-08-20). The server now REJECTS impressions
-   whose evidence snippets do not appear in the resume — no summary
-   renders in that case. Get it right or say something generic.
-
-   Banned English words/phrases (instant AI-slop tell, never use
-   them): leverage, robust, seamless, dynamic, passionate, results-driven,
-   metric-driven, spearhead, utilize, synergy, cutting-edge, elevate,
-   unlock, game-changer, "stands out", "speaks volumes", em-dash chains.
-   Banned Spanish equivalents (same rule): apasionado, dinámico, robusto,
-   orientado a resultados, sinergia, impulsar, potenciar, "destaca por",
-   "cabe destacar", "no se puede negar". Use plain, specific words.
-   Contractions / natural conversational phrasing are fine. If something
-   is genuinely impressive, say so plainly ("this is solid" / "está
-   sólido") — don't dress it up.
-
-3. first_impression_evidence: 0-3 short verbatim snippets from the
-   resume text below that back the specific claims in your impression.
-   Copy them EXACTLY — including capitalisation and punctuation — so
-   the server can verify with substring match. Each snippet: 6-200
-   chars. If your impression is generic (no specific claim), return
-   an empty list.
-
-4. section_suggestions: Of the MISSING sections listed below, which (if
-   any) are actually worth this specific candidate adding? Be selective —
-   most resumes don't need most of these. Consider their apparent field
-   and, if the location suggests it, the Ottawa/Montreal bilingual job
-   market (Languages section matters a LOT there). Almost never suggest
-   "References" — modern resumes drop it; only suggest it if something in
-   the resume suggests it's expected. Return at most {SECTION_SUGGESTIONS_MAX}
-   suggestions, each with a reason under 15 words, same plain-language
-   rule as above (no "leverage your robust skillset" nonsense). Empty
-   list is a valid, often-correct answer.
-
-TODAY'S DATE: {date.today().strftime("%B %Y")} — use this as "now" when
-judging any dates in the resume (e.g. a role starting a few months ago is
-current employment, not a typo or something impossible).
-CANDIDATE LOCATION: {location or "unknown"}
-SECTIONS ALREADY PRESENT: {", ".join(present) or "(none detected)"}
-SECTIONS MISSING (only suggest from this list): {missing_block}
-
-RESUME:
----
-{resume_text}
----
-
-Return JSON:
-{{
-  "role_label": "...",
-  "first_impression": "...",
-  "first_impression_evidence": ["verbatim snippet 1", "verbatim snippet 2"],
-  "section_suggestions": [{{"section": "languages", "reason": "..."}}]
-}}
-"""
-        summary = _grounded_or_none(prompt, api_key, resume_text)
-        if summary is None:
-            # Two attempts came back un-grounded. Don't cache anything;
-            # don't render anything. Better silence than a lie.
-            return None
-
-        role_label = summary.role_label.strip()[:60]
-        first_impression = summary.first_impression.strip()[:280]
-
-        missing_keys = {k for k, _ in missing}
-        suggestions: list[dict] = []
-        for item in summary.section_suggestions:
-            key = item.section.strip().lower()
-            reason = item.reason.strip()[:160]
-            if key in missing_keys and reason:
-                suggestions.append({"section": key, "reason": reason})
-            if len(suggestions) >= SECTION_SUGGESTIONS_MAX:
-                break
-
-        db.save_resume_ai_summary(
-            resume_id,
-            lang=lang,
-            role_label=role_label,
-            first_impression=first_impression,
-            suggestions=suggestions,
-        )
-        return {
-            "role_label": role_label,
-            "first_impression": first_impression,
-            "suggestions": suggestions,
-        }
-    except Exception:  # noqa: BLE001 — must never break the fragment render
-        return None
-
-
 @router.get("/profile/ai-summary")
 async def get_ai_summary(request: Request):
     """Lazy-load fragment for the role label / first-impression / section-
     suggestion chips. Same hx-trigger="load" pattern as the Updates check —
     page paints instantly, this fragment resolves the 1-3s Gemini round-trip
     on its own and swaps in (or renders nothing if no key / no resume /
-    call failed, all silent per _maybe_generate_ai_summary's contract)."""
+    call failed, all silent per `ai_summary.get_or_generate`'s contract).
+
+    Generation, grounding, and caching moved to `core/resume/ai_summary.py`
+    (ADR-013) — scoring reuses the same profile as persona input, and
+    `core/` can't depend on a `ui_web` route handler."""
     current = db.get_current_resume()
     if not current:
         return HTMLResponse("", status_code=200)
-    summary = _maybe_generate_ai_summary(int(current["id"]))
+    summary = ai_summary.get_or_generate(int(current["id"]))
     if not summary:
         return HTMLResponse("", status_code=200)
     return templates.TemplateResponse(
@@ -541,10 +251,10 @@ async def get_ai_summary(request: Request):
 # endpoint was DELETED. A user-facing regenerate button trains users to
 # distrust the output ("click if you don't like it"), invites quota-
 # burning spam clicks, and papers over the real problem: an ungrounded
-# prompt. Quality lives in `_grounded_or_none` above (Pydantic contract
-# + verbatim-evidence check + one silent server-side retry). If a
-# summary is un-grounded twice, no summary renders — better than a
-# lie the user has to bat away.
+# prompt. Quality lives in `core.resume.ai_summary._grounded_or_none`
+# (Pydantic contract + verbatim-evidence check + one silent server-side
+# retry). If a summary is un-grounded twice, no summary renders — better
+# than a lie the user has to bat away.
 #
 # If you ever need to invalidate a cached hallucination for a specific
 # user in an incident, do it from SSH:

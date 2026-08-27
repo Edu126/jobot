@@ -2,7 +2,7 @@
 
 Date: 2026-08-21
 Source: User (follow-up to REQ-005 during ADR-007 review)
-Status: Open
+Status: Building (implemented 2026-08-26, pending PR review)
 
 ## What they asked for
 

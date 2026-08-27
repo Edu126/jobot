@@ -2,7 +2,7 @@
 
 Date: 2026-08-21
 Source: User (product spec, verbatim in chat)
-Status: Open
+Status: Building (implemented 2026-08-26, pending PR review)
 
 ## What they asked for
 
