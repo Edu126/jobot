@@ -39,7 +39,8 @@ Thumbs.db
 
 # ── Internal-only docs (Claude memory, changelog, screenshots) ──
 PROJECT.md
-.claude/
+.claude/*
+!.claude/skills/
 /tmp/
 *.tmp
 
