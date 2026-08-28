@@ -14,11 +14,15 @@ real answer to "is this valid?".
 
 ## Decision
 
-Display fit as a **bucket label** (Strong / Good / Weak) plus an approximate
-percentile and the **top reasons in plain language**. Never show a raw
-comparable-looking numeric score to the user. Score movement is communicated
-through **specific gaps closed** (skills matched, exact JD terms added), not a
-chased number.
+Display fit as a **bucket label** (Strong / Good / Weak) derived from
+**skills-coverage + title match** — computable from the user's resume + the
+JD alone — plus the **top reasons in plain language**. Never show a raw
+comparable-looking numeric score. **We do not claim "top X% of applicants":**
+we have no applicant pool (that data is the ATS's, not ours), so an
+applicant-percentile would be invented — the exact black-box dishonesty we
+reject. Buckets come from fixed thresholds on our own signal. Movement is
+communicated through **specific gaps closed** (skills matched, exact JD terms
+added) and an optional before/after similarity **delta**, not a chased number.
 
 ## Consequences
 
@@ -28,3 +32,6 @@ chased number.
   the backend outcome loop (REQ-016).
 - Internal numeric scores may still exist for ranking/sorting; they are just
   not surfaced raw.
+- The lite scoring engine is **skills-coverage + a fast local text-similarity**
+  (TF-IDF cosine or a small embedding) for the delta — deterministic, no
+  external call in the hot path (see REQ-016).

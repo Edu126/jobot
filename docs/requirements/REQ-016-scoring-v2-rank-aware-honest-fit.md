@@ -15,10 +15,16 @@ rank-aware, honest, and non-gameable — answering the real user question
 
 ## What they actually need
 
-- **Rank-aware, bucketed display** — "Strong / Good / Weak" + an approximate
-  percentile, never a raw comparable-looking % (scores aren't calibrated
-  across jobs; raw % is false precision — ConFit / calibrated-distillation).
-  Detailed decision in [ADR-016](../decisions/ADR-016-bucketed-fit-display.md).
+- **Rank-aware, bucketed display** — "Strong / Good / Weak" from
+  skills-coverage + title, never a raw comparable-looking % (scores aren't
+  calibrated across jobs — ConFit / calibrated-distillation). **No
+  applicant-percentile** ("top X%"): we have no applicant pool, so it would be
+  invented. Detailed decision in [ADR-016](../decisions/ADR-016-bucketed-fit-display.md).
+- **A lite, fast, local scoring engine** — skills-coverage ratio (instant, no
+  model) drives the bucket; a fast local text-similarity (TF-IDF cosine, or a
+  small embedding) computes the before/after **delta** that gives honest
+  movement. Deterministic, no external call in the hot path; ESCO synonym list
+  for cheap semantic matching; embeddings only if coverage proves insufficient.
 - **Skills-coverage + exact-title as primary signals** (the dominant ranker
   features), over prose similarity.
 - **Honest, teachable gaps** — split *"you have the skill but not the JD's
