@@ -1,0 +1,43 @@
+# REQ-016: Scoring v2 — rank-aware, honest, trusted fit
+
+Date: 2026-08-27
+Source: Eduardo (product architect) + RESEARCH-market-thesis (iteration 2)
+Status: Backlog — not started
+
+## What they asked for
+
+A fit score the user *trusts* and that reflects how the real gate works.
+After ADR-015 reverted to a single LLM value, the research on how modern
+ATS rank resumes (RESEARCH-market-thesis, iteration 2) reframes the target:
+recruiters read an **AI-scored, ranked list top-down**. So the score must be
+rank-aware, honest, and non-gameable — answering the real user question
+("is this valid? how do I move it?").
+
+## What they actually need
+
+- **Rank-aware, bucketed display** — "Strong / Good / Weak" + an approximate
+  percentile, never a raw comparable-looking % (scores aren't calibrated
+  across jobs; raw % is false precision — ConFit / calibrated-distillation).
+  Detailed decision in [ADR-016](../decisions/ADR-016-bucketed-fit-display.md).
+- **Skills-coverage + exact-title as primary signals** (the dominant ranker
+  features), over prose similarity.
+- **Honest, teachable gaps** — split *"you have the skill but not the JD's
+  word"* (fixable, truthfully) from *"you genuinely lack this"* (not fakeable).
+  Movement/emotion lives here, not in a chased number. Ties non-negotiable #2
+  (no "regenerate to greener").
+- **Transparency = the wedge** — show top reasons in plain language (only 26%
+  of candidates trust black-box AI scores; jobot's honesty differentiates).
+- **Backend validation loop** — capture (score → outcome) pairs via "did you
+  hear back?" as quiet ground truth; benchmark against TalentCLEF. Not a
+  user-facing claim until data exists.
+
+## How we'll know it worked
+
+Re-scoring is stable (inherits REQ-015 determinism); users act on high buckets
+(support KPI S3); gap language matches the JD's terms; over time, high buckets
+correlate with real callbacks (ROC-AUC on collected outcomes).
+
+## Related
+
+REQ-015 (deterministic base), ADR-015 (single value archived),
+ADR-016 (bucket display), GOV-004 (scoring bias), RESEARCH-market-thesis.

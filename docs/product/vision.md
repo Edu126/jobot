@@ -93,9 +93,19 @@ architecture non-goal "no recruiter/employer surface."
   two growth vectors, not "apply more." Cold ATS applications are the
   lowest-yield channel; the network/referral layer (Phase 4) attacks the
   real one.
-- **We must optimize to pass AI/ATS screening, not to "sound good"** —
-  the first reader is a machine — but **without fabricating** (honesty
-  lives in the contract layer, per architecture non-negotiable #1/#2).
+- **The gate is the AI ranker — so: be seen · be ranked · be real, never
+  "beat the ATS."** Recruiters read an AI-scored, *ranked* list top-down and
+  rarely reach the fold; auto-rejection is a myth, but the ranking is the
+  real gate (RESEARCH-market-thesis). jobot optimizes to rank the user high
+  (skills + exact-title language the ranker rewards) **without fabricating**
+  — honesty lives in the contract layer (non-negotiable #1/#2). "Beat the
+  ATS" is banned framing: a myth and a credibility/legal liability.
+- **The fit score is shown as a bucket + reasons, not a raw %.** For the
+  user, the grounded "why" (*strong fit because it aligns with X/Y/Z*) IS the
+  felt validity; raw percentages are false precision that invite gaming, and
+  movement should live in the *specific gaps closed*, not a chased number.
+  Real (backend) validity is built quietly via the outcome loop ("did you
+  hear back?"). See REQ-016, ADR-016.
 
 ## When to revisit
 
