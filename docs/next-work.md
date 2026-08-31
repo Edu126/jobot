@@ -18,6 +18,52 @@ fixes.
 [ADR-007](decisions/ADR-007-domain-neutral-persona-from-resume-context.md),
 [ADR-013](decisions/ADR-013-persona-source-shared-resume-profile.md).
 
+## 2026-08-31 — Cache/memory architecture map + Mehran resume-gen feedback (MAP ONLY, do not fix yet)
+
+Opened by Eduardo. Suspicion: "part of the cache stays in RAM, not DB."
+**Confirmed — yes.** Audit of where state lives:
+
+**In-RAM (module-level, lost on process death):**
+- `core/llm/gemini.py` — `_exhausted_models` (model→quota-exhaustion date) and
+  `_request_counts` ((model,date)→count). Comment acknowledges "cleared on
+  restart."
+- `core/settings.py` — `_cache` dict. **Write-through to DB**, repopulates on
+  miss → lower risk.
+- `core/jobs/ats/oracle_hcm.py` — `_SITE_COMPANY_CACHE` scrape optimisation.
+  Minor.
+
+**Durable (DB/file — already migrated, safe):** task state (`core/jobs/tasks.py`,
+PR-2 migration off the old in-memory `ui_web.state.search_tasks`), job-search
+cache (`data/jobs_cache/*.json`), scores / suggestions / ai_summary (SQLite).
+
+**Risk of keeping the RAM state, esp. on Fly `auto_stop_machines='stop'`:**
+The machine cycles often → `_exhausted_models` + `_request_counts` reset every
+cycle. Effects: (a) re-probe exhausted models → wasted 429s; (b) the fallback
+chain can pick a *different model* across runs → **inconsistent model →
+inconsistent scores/quality**; (c) request-count shown to the user is wrong
+after any restart; (d) if ever scaled >1 machine, per-process RAM state never
+shares → divergence.
+
+**Mehran feedback (search-by-link, LinkedIn job 4454079380, aggressive resume gen):**
+1. *3 aggressive attempts → totally different scores each.* Mapped root causes:
+   (a) scoring `temperature = 0.4` in `core/llm/gemini.py` → inherent run-to-run
+   LLM non-determinism; (b) probable model-fallback divergence from the RAM-reset
+   exhaustion state landing different runs on different models. This is exactly
+   what [REQ-015](requirements/REQ-015-deterministic-scoring-redesign.md) /
+   [REQ-016](requirements/REQ-016-scoring-v2-rank-aware-honest-fit.md) target.
+2. *First aggressive run truncated the resume's experience.* Separate from cache
+   — a generation/writer truncation bug (candidates: `MAX_RESUME_CHARS`,
+   `core/resume/ai_regenerate.py`, `core/resume/writer.py`). Same class as the
+   "mid-word evidence truncation" already fixed once in Sprint 7 hygiene.
+
+**Improvement options (not chosen — for later):**
+- Persist gemini exhaustion + request counts to DB (mirror the PR-2 task-state
+  migration); small table keyed `(model, date)`.
+- Scoring `temperature → 0` for determinism (REQ-015/016).
+- Score cache keyed on **resume-text hash** (not `resume_id`) so a regenerated-
+  but-equivalent resume reuses the score and re-scoring is stable.
+- Investigate the regen truncation separately (writer / ai_regenerate).
+
 ## What's the sprint
 Section-based scoring (LLM produces per-section evidence, backend
 does the math) + domain-neutral persona derived from resume context
