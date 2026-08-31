@@ -46,4 +46,15 @@ correlate with real callbacks (ROC-AUC on collected outcomes).
 ## Related
 
 REQ-015 (deterministic base), ADR-015 (single value archived),
-ADR-016 (bucket display), GOV-004 (scoring bias), RESEARCH-market-thesis.
+ADR-016 (bucket display), ADR-017 (JD-language source of truth),
+ADR-018 (engine: local rank A + LLM judge B), GOV-004 (scoring bias),
+RESEARCH-market-thesis, RESEARCH-scoring-tech-landscape (validation + bake-off).
+
+## Design status (2026-08-31)
+Engine decided and validated via scoring bake-off (`scripts/scoring_bakeoff.py`,
+5 approaches × real resumes × real JDs). Language handling = ADR-017; engine
+shape = ADR-018. **Next:** 5→3→1 prompt iteration to reinforce
+`semantic_score.py` (cross-language rule + coverage→bucket), then wire
+`lite_score.py` as the local ranking layer. Cache/temp non-determinism mapped
+in `next-work.md` (2026-08-31 entry) — fold `temperature→0` + text-hash cache
+key into the same pass.
