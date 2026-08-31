@@ -18,6 +18,12 @@ fixes.
 [ADR-007](decisions/ADR-007-domain-neutral-persona-from-resume-context.md),
 [ADR-013](decisions/ADR-013-persona-source-shared-resume-profile.md).
 
+## PENDING — REQ-016 sprint hygiene (deferred by Eduardo 2026-08-31)
+`/simplify` + `/code-review low` on the REQ-016 commits (`e630742` B-layer,
+`d01a305` validation harness + disclaimer + A-layer rollback) NOT run yet —
+Eduardo wants it folded into a larger project-wide review later. Also pending:
+his marks on `data/ab_scoring_2026-08-31.md` (the cross-language prompt go/no-go).
+
 ## 2026-08-31 — Cache/memory architecture map + Mehran resume-gen feedback (MAP ONLY, do not fix yet)
 
 Opened by Eduardo. Suspicion: "part of the cache stays in RAM, not DB."
