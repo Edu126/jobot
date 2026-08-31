@@ -13,6 +13,7 @@ Conventions:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from contextlib import contextmanager
@@ -25,9 +26,23 @@ from typing import Any, Iterable, Optional
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 
+def _resume_text_hash(parsed: dict) -> str:
+    """Stable content hash of a resume's extracted text — the score cache key
+    (v17). Two resume rows with identical text (e.g. a re-upload or a
+    deterministic regeneration → new `resume_id`) hash the same, so their
+    scores dedupe instead of forcing a full re-score (Mehran's unstable-
+    re-score, next-work.md). Hashes the `raw_text` scoring actually reads
+    (`resume["parsed"]["raw_text"]`), stripped; '' when there's no text —
+    scoring short-circuits on empty resumes anyway."""
+    raw = (parsed.get("raw_text") or "").strip()
+    if not raw:
+        return ""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 # ---------- schema ----------
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
@@ -42,7 +57,17 @@ SCHEMA_VERSION = 16
 # otherwise it's recomputed. Old rows keep '' and simply miss until
 # re-scored — additive columns, no rebuild needed (v15 uses ALTER TABLE
 # ADD COLUMN, unlike v13's PK-changing rebuild-and-copy).
+#
+# v17 (REQ-016 / ADR-018): the cache key is the resume's TEXT HASH, not its
+# `resume_id`. `resume_hash` joins the PK (in place of `resume_id`) so a
+# regenerated-but-equivalent resume — same text, new id — reuses the score
+# instead of re-scoring (Mehran's unstable re-score). `resume_id` stays as a
+# plain FK column for ON DELETE CASCADE + the resume-scoped index + the BI
+# pulse joins. Callers still pass `resume_id`; get/save resolve it to the
+# hash internally (via resumes.text_hash), so no call site changed. PK change
+# ⇒ rebuild-and-copy migration (like v13).
 _JOB_SCORES_BODY = """
+    resume_hash            TEXT NOT NULL DEFAULT '',
     resume_id              INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
     job_id                 TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     lang                   TEXT NOT NULL DEFAULT '',
@@ -57,7 +82,7 @@ _JOB_SCORES_BODY = """
     scoring_version        TEXT NOT NULL DEFAULT '',
     model                  TEXT NOT NULL,
     scored_at              TEXT NOT NULL,
-    PRIMARY KEY (resume_id, job_id, lang)
+    PRIMARY KEY (resume_hash, job_id, lang)
 """
 
 # v14: `lang` joins the PK on the two remaining LLM user-text caches.
@@ -101,7 +126,8 @@ CREATE TABLE IF NOT EXISTS resumes (
     source_format TEXT,
     parsed_json  TEXT NOT NULL,
     raw_bytes    BLOB,
-    is_current   INTEGER NOT NULL DEFAULT 0
+    is_current   INTEGER NOT NULL DEFAULT 0,
+    text_hash    TEXT NOT NULL DEFAULT ''   -- v17: score-cache key (REQ-016)
 );
 CREATE INDEX IF NOT EXISTS idx_resumes_current ON resumes(is_current);
 
@@ -452,6 +478,48 @@ def init_db(path: Path = DB_PATH) -> None:
                 ALTER TABLE resume_ai_summary ADD COLUMN seniority TEXT NOT NULL DEFAULT '';
             """)
 
+        # v17 migration (REQ-016 / ADR-018): re-key the score cache on the
+        # resume TEXT HASH so a regenerated-but-equivalent resume reuses its
+        # scores instead of re-scoring (Mehran's unstable re-score,
+        # next-work.md). Two ordered steps: (1) populate resumes.text_hash,
+        # then (2) rebuild job_scores with resume_hash in the PK, backfilled
+        # from resumes.text_hash. Non-destructive, mirrors v13's rebuild-and-
+        # copy; rows whose resume is gone coalesce to '' and simply stop
+        # hitting cache (re-scored on next view).
+        resumes_cols = {r["name"] for r in conn.execute("PRAGMA table_info(resumes)").fetchall()}
+        if "text_hash" not in resumes_cols:
+            conn.execute("ALTER TABLE resumes ADD COLUMN text_hash TEXT NOT NULL DEFAULT ''")
+        for r in conn.execute("SELECT id, parsed_json FROM resumes WHERE text_hash = ''").fetchall():
+            try:
+                parsed = json.loads(r["parsed_json"])
+            except (TypeError, ValueError):
+                parsed = {}
+            h = _resume_text_hash(parsed)
+            if h:
+                conn.execute("UPDATE resumes SET text_hash = ? WHERE id = ?", (h, r["id"]))
+
+        scores_cols = {r["name"] for r in conn.execute("PRAGMA table_info(job_scores)").fetchall()}
+        if scores_cols and "resume_hash" not in scores_cols:
+            # OR IGNORE: two old rows for different resume_ids that share text
+            # (same hash) + same (job_id, lang) collide on the new PK — keep
+            # the first; they're duplicates by construction (identical text →
+            # identical score).
+            conn.executescript(f"""
+                CREATE TABLE job_scores_new ({_JOB_SCORES_BODY});
+                INSERT OR IGNORE INTO job_scores_new
+                    (resume_hash, resume_id, job_id, lang, score, verdict, reasoning,
+                     matched_json, gaps_json, sections_json, hard_requirements_json,
+                     prompt_version, scoring_version, model, scored_at)
+                SELECT COALESCE((SELECT text_hash FROM resumes WHERE id = js.resume_id), ''),
+                       js.resume_id, js.job_id, js.lang, js.score, js.verdict, js.reasoning,
+                       js.matched_json, js.gaps_json, js.sections_json, js.hard_requirements_json,
+                       js.prompt_version, js.scoring_version, js.model, js.scored_at
+                FROM job_scores js;
+                DROP TABLE job_scores;
+                ALTER TABLE job_scores_new RENAME TO job_scores;
+                CREATE INDEX IF NOT EXISTS idx_job_scores_resume ON job_scores(resume_id);
+            """)
+
         conn.execute(
             "INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
             (str(SCHEMA_VERSION),),
@@ -519,14 +587,15 @@ def save_resume(
     with tx(path) as conn:
         cur = conn.execute(
             """INSERT INTO resumes
-               (filename, uploaded_at, source_format, parsed_json, raw_bytes, is_current)
-               VALUES (?, ?, ?, ?, ?, 0)""",
+               (filename, uploaded_at, source_format, parsed_json, raw_bytes, is_current, text_hash)
+               VALUES (?, ?, ?, ?, ?, 0, ?)""",
             (
                 filename,
                 _now(),
                 parsed.get("source_format", ""),
                 json.dumps(parsed, ensure_ascii=False),
                 raw_bytes,
+                _resume_text_hash(parsed),
             ),
         )
         new_id = int(cur.lastrowid)
@@ -598,11 +667,15 @@ def update_resume_contact(resume_id: int, contact: dict, path: Path = DB_PATH) -
 
 def update_resume_parsed(resume_id: int, parsed: dict, path: Path = DB_PATH) -> None:
     """Replace the full parsed_json for a resume. Used by the LLM regeneration
-    pass — caller has already produced a validated, complete parsed dict."""
+    pass — caller has already produced a validated, complete parsed dict.
+
+    Recomputes text_hash so the score cache tracks the regenerated text: an
+    edit that changes the resume re-scores; a regeneration that reproduces
+    the same text keeps hitting cache (v17, REQ-016)."""
     with tx(path) as conn:
         conn.execute(
-            "UPDATE resumes SET parsed_json = ? WHERE id = ?",
-            (json.dumps(parsed, ensure_ascii=False), resume_id),
+            "UPDATE resumes SET parsed_json = ?, text_hash = ? WHERE id = ?",
+            (json.dumps(parsed, ensure_ascii=False), _resume_text_hash(parsed), resume_id),
         )
 
 
@@ -1334,6 +1407,14 @@ def save_resume_ai_summary(
 
 # ---------- job scores (semantic matching cache) ----------
 
+def _text_hash_for(conn: sqlite3.Connection, resume_id: int) -> str:
+    """Resolve a resume_id to its text_hash (the v17 score-cache key). Callers
+    still pass resume_id; this is the one place that maps it to the hash so no
+    route or scoring call site had to change. '' when the resume is gone."""
+    row = conn.execute("SELECT text_hash FROM resumes WHERE id = ?", (resume_id,)).fetchone()
+    return (row["text_hash"] or "") if row else ""
+
+
 def get_cached_scores(
     resume_id: int,
     job_ids: Iterable[str],
@@ -1343,23 +1424,28 @@ def get_cached_scores(
     path: Path = DB_PATH,
 ) -> dict[str, dict]:
     """Return {job_id: score_row_dict} for any job in job_ids that already
-    has a score for this resume AT THIS UI LANGUAGE, under the CURRENT
-    prompt/scoring version. Missing jobs are simply omitted; rows scored
-    under a different `lang`, `prompt_version`, or `scoring_version` are
-    treated as misses so callers regenerate (ADR-006's logical
-    invalidation — old rows aren't deleted, just no longer served)."""
+    has a score for this resume's TEXT AT THIS UI LANGUAGE, under the CURRENT
+    prompt/scoring version. Keyed on the resume's text hash (v17), so a
+    re-uploaded / regenerated-but-identical resume hits its existing scores.
+    Missing jobs are simply omitted; rows scored under a different `lang`,
+    `prompt_version`, or `scoring_version` are treated as misses so callers
+    regenerate (ADR-006's logical invalidation — old rows aren't deleted,
+    just no longer served)."""
     job_ids = list(job_ids)
     if not job_ids:
         return {}
     with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return {}
         placeholders = ",".join("?" * len(job_ids))
         rows = conn.execute(
             f"""SELECT job_id, score, verdict, reasoning,
                        matched_json, gaps_json, model, scored_at
                 FROM job_scores
-                WHERE resume_id = ? AND lang = ? AND prompt_version = ? AND scoring_version = ?
+                WHERE resume_hash = ? AND lang = ? AND prompt_version = ? AND scoring_version = ?
                       AND job_id IN ({placeholders})""",
-            (resume_id, lang, prompt_version, scoring_version, *job_ids),
+            (resume_hash, lang, prompt_version, scoring_version, *job_ids),
         ).fetchall()
         return {r["job_id"]: dict(r) for r in rows}
 
@@ -1387,19 +1473,28 @@ def save_scores(
     time (ADR-006) — stamped on every row so a later prompt or weight
     change can tell stale rows apart without deleting them.
 
-    Returns count written. Jobs referenced by job_id must already exist in
-    the jobs table (FK enforced)."""
+    The cache row is keyed on the resume's text hash (v17), resolved here
+    from `resume_id`; `resume_id` is also stored (updated on conflict) as the
+    live FK for CASCADE + BI joins. Returns count written. Jobs referenced by
+    job_id must already exist in the jobs table (FK enforced)."""
     now = _now()
     n = 0
     with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            # No text hash ⇒ the resume is text-less (can't be meaningfully
+            # scored) or gone. Skip the write: get_cached_scores short-circuits
+            # on the same condition, so these rows could never be read back.
+            return 0
         for s in scores:
             conn.execute(
                 """INSERT INTO job_scores (
-                    resume_id, job_id, lang, score, verdict, reasoning,
+                    resume_hash, resume_id, job_id, lang, score, verdict, reasoning,
                     matched_json, gaps_json, sections_json, hard_requirements_json,
                     prompt_version, scoring_version, model, scored_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(resume_id, job_id, lang) DO UPDATE SET
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(resume_hash, job_id, lang) DO UPDATE SET
+                    resume_id = excluded.resume_id,
                     score = excluded.score,
                     verdict = excluded.verdict,
                     reasoning = excluded.reasoning,
@@ -1412,6 +1507,7 @@ def save_scores(
                     model = excluded.model,
                     scored_at = excluded.scored_at""",
                 (
+                    resume_hash,
                     resume_id,
                     s["job_id"],
                     lang,

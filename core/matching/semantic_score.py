@@ -6,9 +6,19 @@ maps the score to the verdict bands for the ring colour. This is the
 original pre-Sprint-7 model, restored on 2026-08-27: the five-section
 weighted rubric + runtime grounding guard-rail (ADR-006 / REQ-004 / REQ-005)
 were archived because they were non-deterministic in practice and the
-grounding check silently dropped results. A deterministic redesign is
-deferred to a future REQ, fed by dedicated research (see
-`docs/research/RESEARCH-scoring-approaches.md`).
+grounding check silently dropped results.
+
+REQ-016 scoring v2 (2026-08-31) reinforces this same call as the LLM-judge
+(B) layer of the rank-then-judge engine — no new call path (ADR-018):
+- the 0-100 is now anchored to REQUIREMENT COVERAGE (extract the JD's
+  requirements → mark evidenced/missing → coverage → band), so a re-score
+  reproduces instead of drifting;
+- cross-language evidence is credited and a wrong-language mismatch surfaces
+  as one fixable gap, never a skill gap (ADR-017);
+- the scoring call runs at `temperature=0.0` (see `_score_batch`).
+The 0-100 stays the internal representation feeding the verdict bands; it is
+never shown as a raw comparable % (ADR-016). Wiring `lite_score.py` as the
+local ranking (A) layer is the next step (REQ-016).
 
 Domain-neutral persona (ADR-007 + ADR-013): the prompt opens with a
 persona line built from the candidate's own resume (role/domain/
@@ -70,7 +80,7 @@ MAX_RESUME_CHARS = 12000
 # cached job_scores row (version mismatch on read → recompute) without
 # deleting history. Rolled to single-value scoring on 2026-08-27, which is
 # why both are bumped here — it flushes every section-scored row cleanly.
-PROMPT_VERSION = "2026-08-27-single-overall-score"
+PROMPT_VERSION = "2026-08-31-coverage-crosslang"
 SCORING_VERSION = "v2-single-llm-value"
 
 
@@ -266,7 +276,10 @@ def _score_batch(
     frame."""
     prompt = _build_prompt(resume, jobs, persona=persona, reasoning_language=lang)
     try:
-        raw = client.generate_json(prompt)
+        # temperature=0.0: scoring must be reproducible (ADR-018) — the same
+        # resume × JD must not drift across runs (Mehran's 3-different-scores,
+        # next-work.md). Generation call sites keep the client's 0.4 default.
+        raw = client.generate_json(prompt, temperature=0.0)
     except QuotaExhaustedError:
         raise   # bubble up — no point retrying individually
     except GeminiError:
@@ -305,8 +318,15 @@ def _build_prompt(resume: str, jobs: list[dict], *, persona: str, reasoning_lang
     Design notes:
     - Every job is wrapped in <JOB job_id="..."> — the model must echo that
       exact id in each output row. Any mismatch is dropped on parse.
-    - One overall 0-100 score per job against a fixed rubric (single-value
-      model, restored 2026-08-27).
+    - Coverage-driven score (ADR-018): the model extracts the JD's
+      requirements, marks each evidenced/missing, and the 0-100 score is
+      anchored to that coverage ratio — reproducible, not a gut number. The
+      0-100 stays the internal representation feeding the verdict bands; it
+      is never shown to the user as a raw comparable % (ADR-016).
+    - Cross-language rule (ADR-017): evidence is credited across languages
+      (`selección`≈`recruitment`); a resume in another language than the JD
+      surfaces one fixable "wrong-language" gap, never a skill gap. Taught
+      by few-shot below, not enforced with a thumb on the scale.
     - The persona line (ADR-007) is the ONLY place candidate identity
       enters the prompt — it's derived from the resume itself, never
       hardcoded to one industry, so the same prompt works for any domain.
@@ -343,30 +363,38 @@ CANDIDATE RESUME:
 {resume}
 ---
 
-Below are {n} independent job postings. Give EACH one a single overall fit score from 0 to 100.
-OVERALL SCORING RUBRIC (be strict — do not inflate; score each job independently of the others):
-- 85-100: strong fit — clear, direct alignment on skills, seniority, and role
-- 65-84: workable — meets most requirements; minor gaps tailoring could close
-- 40-64: stretch — significant gaps, but genuine transferable strength exists
-- 0-39: poor fit — little to no realistic alignment
+Below are {n} independent job postings. Score EACH from 0 to 100 by REQUIREMENT COVERAGE, not by gut feel.
+
+HOW TO SCORE (coverage-driven, so the same resume × job always lands the same):
+1. Extract THIS JD's concrete requirements: skills, tools, seniority, credentials, domain scope.
+2. Mark each requirement EVIDENCED or MISSING against the resume. Credit equivalent evidence under different wording OR a different language (see rule 3). Seniority and hard requirements weigh most.
+3. Coverage = evidenced ÷ total requirements. Pick a score inside the matching band:
+   - 85-100: strong fit — evidences essentially all key requirements, seniority included (coverage ~0.85+)
+   - 65-84: workable — evidences most; a few minor gaps wording/tailoring could close (coverage ~0.60-0.85)
+   - 40-64: stretch — significant genuine gaps, but real transferable strength exists (coverage ~0.35-0.60)
+   - 0-39: poor fit — little real coverage (below ~0.35)
 
 CRITICAL RULES:
 1. Score each job INDEPENDENTLY. Do NOT rank or compare jobs to each other. A batch of 6 could all score high, or all score low, on their own merits.
 2. Base every judgment on THIS candidate's actual resume above, not generic advice.
-3. "matched" = concrete skills, tools, or experience present in BOTH the resume and the JD. Max 5. Prefer specific, concrete terms over generic soft skills.
-4. "gaps" = requirements from the JD that are TRULY MISSING from the resume. Max 5.
-   BEFORE listing ANY gap, verify the resume does NOT mention it in any form — including abbreviations, synonyms, or sections like "Additional Information", "Certifications", "Licenses", tail bullet points.
+3. CROSS-LANGUAGE — the JD's language is the reference. A skill the candidate demonstrably has is EVIDENCED regardless of the language it is written in; never mark it MISSING merely because the resume uses another language or different words. Examples of the pattern:
+     - Spanish resume vs English JD: "selección de personal" EVIDENCES "recruitment"; "análisis de datos" EVIDENCES "data analysis"; "gestión de proyectos" EVIDENCES "project management".
+     - A JD carrying English corporate boilerplate over Spanish requirements is judged on the Spanish requirements ("the meat"), not the boilerplate.
+4. WRONG-LANGUAGE GAP — if the resume as a whole is written in a different language than the JD's requirements, add EXACTLY ONE gap phrased as a fixable action (e.g. "Localiza tu CV al inglés para este mercado" / "Localize your resume to English for this market") — NOT a skill gap. This is the only language-based gap allowed, and it must NOT, on its own, lower the coverage score.
+5. "matched" = concrete skills, tools, or experience the resume evidences for THIS JD (cross-language counts). Max 5. Prefer specific, concrete terms over generic soft skills.
+6. "gaps" = requirements TRULY MISSING from the resume. Max 5.
+   BEFORE listing ANY gap, verify the resume does NOT evidence it in any form — abbreviations, synonyms, ANOTHER LANGUAGE, or sections like "Additional Information", "Certifications", "Licenses", tail bullet points.
    Common false positives to AVOID:
      - "Driver license" when the resume says "Valid Class G license" or "Ontario driver's licence"
      - "AutoCAD" when the resume lists "Autodesk suite" or "AutoCAD 2024"
      - "Bilingual" when the resume has "Fluent in French and English"
      - "Bachelor's degree" when the resume shows "BASc, Civil Engineering, 2020"
-   These are illustrative of the PATTERN (check synonyms/abbreviations before flagging), not specific to any one industry — apply the same scrutiny regardless of what field the candidate or job is in.
-   If a JD requirement appears in ANY form in the resume — even abbreviated, in a footer section, or phrased differently — it is NOT a gap.
-5. Reward transferable experience explicitly: a candidate from a different industry with directly applicable skills, scope, or seniority should not be penalized for an industry mismatch alone.
-6. Distinguish a real skill gap from a missing keyword — if the resume demonstrates the underlying capability under different wording, it's a match, not a gap.
-7. Use the EXACT job_id string from each <JOB> tag. Do not invent, shorten, or reformat.
-8. "reasoning" = ONE sentence (max 22 words, direct, no fluff, citing concrete evidence) summarising the fit. Do not begin it with the verdict label or any variant (strong_fit, Strong fit, workable, stretch, poor_fit, etc.).
+     - "Recruitment" when the resume says "selección de personal"
+   These are illustrative of the PATTERN (check synonyms/abbreviations/language before flagging), not specific to any one industry — apply the same scrutiny regardless of field.
+   If a JD requirement appears in ANY form in the resume — abbreviated, in a footer section, phrased differently, or in another language — it is NOT a gap.
+7. Reward transferable experience explicitly: a candidate from a different industry with directly applicable skills, scope, or seniority should not be penalized for an industry mismatch alone.
+8. Use the EXACT job_id string from each <JOB> tag. Do not invent, shorten, or reformat.
+9. "reasoning" = ONE sentence (max 22 words, direct, no fluff, citing concrete evidence) summarising the fit. Do not begin it with the verdict label or any variant (strong_fit, Strong fit, workable, stretch, poor_fit, etc.).
 
 JOBS TO SCORE:
 

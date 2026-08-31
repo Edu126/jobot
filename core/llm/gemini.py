@@ -151,10 +151,17 @@ class GeminiClient:
         return [m for m in self.model_chain if not _is_exhausted(m)]
 
     # ── public: main entry point ──────────────────────────────
-    def generate_json(self, prompt: str, *, max_retries: int = 2) -> dict:
+    def generate_json(
+        self, prompt: str, *, max_retries: int = 2, temperature: Optional[float] = None
+    ) -> dict:
         """Try each model in the chain until one succeeds. On 429 for a
         model, mark it exhausted and move on. Non-quota failures propagate
         so the UI can show the real error.
+
+        `temperature` overrides the client default for THIS call only —
+        scoring passes 0.0 for determinism (ADR-018) while resume/cover
+        generation keeps the client's creative default. None = use
+        `self.temperature`.
 
         Enforces the LLM_DISABLED kill switch and the per-identity daily
         cap before touching the wire — see `core.llm.usage`. Identity
@@ -177,7 +184,9 @@ class GeminiClient:
         last_exc: Optional[Exception] = None
         for model in available:
             try:
-                result, tokens_in, tokens_out = self._call_one(model, prompt, max_retries)
+                result, tokens_in, tokens_out = self._call_one(
+                    model, prompt, max_retries, temperature
+                )
                 self.last_model_used = model
                 _increment_count(model)   # track successful requests only
                 llm_usage.record_tokens(model, tokens_in, tokens_out)
@@ -195,14 +204,16 @@ class GeminiClient:
         ) from last_exc
 
     # ── internal ──────────────────────────────────────────────
-    def _call_one(self, model: str, prompt: str, max_retries: int) -> tuple[dict, int, int]:
+    def _call_one(
+        self, model: str, prompt: str, max_retries: int, temperature: Optional[float] = None
+    ) -> tuple[dict, int, int]:
         """Call a single model with retry. Translates 429 into QuotaExhaustedError
         so the outer loop can advance to the next model.
 
         Returns (parsed_json, tokens_in, tokens_out). Token counts are 0
         when the SDK doesn't report usage_metadata."""
         config = types.GenerateContentConfig(
-            temperature=self.temperature,
+            temperature=self.temperature if temperature is None else temperature,
             max_output_tokens=self.max_output_tokens,
             response_mime_type="application/json",
         )

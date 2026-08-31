@@ -53,8 +53,21 @@ RESEARCH-market-thesis, RESEARCH-scoring-tech-landscape (validation + bake-off).
 ## Design status (2026-08-31)
 Engine decided and validated via scoring bake-off (`scripts/scoring_bakeoff.py`,
 5 approaches × real resumes × real JDs). Language handling = ADR-017; engine
-shape = ADR-018. **Next:** 5→3→1 prompt iteration to reinforce
-`semantic_score.py` (cross-language rule + coverage→bucket), then wire
-`lite_score.py` as the local ranking layer. Cache/temp non-determinism mapped
-in `next-work.md` (2026-08-31 entry) — fold `temperature→0` + text-hash cache
-key into the same pass.
+shape = ADR-018.
+
+**Done (2026-08-31, B-layer pass):** the 5→3→1 prompt iteration reinforced
+`semantic_score.py` — the 0-100 is now anchored to requirement COVERAGE
+(extract → mark evidenced/missing → coverage→band) and the cross-language
+rule + single fixable wrong-language gap are taught by few-shot (ADR-017).
+`PROMPT_VERSION` bumped to `2026-08-31-coverage-crosslang` (logically
+invalidates old rows). Determinism folded in the same pass: scoring runs at
+`temperature=0.0` (per-call override on `generate_json`, generation stays
+0.4), and the score cache is re-keyed on the resume **text hash** (schema
+v17) so a regenerated-but-equivalent resume reuses its scores — fixes
+Mehran's unstable re-score (next-work.md).
+
+**Next:** wire `lite_score.py` as the local ranking (A) layer so the LLM
+judge (B) only runs on the surfaced top slice (ADR-018 retrieve-then-rerank).
+Still open from next-work.md: persist gemini exhaustion/request counts to DB
+(the other half of Mehran's model-fallback divergence), and the regen
+truncation bug (separate from scoring).

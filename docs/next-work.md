@@ -56,13 +56,24 @@ shares → divergence.
    `core/resume/ai_regenerate.py`, `core/resume/writer.py`). Same class as the
    "mid-word evidence truncation" already fixed once in Sprint 7 hygiene.
 
-**Improvement options (not chosen — for later):**
+**Improvement options:**
 - Persist gemini exhaustion + request counts to DB (mirror the PR-2 task-state
-  migration); small table keyed `(model, date)`.
-- Scoring `temperature → 0` for determinism (REQ-015/016).
-- Score cache keyed on **resume-text hash** (not `resume_id`) so a regenerated-
-  but-equivalent resume reuses the score and re-scoring is stable.
+  migration); small table keyed `(model, date)`. **STILL OPEN** — the other
+  half of Mehran's cause (b): model-fallback divergence from RAM-reset
+  exhaustion state.
+- ~~Scoring `temperature → 0` for determinism (REQ-015/016).~~ **DONE
+  2026-08-31** — per-call override on `generate_json` (scoring passes 0.0,
+  generation keeps 0.4). Kills cause (a).
+- ~~Score cache keyed on **resume-text hash** (not `resume_id`).~~ **DONE
+  2026-08-31** — schema v17: `job_scores` PK re-keyed on the resume text hash
+  (`resumes.text_hash`), resolved from `resume_id` inside `db.py` so no call
+  site changed. A regenerated-but-equivalent resume now reuses its scores.
 - Investigate the regen truncation separately (writer / ai_regenerate).
+  **STILL OPEN.**
+
+Landed alongside the above (REQ-016 B-layer pass, 2026-08-31): the 5→3→1
+`semantic_score.py` prompt reframe — coverage-anchored scoring + cross-language
+rule + wrong-language gap (ADR-017/018), `PROMPT_VERSION` bumped.
 
 ## What's the sprint
 Section-based scoring (LLM produces per-section evidence, backend
