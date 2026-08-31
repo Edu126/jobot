@@ -55,3 +55,7 @@ htmlcov/
 
 # ── Fly.io CLI cache ──
 .fly/
+
+# local test seed — real resumes, PII, DO NOT COMMIT
+data/bakeoff_fixtures/
+data/bakeoff_cache/
