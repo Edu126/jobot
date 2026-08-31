@@ -66,8 +66,25 @@ invalidates old rows). Determinism folded in the same pass: scoring runs at
 v17) so a regenerated-but-equivalent resume reuses its scores — fixes
 Mehran's unstable re-score (next-work.md).
 
-**Next:** wire `lite_score.py` as the local ranking (A) layer so the LLM
-judge (B) only runs on the surfaced top slice (ADR-018 retrieve-then-rerank).
-Still open from next-work.md: persist gemini exhaustion/request counts to DB
-(the other half of Mehran's model-fallback divergence), and the regen
-truncation bug (separate from scoring).
+**A-layer: tried then ROLLED BACK ([ADR-020](../decisions/ADR-020-defer-lite-score-a-layer.md)).**
+`lite_score.rank()` was wired at the score-batch boundary, then reverted: the
+batch chain scores every job anyway, so ranking only reordered (no LLM-call
+saving) at higher CPU, and being a local string matcher it's as cross-language-
+blind as the existing `affinity`. `affinity` (ADR-010) keeps ordering the
+batches; `lite_score.rank()` stays in the repo unwired until a real top-N cost
+cap is on the table.
+
+**Validation (human-in-the-loop), now BATCH-of-5 (production path):**
+`scripts/scoring_bakeoff.py --ab` scores the real fixtures in batches of 5 (OLD
+gut vs NEW coverage+cross-language, temp=0) → `data/ab_scoring_<date>.md` with
+per-finding checkboxes + notes. `--determinism` runs the same batch N× (no
+cache). Findings 2026-08-31: (a) batch composition itself shifts scores (Mehran
+AEC 88 solo → 75 in a batch), (b) NEW is consistently less drifty than OLD
+(spread 3-5 vs up to 20 w/ verdict flip), (c) cross-language wins clear in batch
+— Andrea EN 45→62, wrong-language gap firing for Andrea/Sara. Eduardo is the
+ground-truth judge; marks still pending = the real go/no-go on the prompt.
+
+**Still open** (next-work.md): persist gemini exhaustion/request counts to DB
+(the other half of Mehran's model-fallback divergence); the regen truncation
+bug (separate from scoring); optionally extend coverage-ranking to the static
+first-paint render order (currently token-affinity).

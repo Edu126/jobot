@@ -113,4 +113,11 @@
     </div>
     </div> {# close the shared x-data wrapper #}
   {% endif %}
+
+  {# Honest-scope note (ADR-019): Gemini scoring isn't fully deterministic —
+     frame the fit score as support, not a verdict, so the call stays the
+     user's. Shown here because tailoring is where the user acts on the score. #}
+  <p class="text-xs text-body-muted leading-snug mt-2 pt-3 border-t border-base-200/60">
+    {{ _('tailor.score_disclaimer') }}
+  </p>
 </div>

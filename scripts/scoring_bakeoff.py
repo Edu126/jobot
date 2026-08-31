@@ -31,9 +31,12 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from core import db
+from core.matching import lite_score
+from core.matching import semantic_score as ss
 from core.matching.lexical import normalize as _norm
 from core.matching.lite_score import _resume_membership
 from core.matching.tfidf_match import DOMAIN_HINTS, match as tfidf_match
+from core.settings import language_instruction
 
 CACHE = APP_ROOT / "data" / "bakeoff_cache"
 CACHE.mkdir(parents=True, exist_ok=True)
@@ -241,17 +244,276 @@ SEED = [
 ]
 
 
+# ---------- A/B: old prompt vs new prompt (human-in-the-loop) ----------
+def _old_build_prompt(resume: str, jobs: list[dict], persona: str, lang: str) -> str:
+    """Faithful pre-e630742 holistic prompt (gut 0-100, no coverage, no
+    cross-language) — the OLD side of the A/B, now BATCHED like production so
+    the comparison runs on the real code path (N jobs per call, cross-job
+    contamination and all). Scaffolding matches semantic_score._build_prompt;
+    only the rubric + rules differ, isolating the prompt change under test."""
+    blocks = []
+    for job in jobs:
+        jd = (job.get("description") or "").strip()[: ss.MAX_JD_CHARS]
+        blocks.append(f'<JOB job_id="{job["id"]}">\n'
+                      f'Title: {job.get("title") or "(unknown title)"}\n'
+                      f'Company: {job.get("company") or "(unknown company)"}\n'
+                      f'Location: {job.get("location") or ""}\n'
+                      f'Description:\n{jd}\n</JOB>')
+    jobs_str = "\n\n".join(blocks)
+    n = len(jobs)
+    return f"""You are an expert recruiter evaluating job postings for {persona}, based on the resume below. For each job, read its own description to judge its role, responsibilities, required skills, industry, seniority, and hard vs soft requirements — the job may or may not be in the same industry as the candidate; assess transferable experience explicitly rather than assuming a match or a mismatch. Focus on real skill overlap, seniority alignment, and whether this specific candidate could realistically succeed in the role.
+
+{language_instruction(lang)}
+
+CANDIDATE RESUME:
+---
+{resume}
+---
+
+Below are {n} independent job postings. Give EACH one a single overall fit score from 0 to 100.
+OVERALL SCORING RUBRIC (be strict — do not inflate; score each job independently of the others):
+- 85-100: strong fit — clear, direct alignment on skills, seniority, and role
+- 65-84: workable — meets most requirements; minor gaps tailoring could close
+- 40-64: stretch — significant gaps, but genuine transferable strength exists
+- 0-39: poor fit — little to no realistic alignment
+
+CRITICAL RULES:
+1. Score each job INDEPENDENTLY. Do NOT rank or compare jobs to each other.
+2. Base every judgment on THIS candidate's actual resume above, not generic advice.
+3. "matched" = concrete skills, tools, or experience present in BOTH the resume and the JD. Max 5.
+4. "gaps" = requirements from the JD that are TRULY MISSING from the resume. Max 5. BEFORE listing ANY gap, verify the resume does NOT mention it in any form — abbreviations, synonyms, or footer sections.
+5. Reward transferable experience explicitly.
+6. Distinguish a real skill gap from a missing keyword — different wording is a match, not a gap.
+7. Use the EXACT job_id string from each <JOB> tag.
+8. "reasoning" = ONE sentence (max 22 words) summarising the fit.
+
+JOBS TO SCORE:
+
+{jobs_str}
+
+Return JSON with this exact schema — no prose before or after:
+{{
+  "scores": [
+    {{"job_id": "<exact string from JOB tag>", "score": 0, "matched": [], "gaps": [], "reasoning": "<one sentence overall>"}}
+  ]
+}}
+
+The scores array MUST contain exactly {n} entries — one per job_id above."""
+
+
+def _batch_score(prompt: str, jobs: list[dict], client, temp: float, tag: str | None = None):
+    """Score a BATCH with a given prompt at `temp` — the production path (N jobs
+    per call, one prompt). Cached by prompt hash when `tag` is given (--ab
+    reuse); uncached when tag is None (--determinism, to expose real drift).
+    Returns {job_id: ScoreResult} via the production parser."""
+    if tag is not None:
+        key = CACHE / f"{tag}_{hashlib.md5(prompt.encode()).hexdigest()}.json"
+        if key.exists():
+            raw = json.loads(key.read_text())
+        else:
+            raw = client.generate_json(prompt, temperature=temp)
+            key.write_text(json.dumps(raw))
+    else:
+        raw = client.generate_json(prompt, temperature=temp)
+    return {r.job_id: r for r in ss._parse_response(raw, jobs, "ab")}
+
+
+def _cache_jobs(cache_file: str) -> list[dict]:
+    try:
+        d = json.loads((APP_ROOT / "data" / "jobs_cache" / cache_file).read_text())
+    except Exception:
+        return []
+    return d.get("jobs") or []
+
+
+def _build_batch(jds: list, size: int = 5):
+    """Assemble a production-shaped batch of `size` jobs: the SEED target JDs
+    first, then fillers from the first target's cache file. Returns
+    (batch_jobs, targets) with targets = [(job, jlabel), …]."""
+    targets, seen = [], set()
+    for cf, tc, jl in jds:
+        j = _load_jd(cf, tc)
+        if j and j["id"] not in seen:
+            targets.append((j, jl))
+            seen.add(j["id"])
+    batch = [j for j, _ in targets]
+    if jds:
+        for j in _cache_jobs(jds[0][0]):
+            if len(batch) >= size:
+                break
+            if j.get("id") and j["id"] not in seen:
+                batch.append(j)
+                seen.add(j["id"])
+    return batch[:size], targets
+
+
+def _fmt(r) -> str:
+    if r is None:
+        return "· (no result)"
+    return (f"score={r.score:3d} · {r.verdict:11s} · "
+            f"matched={r.matched[:4]} · gaps={r.gaps[:4]}")
+
+
+def run_ab(client) -> None:
+    """OLD (gut 0-100) vs NEW (coverage + cross-language) on the real fixtures,
+    scored in BATCHES OF 5 — the production path (jobs share one prompt).
+    Writes a markdown validation sheet: per résumé, the batch is scored once each
+    way, then each SEED target job gets a card (JD + matched/gaps checkboxes) for
+    Eduardo to mark. `ui_lang` mirrors the user's UI language, not the JD's."""
+    from datetime import date
+    out_path = APP_ROOT / "data" / f"ab_scoring_{date.today().isoformat()}.md"
+    md = ["# Scoring validation — NEW (coverage + cross-language) vs OLD (gut 0-100)",
+          "",
+          "**Scored in batches of 5 — the real production path.** For each target: "
+          "**read the JD**, glance at the résumé, tick the matched/gaps that are "
+          "TRULY right, and judge the NEW score. OLD is a reference line.",
+          "",
+          "> Note: where OLD == NEW the central case was already right (fine). The "
+          "reframe's real wins are cross-language / transferable credit and honest, "
+          "teachable gaps — not moving central magnitudes. Add free-text wherever a "
+          "finding is wrong — that's the signal we collect.",
+          ""]
+    for source, rname, rdom, jds in SEED:
+        resume = _resume_text(source)
+        if not resume:
+            print(f"!! no resume for {rname}", flush=True)
+            continue
+        persona = f"a {rdom} professional"
+        ui_lang = "es" if "ES" in rdom else "en"   # user's UI lang, as in production
+        resume_snip = resume.strip()[: ss.MAX_RESUME_CHARS]
+        batch, targets = _build_batch(jds, size=5)
+        if not batch:
+            continue
+        old = _batch_score(_old_build_prompt(resume_snip, batch, persona, ui_lang),
+                            batch, client, 0.0, tag="ab_old")
+        new = _batch_score(ss._build_prompt(resume_snip, batch, persona=persona,
+                                            reasoning_language=ui_lang),
+                           batch, client, 0.0, tag="ab_new")
+
+        members = ", ".join((b.get("title") or "?")[:32] for b in batch)
+        print(f"\n{rname} ({rdom}) — batch of {len(batch)} [ui_lang={ui_lang}]", flush=True)
+        md += [
+            f"## {rname} ({rdom}) — scored in a batch of {len(batch)}",
+            f"*ui_lang `{ui_lang}` · batch members: {members}*",
+            "",
+            "### Résumé (context)",
+            "",
+            resume.strip()[:900] + (" …" if len(resume.strip()) > 900 else ""),
+            "",
+        ]
+        for job, jlabel in targets:
+            jid = job["id"]
+            o, nw = old.get(jid), new.get(jid)
+            full_title = job.get("title") or "(untitled)"
+            jd = (job.get("description") or "").strip()
+            print(f"  [{jlabel}] {full_title[:45]}   OLD {_fmt(o)}  |  NEW {_fmt(nw)}", flush=True)
+            md += [
+                f"### ▶ {jlabel} — {full_title}",
+                "",
+                (jd[:2000] + (" …" if len(jd) > 2000 else "")) or "_(no description)_",
+                "",
+                f"**NEW → {nw.score if nw else '—'} / {nw.verdict if nw else '—'}**  "
+                f"· _OLD ref: {o.score if o else '—'} / {o.verdict if o else '—'}_",
+                "",
+                "_Matched — tick each TRULY evidenced by the résumé:_",
+            ]
+            md += [f"- [ ] {t}" for t in (nw.matched if nw else [])] or ["- _(none)_"]
+            md += ["", "_Gaps — tick each TRULY missing (not just a wording/language miss):_"]
+            md += [f"- [ ] {t}" for t in (nw.gaps if nw else [])] or ["- _(none)_"]
+            md += [
+                "",
+                "**Your call:** is the NEW score sensible?  ☐ yes  ☐ no   "
+                "· if the bucket is wrong, what should it be? ____",
+                "",
+                "**Notes:**",
+                "> ",
+                "",
+                "---",
+                "",
+            ]
+    out_path.write_text("\n".join(md), encoding="utf-8")
+    print(f"\n→ validation sheet written: {out_path}", flush=True)
+
+
+# ---------- determinism demo: same BATCH of 5, N runs, NO cache ----------
+def _spread(vals: list) -> int:
+    nums = [v for v in vals if v is not None]
+    return (max(nums) - min(nums)) if nums else 0
+
+
+def run_determinism(client, runs: int = 3) -> None:
+    """Reproducibility check on the PRODUCTION path — same batch of 5, N runs,
+    NO cache, tracking one target job. NEW = new prompt @ temp=0, OLD = old
+    prompt @ temp=0.4 (Mehran's regime). Exposes batch-mode drift: Gemini isn't
+    deterministic at temp=0 (ADR-019), and batch composition is its own source
+    of variance the single-job demo missed."""
+    specs = [
+        ("db:3", "Mehran", "AEC / construction",
+         [("fba634c53a2ed9c7.json", "Construction Project Coordinator", "AEC EN"),
+          ("6a72791cbb37c421.json", "Technologue en architecture", "AEC FR")],
+         "AEC EN"),
+        ("andrea_sales.txt", "Andrea", "Sales / comercial (ES)",
+         [("01791d02c9e579c6.json", "Analista Comercial", "Sales ES"),
+          ("01791d02c9e579c6.json", "Account Manager", "Sales EN")],
+         "Sales EN"),
+    ]
+    print(f"Determinism (batch of 5, production path) — same batch × {runs} runs, NO cache\n"
+          f"(NEW=new prompt@0.0, OLD=old prompt@0.4; tracking one target job)\n", flush=True)
+    for source, rname, rdom, jds, target_label in specs:
+        resume = _resume_text(source)
+        batch, targets = _build_batch(jds, size=5)
+        if not resume or not batch:
+            print(f"  skip {rname}", flush=True)
+            continue
+        target = next((j for j, jl in targets if jl == target_label), batch[0])
+        tid = target["id"]
+        persona = f"a {rdom} professional"
+        ui_lang = "es" if "ES" in rdom else "en"
+        resume_snip = resume.strip()[: ss.MAX_RESUME_CHARS]
+        new_prompt = ss._build_prompt(resume_snip, batch, persona=persona, reasoning_language=ui_lang)
+        old_prompt = _old_build_prompt(resume_snip, batch, persona, ui_lang)
+
+        new_r = [_batch_score(new_prompt, batch, client, 0.0).get(tid) for _ in range(runs)]
+        old_r = [_batch_score(old_prompt, batch, client, 0.4).get(tid) for _ in range(runs)]
+        new_s = [r.score if r else None for r in new_r]
+        old_s = [r.score if r else None for r in old_r]
+
+        print(f"{rname} — target [{target_label}] in a batch of {len(batch)}  [ui_lang={ui_lang}]", flush=True)
+        print(f"  NEW temp=0.0  scores={new_s}  verdicts={[r.verdict if r else '—' for r in new_r]}  spread={_spread(new_s)}", flush=True)
+        print(f"  OLD temp=0.4  scores={old_s}  verdicts={[r.verdict if r else '—' for r in old_r]}  spread={_spread(old_s)}", flush=True)
+        print(flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-llm", action="store_true", help="skip approach 3")
     ap.add_argument("--hybrid", action="store_true",
                     help="run ONLY approach 4 (LLM-JD x local matcher), reusing cached extractions")
+    ap.add_argument("--ab", action="store_true",
+                    help="A/B the OLD vs NEW production scoring prompt (temp=0) + write a validation sheet")
+    ap.add_argument("--determinism", action="store_true",
+                    help="run the same 2 pairs N× (no cache) to show NEW@0 is stable vs OLD@0.4 drifts")
+    ap.add_argument("--runs", type=int, default=3, help="runs per pair for --determinism")
     args = ap.parse_args()
 
     client = None
     if not args.no_llm:
         from core.llm.gemini import GeminiClient, resolve_api_key
         client = GeminiClient(api_key=resolve_api_key())
+
+    if args.ab:
+        if client is None:
+            print("--ab needs the LLM (drop --no-llm)")
+            return
+        run_ab(client)
+        return
+
+    if args.determinism:
+        if client is None:
+            print("--determinism needs the LLM (drop --no-llm)")
+            return
+        run_determinism(client, runs=args.runs)
+        return
 
     if args.hybrid:
         for source, rname, rdom, jds in SEED:

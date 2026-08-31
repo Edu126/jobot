@@ -1118,6 +1118,12 @@ async def jobs_score_batch(request: Request, cache_key: str):
     # to cache order (which mirrors scraped order — no re-sort of the
     # DOM happens as scores arrive, so visual cascade order is set by
     # this pick, not the eventual score value).
+    #
+    # NB (ADR-020): `lite_score.rank` was briefly wired here as the A-layer
+    # but rolled back — the chain scores every job anyway, so it only
+    # reordered (no LLM-call saving) at higher CPU, and being a local string
+    # matcher it's as cross-language-blind as affinity. lite_score.rank stays
+    # in the repo, unwired, until a real top-N cost cap is on the table.
     pending = [j.to_dict() for j in cached.jobs if j.id not in already_scored_ids]
     if not pending:
         return HTMLResponse("")

@@ -75,6 +75,27 @@ Landed alongside the above (REQ-016 B-layer pass, 2026-08-31): the 5→3→1
 `semantic_score.py` prompt reframe — coverage-anchored scoring + cross-language
 rule + wrong-language gap (ADR-017/018), `PROMPT_VERSION` bumped.
 
+REQ-016 A-layer (2026-08-31): `lite_score.rank()` wired at the score-batch
+boundary then **ROLLED BACK** ([ADR-020](decisions/ADR-020-defer-lite-score-a-layer.md))
+— the chain scores every job anyway, so it only reordered (no call saving) at
+higher CPU and gave no cross-language gain. `affinity` retained; `lite_score`
+unwired until a real top-N cap is chosen. A/B + determinism harnesses added
+(`scripts/scoring_bakeoff.py --ab` / `--determinism`), now **batch-of-5** =
+production path. **ACTION for Eduardo:** mark `data/ab_scoring_<date>.md` — the
+ground-truth go/no-go on the NEW prompt. Batch findings: composition shifts
+scores (Mehran 88 solo→75 in-batch), NEW less drifty than OLD, cross-language
+wins clear (Andrea EN 45→62, wrong-language gap firing).
+
+Determinism finding (2026-08-31, [ADR-019](decisions/ADR-019-gemini-scoring-nondeterministic-stability-via-cache.md)):
+`--determinism` demo proved **temp=0 does NOT make Gemini deterministic** —
+same model, same prompt, drift ±3–10 + band-edge bucket flips. Not fallback
+divergence (model verified constant). Decision: user-facing stability = the
+text-hash cache freezing the first score (not temperature); keep temp=0; ship an
+honest tailor-tab disclaimer (`tailor.score_disclaimer`, EN/ES). Escalation if a
+real user complains = median-of-3 on first write (deferred). **Still open:**
+persist gemini exhaustion/counts to DB (fallback divergence across restarts —
+separate from this same-model finding); regen truncation bug.
+
 ## What's the sprint
 Section-based scoring (LLM produces per-section evidence, backend
 does the math) + domain-neutral persona derived from resume context

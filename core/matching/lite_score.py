@@ -170,6 +170,27 @@ def score(resume_text: str, jd_text: str, jd_title: str | None = None) -> LiteSc
     )
 
 
+def rank(resume_text: str, jobs: list[dict]) -> list[dict]:
+    """A-layer ranking (REQ-016 / ADR-018): order `jobs` by local skills-
+    coverage (exact-title as tiebreaker), highest first, so the expensive LLM
+    judge (B) scores the most promising jobs first — retrieve-then-rerank,
+    bounding LLM cost to the slice the user actually reaches.
+
+    Deterministic, no API. This is an ORDERING signal only: the coverage number
+    is never displayed — the score ring always shows B's 0-100 (semantic_score),
+    which sidesteps this local matcher's known cross-language undercount. Returns
+    a new list; the input job dicts are not mutated. Jobs need `description` and
+    (optionally) `title`."""
+    if not resume_text.strip() or not jobs:
+        return list(jobs)
+    scored = [
+        (j, score(resume_text, j.get("description") or "", j.get("title")))
+        for j in jobs
+    ]
+    scored.sort(key=lambda t: (t[1].coverage, t[1].title_match), reverse=True)
+    return [j for j, _ in scored]
+
+
 def delta(before_text: str, after_text: str, jd_text: str) -> dict[str, float]:
     """Before/after cosine similarity to the JD — honest movement (ADR-016).
 

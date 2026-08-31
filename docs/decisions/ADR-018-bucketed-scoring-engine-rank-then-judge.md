@@ -29,6 +29,15 @@ scale-only, harmful at one-user scale.
 - Determinism: scoring `temperature → 0` + cache keyed on (resume-text hash,
   JD, lang, prompt_version). Fixes the RAM/temp non-determinism mapped in
   next-work.md (Mehran's 3-different-scores).
+  **Corrected by [ADR-019](ADR-019-gemini-scoring-nondeterministic-stability-via-cache.md):**
+  temp=0 does NOT make Gemini deterministic (verified same-model drift ±3–10);
+  user-facing stability comes from the cache freezing the first score, not from
+  temperature. `temperature=0` is kept (lowest variance) but is no longer
+  claimed to guarantee reproducibility.
 - Buckets never shown as a raw comparable % (ADR-016 holds).
 - `lite_score.py` becomes the A layer; embeddings deferred until A+B prove
   insufficient (REQ-016).
+  **Deferred by [ADR-020](ADR-020-defer-lite-score-a-layer.md):** the score
+  chain calls B on every job regardless, so an A-layer that only reorders adds
+  cost without the promised cap. `lite_score` stays unwired until a real top-N
+  limit is on the table; `affinity` (ADR-010) keeps ordering the batches.
