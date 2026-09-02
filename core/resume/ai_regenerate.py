@@ -19,6 +19,7 @@ import re
 from typing import Any
 
 from core.llm.gemini import GeminiClient
+from core.llm.sanitize import strip_md_escapes
 
 
 # Must stay in sync with core.resume.anomalies._REPORT_SECTIONS keys, which
@@ -117,7 +118,7 @@ def _sanitize_sections(raw: Any) -> dict[str, list[str]]:
         val = raw.get(key)
         if not isinstance(val, list):
             continue
-        cleaned = [str(item).strip() for item in val if str(item).strip()]
+        cleaned = [strip_md_escapes(str(item).strip()) for item in val if str(item).strip()]
         if cleaned:
             out[key] = cleaned
     return out

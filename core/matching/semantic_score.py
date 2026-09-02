@@ -56,6 +56,7 @@ from typing import Any
 
 from core import db
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
+from core.llm.sanitize import strip_md_escapes
 from core.resume import ai_summary
 from core.settings import get_reasoning_language
 
@@ -452,7 +453,7 @@ def _parse_response(
             score = 0
         score = max(0, min(100, score))
 
-        reasoning = str(item.get("reasoning", "")).strip()
+        reasoning = strip_md_escapes(str(item.get("reasoning", "")).strip())
         reasoning = re.sub(
             r"^(strong[_ ]fit|workable|stretch|poor[_ ]fit)[,:\s]+",
             "",
@@ -481,7 +482,7 @@ def _coerce_str_list(value: Any, max_items: int) -> list[str]:
     out: list[str] = []
     for item in value:
         if isinstance(item, str) and item.strip():
-            out.append(item.strip())
+            out.append(strip_md_escapes(item.strip()))
             if len(out) >= max_items:
                 break
     return out

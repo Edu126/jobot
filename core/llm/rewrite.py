@@ -12,6 +12,7 @@ from typing import Any
 
 from .gemini import GeminiClient
 from .prompts import Level, build_rewrite_prompt
+from .sanitize import strip_md_escapes
 
 
 # LLMs sometimes emit placeholders in the cover letter or summary even when
@@ -198,7 +199,7 @@ def rewrite_resume(
     if isinstance(cover_letter, list):
         # Some LLM outputs split paragraphs into a list — re-join.
         cover_letter = "\n\n".join(str(p).strip() for p in cover_letter if p)
-    cover_letter = (cover_letter or "").strip()
+    cover_letter = strip_md_escapes((cover_letter or "").strip())
 
     # Post-process placeholders. Belt-and-suspenders next to the prompt rule.
     candidate_name = contact.get("name", "").strip()
@@ -300,26 +301,26 @@ def _coerce_section_value(value: Any) -> list[str]:
     if value is None:
         return []
     if isinstance(value, str):
-        return [value] if value.strip() else []
+        return [strip_md_escapes(value.strip())] if value.strip() else []
     if isinstance(value, list):
         result: list[str] = []
         for item in value:
             if isinstance(item, str):
                 if item.strip():
-                    result.append(item.strip())
+                    result.append(strip_md_escapes(item.strip()))
             elif isinstance(item, dict):
                 # flatten "title: ... | bullets: [...]" shapes if the LLM
                 # ignores the format instruction
                 title = item.get("title") or item.get("role") or item.get("heading")
                 if title:
-                    result.append(str(title).strip())
+                    result.append(strip_md_escapes(str(title).strip()))
                 bullets = item.get("bullets") or item.get("achievements") or []
                 if isinstance(bullets, list):
                     for b in bullets:
                         if isinstance(b, str) and b.strip():
-                            result.append(b.strip())
+                            result.append(strip_md_escapes(b.strip()))
             elif item is not None:
-                result.append(str(item))
+                result.append(strip_md_escapes(str(item)))
         return result
     if isinstance(value, dict):
         # treat as a single titled block

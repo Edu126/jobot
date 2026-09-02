@@ -216,6 +216,8 @@ templates.env.filters["slugify"] = slugify
 import html as _html
 from markupsafe import Markup
 
+from core.llm.sanitize import strip_md_escapes
+
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
 _BULLET_RE = re.compile(r"^\s*[\*\-]\s+(.+)$")
 _HEADER_LINE_RE = re.compile(r"^\*\*(.+?)\*\*\s*:?\s*$")
@@ -239,7 +241,12 @@ def jd_html(text: str) -> "Markup":
     """
     if not text:
         return Markup("")
-    text = _html.escape(str(text).strip())
+    # jobspy's HTML→markdown conversion (markdownify) backslash-escapes
+    # line-leading punctuation — `\-`, `\.` — which we render literally since
+    # this isn't a full markdown parser. Strip those first: it kills the
+    # stray `\-` and lets real `-`/`*` bullets be detected below.
+    text = strip_md_escapes(str(text).strip())
+    text = _html.escape(text)
 
     blocks = re.split(r"\n\s*\n+", text)
     out: list[str] = []
