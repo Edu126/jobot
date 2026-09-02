@@ -403,8 +403,22 @@ CREATE TABLE IF NOT EXISTS gap_classification (
     prompt_version  TEXT NOT NULL,
     kind            TEXT NOT NULL,
     suggestion      TEXT NOT NULL DEFAULT '',
+    category        TEXT NOT NULL DEFAULT 'domain',
+    canonical       TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL,
     PRIMARY KEY (resume_hash, lang, gap, prompt_version)
+);
+
+-- REQ-020 / ADR-024: user dismissals of gap CLUSTERS from the map (the ✕ =
+-- "this is a false positive"). Keyed on the résumé TEXT hash (v17 convention) +
+-- lang + the cluster's canonical label. build_gap_map filters these out. No LLM,
+-- no PII — a manual override on top of the AI classification (ADR-023).
+CREATE TABLE IF NOT EXISTS gap_dismissals (
+    resume_hash  TEXT NOT NULL,
+    lang         TEXT NOT NULL,
+    canonical    TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    PRIMARY KEY (resume_hash, lang, canonical)
 );
 """
 
@@ -534,6 +548,17 @@ def init_db(path: Path = DB_PATH) -> None:
             conn.executescript("""
                 ALTER TABLE resume_ai_summary ADD COLUMN domain TEXT NOT NULL DEFAULT '';
                 ALTER TABLE resume_ai_summary ADD COLUMN seniority TEXT NOT NULL DEFAULT '';
+            """)
+
+        # REQ-020 / ADR-023: the gap map's classify call now also returns a
+        # theme `category` and a `canonical` cluster label. Additive columns —
+        # PROMPT_VERSION bumps so old rows (default 'domain'/'') never match the
+        # current prompt and get reclassified; no data lost.
+        gc_cols = {r["name"] for r in conn.execute("PRAGMA table_info(gap_classification)").fetchall()}
+        if gc_cols and "canonical" not in gc_cols:
+            conn.executescript("""
+                ALTER TABLE gap_classification ADD COLUMN category TEXT NOT NULL DEFAULT 'domain';
+                ALTER TABLE gap_classification ADD COLUMN canonical TEXT NOT NULL DEFAULT '';
             """)
 
         # v17 migration (REQ-016 / ADR-018): re-key the score cache on the
@@ -1700,10 +1725,11 @@ def get_gap_classifications(
     prompt_version: str,
     path: Path = DB_PATH,
 ) -> dict[str, dict]:
-    """Cached JD-free classifications for the given gaps (REQ-019 / ADR-022),
-    keyed on the résumé text hash + lang + gap + prompt_version. Returns
-    {gap: {"kind": ..., "suggestion": ...}} for hits only; misses are omitted
-    so the caller classifies just the new ones."""
+    """Cached JD-free classifications for the given gaps (REQ-019 / ADR-022,
+    extended REQ-020 / ADR-023), keyed on the résumé text hash + lang + gap +
+    prompt_version. Returns {gap: {"kind","suggestion","category","canonical"}}
+    for hits only; misses are omitted so the caller classifies just the new
+    ones."""
     gaps = list(gaps)
     if not gaps:
         return {}
@@ -1713,12 +1739,18 @@ def get_gap_classifications(
             return {}
         placeholders = ",".join("?" * len(gaps))
         rows = conn.execute(
-            f"""SELECT gap, kind, suggestion FROM gap_classification
+            f"""SELECT gap, kind, suggestion, category, canonical FROM gap_classification
                 WHERE resume_hash = ? AND lang = ? AND prompt_version = ?
                       AND gap IN ({placeholders})""",
             (resume_hash, lang, prompt_version, *gaps),
         ).fetchall()
-    return {r["gap"]: {"kind": r["kind"], "suggestion": r["suggestion"]} for r in rows}
+    return {
+        r["gap"]: {
+            "kind": r["kind"], "suggestion": r["suggestion"],
+            "category": r["category"], "canonical": r["canonical"],
+        }
+        for r in rows
+    }
 
 
 def save_gap_classifications(
@@ -1728,9 +1760,9 @@ def save_gap_classifications(
     items: Iterable[dict],
     path: Path = DB_PATH,
 ) -> int:
-    """Upsert JD-free gap classifications. Each item: {gap, kind, suggestion}.
-    Keyed on the résumé text hash (resolved here). No-ops on a text-less résumé.
-    Returns count written."""
+    """Upsert JD-free gap classifications. Each item: {gap, kind, suggestion,
+    category, canonical} (last two per ADR-023). Keyed on the résumé text hash
+    (resolved here). No-ops on a text-less résumé. Returns count written."""
     now = _now()
     n = 0
     with tx(path) as conn:
@@ -1740,19 +1772,62 @@ def save_gap_classifications(
         for it in items:
             conn.execute(
                 """INSERT INTO gap_classification (
-                    resume_hash, lang, gap, prompt_version, kind, suggestion, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    resume_hash, lang, gap, prompt_version, kind, suggestion,
+                    category, canonical, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(resume_hash, lang, gap, prompt_version) DO UPDATE SET
                     kind = excluded.kind,
                     suggestion = excluded.suggestion,
+                    category = excluded.category,
+                    canonical = excluded.canonical,
                     created_at = excluded.created_at""",
                 (
                     resume_hash, lang, str(it["gap"]), prompt_version,
-                    str(it.get("kind", "real")), str(it.get("suggestion", "")), now,
+                    str(it.get("kind", "real")), str(it.get("suggestion", "")),
+                    str(it.get("category", "domain")), str(it.get("canonical", "")), now,
                 ),
             )
             n += 1
     return n
+
+
+def get_gap_dismissals(
+    resume_id: int, lang: str, path: Path = DB_PATH,
+) -> set[str]:
+    """The set of dismissed cluster canonical labels for this résumé + lang
+    (REQ-020 / ADR-024). Empty on a text-less résumé."""
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return set()
+        rows = conn.execute(
+            "SELECT canonical FROM gap_dismissals WHERE resume_hash = ? AND lang = ?",
+            (resume_hash, lang),
+        ).fetchall()
+    return {r["canonical"] for r in rows}
+
+
+def dismiss_gap_cluster(
+    resume_id: int, lang: str, canonical: str, path: Path = DB_PATH,
+) -> bool:
+    """Mark a gap cluster (by canonical label) as a false positive so the map
+    drops it (REQ-020 / ADR-024). Stored lower-cased so a later re-cased canonical
+    still matches (build_gap_map compares on the lower-cased key). Idempotent.
+    Returns False on a text-less résumé or empty label."""
+    canonical = (canonical or "").strip().lower()
+    if not canonical:
+        return False
+    with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return False
+        conn.execute(
+            """INSERT INTO gap_dismissals (resume_hash, lang, canonical, created_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(resume_hash, lang, canonical) DO NOTHING""",
+            (resume_hash, lang, canonical, _now()),
+        )
+    return True
 
 
 # ---------- admin pulse reports (BI agent) ----------

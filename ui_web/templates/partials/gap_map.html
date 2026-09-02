@@ -1,47 +1,84 @@
-{# Gap map (REQ-019 / ADR-022): the candidate's REAL gaps across all scored
-   jobs, ranked by how many roles each blocks. Lazy-loaded into #gap-map on the
-   Profile page. Each row shows the gap + a "in N roles" count; hovering reveals
-   its defense hook in the same fixed, viewport-clamped floating tooltip as the
-   per-job view (never pushes layout / adds horizontal scroll). Rows without a
-   hook (unclassified — quota out) render plain, honestly, still ranked. #}
+{# Gap map (REQ-019 base + REQ-020): the candidate's REAL gaps as a 3-pillar
+   tactical panel. Each pillar (Technical · Certifications+Languages · Domain)
+   shows up to 5 clustered gaps, ranked by how many roles each blocks. A pill
+   shows the concept + an "in N roles" badge; clicking opens a fixed, viewport-
+   clamped popover (never pushes layout / adds horizontal scroll) with the
+   grouped variant terms + the defense hook. Hovering a pill reveals a ✕ that
+   dismisses the cluster as a false positive (ADR-024) — htmx posts it and swaps
+   the pill out. Lazy-loaded into #gap-map on the Profile page. #}
 <div class="text-label mb-1 inline-flex items-center gap-1">
   <i class="ph-thin ph-target i-3"></i>{{ _('profile.gap_map.title') }}
 </div>
 <p class="text-sm text-body-muted mb-3">{{ _('profile.gap_map.subtitle') }}</p>
-<div class="space-y-1.5">
-  {% for e in entries %}
-  {% set count_label = _('profile.gap_map.in_1_role') if e.count == 1 else _('profile.gap_map.in_n_roles', n=e.count) %}
-  {% if e.suggestion %}
-  <span x-data="{
-          open: false,
-          pos: '',
-          place(el) {
-            const r = el.getBoundingClientRect();
-            const w = Math.min(480, window.innerWidth - 32);
-            let left = Math.min(r.left, window.innerWidth - w - 16);
-            left = Math.max(16, left);
-            this.pos = 'left:' + left + 'px; top:' + (r.bottom + 6) + 'px; width:' + w + 'px';
-          }
-        }" class="block">
-    <span class="flex items-center justify-between gap-2 rounded-lg border border-base-300 px-3 py-2 cursor-help"
-          x-ref="row"
-          @mouseenter="place($refs.row); open = true"
-          @mouseleave="open = false"
-          @click="place($refs.row); open = !open">
-      <span class="font-medium text-sm text-base-content/90">{{ e.gap }}</span>
-      <span class="chip chip-neutral shrink-0">{{ count_label }}</span>
-    </span>
-    <span x-show="open" x-cloak :style="pos"
-          class="fixed z-[100] rounded-lg border border-base-300 bg-base-100 shadow-lg p-3 text-xs text-left space-y-1">
-      <span class="text-label block text-base-content/55">{{ _('jobs.gap_kind_real') }}</span>
-      <span class="block text-base-content/75 leading-relaxed">{{ e.suggestion }}</span>
-    </span>
-  </span>
-  {% else %}
-  <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 px-3 py-2">
-    <span class="font-medium text-sm text-base-content/90">{{ e.gap }}</span>
-    <span class="chip chip-neutral shrink-0">{{ count_label }}</span>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+  {% for col in columns %}
+  <div class="card bg-base-100 border border-base-300 shadow-sm">
+    <div class="card-body p-3 gap-2">
+      <div class="text-label text-base-content/55">{{ _('profile.gap_map.pillar.' ~ col.key) }}</div>
+      {% if not col.clusters %}
+      <p class="text-xs text-body-muted italic">{{ _('profile.gap_map.pillar_empty') }}</p>
+      {% else %}
+      <div class="space-y-1.5">
+        {% for c in col.clusters %}
+        {% set count_label = _('profile.gap_map.in_1_role') if c.count == 1 else _('profile.gap_map.in_n_roles', n=c.count) %}
+        {% set has_detail = c.suggestion or (c.members | length > 1) %}
+        <div x-data="{
+               open: false,
+               pos: '',
+               place(el) {
+                 const r = el.getBoundingClientRect();
+                 const w = Math.min(420, window.innerWidth - 32);
+                 let left = Math.min(r.left, window.innerWidth - w - 16);
+                 left = Math.max(16, left);
+                 this.pos = 'left:' + left + 'px; top:' + (r.bottom + 6) + 'px; width:' + w + 'px';
+               }
+             }" class="group relative block">
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-200/40 hover:bg-base-200 px-3 py-2 {{ 'cursor-help' if has_detail else '' }}"
+               x-ref="row"
+               {% if has_detail %}
+               @mouseenter="place($refs.row); open = true"
+               @mouseleave="open = false"
+               @click="place($refs.row); open = !open"
+               {% endif %}>
+            <span class="font-medium text-sm text-base-content/90 truncate">{{ c.canonical }}</span>
+            <span class="flex items-center gap-1 shrink-0">
+              <span class="chip chip-neutral">{{ count_label }}</span>
+              <button type="button"
+                      class="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-base-content/40 hover:text-error"
+                      aria-label="{{ _('profile.gap_map.dismiss') }}"
+                      title="{{ _('profile.gap_map.dismiss') }}"
+                      @click.stop
+                      hx-post="/profile/gap-map/dismiss"
+                      hx-vals='{{ {"canonical": c.canonical} | tojson }}'
+                      hx-target="closest .group"
+                      hx-swap="outerHTML">
+                <i class="ph-thin ph-x i-3"></i>
+              </button>
+            </span>
+          </div>
+          {% if has_detail %}
+          <span x-show="open" x-cloak :style="pos"
+                class="fixed z-[100] rounded-lg border border-base-300 bg-base-100 shadow-lg p-3 text-xs text-left space-y-2">
+            {% if c.members | length > 1 %}
+            <span class="block">
+              <span class="text-label block text-base-content/45">{{ _('profile.gap_map.grouped_terms') }}</span>
+              <span class="block text-base-content/70 leading-relaxed">{{ c.members | join(' · ') }}</span>
+            </span>
+            {% endif %}
+            {% if c.suggestion %}
+            <span class="block">
+              <span class="text-label block text-base-content/45">{{ _('jobs.gap_kind_real') }}</span>
+              <span class="block text-base-content/75 leading-relaxed">{{ c.suggestion }}</span>
+            </span>
+            {% endif %}
+          </span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
   </div>
-  {% endif %}
   {% endfor %}
 </div>

@@ -290,19 +290,36 @@ async def profile_gap_map(request: Request):
 
     # to_thread: build_gap_map may make a synchronous, blocking Gemini call on a
     # cache miss — same event-loop reasoning as scoring / per-job enhance.
-    entries = await asyncio.to_thread(
+    pillars = await asyncio.to_thread(
         gap_map.build_gap_map,
         resume_id=resume_id,
         resume_text=current["parsed"].get("raw_text", ""),
         client=client,
         lang=lang,
     )
-    if not entries:
+    # Nothing real to show across any pillar → render nothing (the section hides).
+    if not any(pillars.values()):
         return HTMLResponse("", status_code=200)
 
+    columns = [
+        {"key": p, "clusters": [c.to_dict() for c in pillars[p]]}
+        for p in gap_map.PILLARS
+    ]
     return templates.TemplateResponse(
-        request, "partials/gap_map.html", {"entries": [e.__dict__ for e in entries]},
+        request, "partials/gap_map.html", {"columns": columns},
     )
+
+
+@router.post("/profile/gap-map/dismiss")
+async def profile_gap_map_dismiss(canonical: str = Form(...)):
+    """Mark a gap cluster as a false positive so the map drops it (REQ-020 /
+    ADR-024). The ✕ on a pill. htmx swaps the pill out via an empty-body 200
+    (a 204 would leave it on screen); the map is derived, nothing else to
+    re-render."""
+    current = db.get_current_resume()
+    if current:
+        db.dismiss_gap_cluster(int(current["id"]), get_reasoning_language(), canonical)
+    return HTMLResponse("", status_code=200)
 
 
 @router.get("/profile/suggest-queries")
@@ -802,6 +819,11 @@ async def data_delete_all(request: Request, confirmation: str = Form("")):
         for table in (
             "job_scores", "applications", "viewed_jobs", "dismissed_jobs",
             "suggested_queries", "resume_ai_summary",
+            # Gap-feature caches keyed on resume_hash (no FK cascade → must be
+            # explicit): per-job enhancements + the gap-map classification cache
+            # + the user's ✕ dismissals (REQ-018/019/020). Left behind, they're
+            # orphaned LLM analysis of a résumé the user just deleted.
+            "gap_enhancements", "gap_classification", "gap_dismissals",
             "resumes", "jobs",
             "saved_searches", "search_tasks",
             "events", "feedback", "admin_reports",
