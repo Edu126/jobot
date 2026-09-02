@@ -2,7 +2,8 @@
 
 Date: 2026-09-01
 Source: Eduardo (product architect)
-Status: Open — framing note; near-term slice scoped, rest deferred
+Status: Open — framing note; 4 product decisions RESOLVED 2026-09-01
+(see below); first slice broken out to REQ-018 + GOV-005
 
 > Umbrella/stage note, not a single feature. It frames the whole post-apply
 > arc so the individual features get their own REQs against a shared spine.
@@ -67,19 +68,21 @@ next action**. Success = a user opens the gap-enhance view and makes at least
 one concrete change (edits résumé/profile, or acts on a LinkedIn suggestion) —
 not a number on a dashboard.
 
-## Open product decisions (Eduardo owns these — do NOT build until resolved)
+## Product decisions — RESOLVED 2026-09-01 (Eduardo)
 
-1. **Confirm the lead.** Cluster A (profile & gap) first, or jump to the
-   moat feature (interview prep)? Recommendation: A.
-2. **"Enhance the gap" depth.** On-paper only (reword/surface existing skills,
-   honest) for near-term, vs. "for real" (course/coaching recommendation =
-   the Phase-3 education rev-share)? Near-term = on-paper; the rev-share arc
-   is later and governance-gated.
-3. **LinkedIn eval input.** User pastes their profile text (safe) vs. scraping
-   (LinkedIn ToS + data-governance call). Recommendation: paste.
-4. **Cluster B honesty guardrail.** Write a GOV note codifying "practice, not
-   fabrication" (assessments) + "candidate-side employer risk is allowed"
-   before any B feature starts.
+1. **Lead = Cluster A** (profile & gap first, not the moat/interview-prep jump).
+   On-sequence, fires for all 5 users today.
+2. **"Enhance the gap" depth = on-paper only** near-term (reword/surface
+   existing skills, honest). The "for real" course/coaching rev-share stays
+   deferred to Phase 3 (governance-gated).
+3. **LinkedIn eval input = paste** (user pastes profile text). Scrape rejected
+   for now — would need its own LinkedIn-ToS/data-governance note.
+4. **Cluster B honesty guardrail = write it now.** Done: **GOV-005**
+   (enhance ≠ fabricate; practice ≠ cheat; candidate-side employer risk
+   allowed) — binding on the whole stage, prerequisite to any B feature.
+
+**First slice broken out → REQ-018** (gap enhancement, on-paper). LinkedIn
+profile eval is the next Cluster A slice (its own REQ when it starts).
 
 ## Related
 
