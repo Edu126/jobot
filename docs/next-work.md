@@ -63,10 +63,14 @@ shares → divergence.
    "mid-word evidence truncation" already fixed once in Sprint 7 hygiene.
 
 **Improvement options:**
-- Persist gemini exhaustion + request counts to DB (mirror the PR-2 task-state
-  migration); small table keyed `(model, date)`. **STILL OPEN** — the other
-  half of Mehran's cause (b): model-fallback divergence from RAM-reset
-  exhaustion state.
+- ~~Persist gemini exhaustion + request counts to DB (mirror the PR-2
+  task-state migration); small table keyed `(model, date)`.~~ **DONE
+  2026-09-01** — schema v18 `gemini_model_state(model, day, exhausted, count)`;
+  `core/llm/gemini.py` reads/writes it (helpers swallow DB errors → old
+  "assume available" fallback so CLI/tests never break). Kills Mehran's
+  cause (b): the fallback chain now stays on the SAME model across Fly
+  restarts instead of re-probing and diverging. Test:
+  `tests/test_gemini_model_state.py` (round-trip + durability).
 - ~~Scoring `temperature → 0` for determinism (REQ-015/016).~~ **DONE
   2026-08-31** — per-call override on `generate_json` (scoring passes 0.0,
   generation keeps 0.4). Kills cause (a).
@@ -74,8 +78,30 @@ shares → divergence.
   2026-08-31** — schema v17: `job_scores` PK re-keyed on the resume text hash
   (`resumes.text_hash`), resolved from `resume_id` inside `db.py` so no call
   site changed. A regenerated-but-equivalent resume now reuses its scores.
-- Investigate the regen truncation separately (writer / ai_regenerate).
-  **STILL OPEN.**
+- ~~Investigate the regen truncation separately (writer / ai_regenerate).~~
+  **FIXED 2026-09-01 — reproduced LIVE on Mehran's Fly app (`jobbotv2-hermana`,
+  resume id 9 × job `li-4454079380`, aggressive level) and evidence-driven.**
+  What it is NOT (ruled out by repro): a token cutoff. At the 8192 default the
+  truncated run returned *complete, valid JSON with the full cover letter* —
+  just 5 of 22 experience items. `generate_json` never raised MAX_TOKENS, so
+  the model was **choosing** to emit ~5 items (interprets aggressive "collapse
+  bullets" as "keep the top few"). ~20% of runs, non-deterministic (temp 0.4),
+  same model each time (so not fallback divergence either). Two guessed fixes
+  were tried and **both empirically refuted** on the machine, then reverted:
+  (a) `max_output_tokens=16384` — irrelevant, it's not a token cutoff; (b) an
+  `_OUTPUT_SCHEMA` "never drop an entry" rule — A/B on real data showed no
+  effect (1/5 collapse with AND without it). **Actual fix:** a structural-
+  fidelity guard in `core/llm/rewrite.py` (ADR-005 contract-layer pattern) —
+  `_collapsed_sections` flags experience/education dropping below 60% of the
+  original item count, `rewrite_resume` then retries once (per-call random →
+  ~20%²≈4% residual) and restores any still-collapsed section verbatim from
+  the original. No role/employer/degree can ever be silently lost. Live
+  validation (6 guarded trials on Mehran's data): both catastrophic collapses
+  (5/22) recovered to 22/22; legitimate aggressive trims (18–21/22) correctly
+  pass through untouched. Test: `tests/test_rewrite_fidelity.py` (deterministic,
+  fake client). **Note:** count-based threshold is a proxy — refining to true
+  role-header counting was skipped (header detection is fragile; the 0.6 gap
+  between collapse ~0.23 and legit trim ~0.82+ is clean).
 
 Landed alongside the above (REQ-016 B-layer pass, 2026-08-31): the 5→3→1
 `semantic_score.py` prompt reframe — coverage-anchored scoring + cross-language
@@ -98,9 +124,10 @@ same model, same prompt, drift ±3–10 + band-edge bucket flips. Not fallback
 divergence (model verified constant). Decision: user-facing stability = the
 text-hash cache freezing the first score (not temperature); keep temp=0; ship an
 honest tailor-tab disclaimer (`tailor.score_disclaimer`, EN/ES). Escalation if a
-real user complains = median-of-3 on first write (deferred). **Still open:**
+real user complains = median-of-3 on first write (deferred). ~~**Still open:**
 persist gemini exhaustion/counts to DB (fallback divergence across restarts —
-separate from this same-model finding); regen truncation bug.
+separate from this same-model finding); regen truncation bug.~~ **Both closed
+2026-09-01 — see the two DONE/ADDRESSED bullets above.**
 
 ## What's the sprint
 Section-based scoring (LLM produces per-section evidence, backend

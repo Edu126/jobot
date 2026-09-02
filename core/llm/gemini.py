@@ -9,8 +9,10 @@ Reasons this exists instead of calling genai directly from callers:
   dies fast. We now try `-lite` variants first (higher quotas) and only
   fall back to gemini-2.5-flash when everything else fails.
 - **Quota tracking**: when a model returns 429, we remember it's exhausted
-  for the rest of today (in-process). Subsequent calls short-circuit past
-  it instead of wasting 8s hitting the API just to be told no.
+  for the rest of today (persisted in the `gemini_model_state` DB table so
+  it survives Fly machine cycling — see `_mark_exhausted`). Subsequent calls
+  short-circuit past it instead of wasting 8s hitting the API just to be
+  told no, and the fallback chain stays on the SAME model across restarts.
 
 Free-tier quotas as of 2026-08 (verified from Google AI Studio dashboard):
     - gemini-3.5-flash-lite:    500/day peak (primary — best perf/quota ratio)
@@ -25,7 +27,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import datetime
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -56,38 +58,79 @@ class QuotaExhaustedError(GeminiError):
     """All models in the fallback chain hit their per-day quota."""
 
 
-# Module-level state: {model_name: date it hit quota}. Cleared on server
-# restart, which is fine — worst case we probe an exhausted model once
-# after a reboot and get bounced with 429.
-_exhausted_models: dict[str, date] = {}
+# Per-model daily state (quota exhaustion + successful request counts) is
+# persisted in the `gemini_model_state` SQLite table (schema v18), keyed
+# (model, day). It used to be module-level RAM, but that reset on every Fly
+# `auto_stop_machines` wake — which (a) re-probed exhausted models (wasted
+# 429s) and (b) let the fallback chain land on a DIFFERENT model across runs
+# → inconsistent scores (next-work.md, Mehran's unstable re-score). DB-backed
+# state fixes both. All helpers below swallow DB errors and degrade to the
+# old "assume not exhausted, count 0" behaviour so bookkeeping can never
+# break a real generate call (e.g. CLI use before init_db).
 
-# Request accounting: {(model, date): count}. Also cleared on restart.
-# Gemini has no quota-query API; this is our best local approximation of
-# daily usage so we can show the user how many calls each model has served.
-_request_counts: dict[tuple[str, date], int] = {}
+
+def _today_str() -> str:
+    return datetime.utcnow().strftime("%Y-%m-%d")
 
 
 def _mark_exhausted(model: str) -> None:
-    _exhausted_models[model] = datetime.utcnow().date()
+    try:
+        from core import db
+        with db.tx() as conn:
+            conn.execute(
+                "INSERT INTO gemini_model_state (model, day, exhausted, count) "
+                "VALUES (?, ?, 1, 0) "
+                "ON CONFLICT(model, day) DO UPDATE SET exhausted = 1",
+                (model, _today_str()),
+            )
+    except Exception:
+        pass
 
 
-def _is_exhausted(model: str) -> bool:
-    return _exhausted_models.get(model) == datetime.utcnow().date()
+def _exhausted_models_today() -> set[str]:
+    """One query for all models down today — callers filter their own chain
+    against this set rather than issuing a query per model."""
+    try:
+        from core import db
+        with db.connect() as conn:
+            rows = conn.execute(
+                "SELECT model FROM gemini_model_state WHERE day = ? AND exhausted = 1",
+                (_today_str(),),
+            ).fetchall()
+        return {r["model"] for r in rows}
+    except Exception:
+        return set()
 
 
 def _increment_count(model: str) -> None:
-    key = (model, datetime.utcnow().date())
-    _request_counts[key] = _request_counts.get(key, 0) + 1
+    try:
+        from core import db
+        with db.tx() as conn:
+            conn.execute(
+                "INSERT INTO gemini_model_state (model, day, exhausted, count) "
+                "VALUES (?, ?, 0, 1) "
+                "ON CONFLICT(model, day) DO UPDATE SET count = count + 1",
+                (model, _today_str()),
+            )
+    except Exception:
+        pass
 
 
 def request_counts_today() -> dict[str, int]:
     """Return {model: count} for successful requests made today.
     Model order matches DEFAULT_MODEL_CHAIN for display purposes."""
-    today = datetime.utcnow().date()
-    return {
-        model: _request_counts.get((model, today), 0)
-        for model in DEFAULT_MODEL_CHAIN
-    }
+    counts: dict[str, int] = {}
+    try:
+        from core import db
+        with db.connect() as conn:
+            rows = conn.execute(
+                "SELECT model, count FROM gemini_model_state WHERE day = ?",
+                (_today_str(),),
+            ).fetchall()
+        counts = {r["model"]: int(r["count"]) for r in rows}
+    except Exception:
+        pass
+    return {model: counts.get(model, 0) for model in DEFAULT_MODEL_CHAIN}
 
 
 # Rough per-day free-tier caps for the UI (approximate — Google may change).
@@ -110,8 +153,7 @@ def _is_quota_error(exc: Exception) -> bool:
 
 def exhausted_models() -> list[str]:
     """For UI display: which models are down until tomorrow."""
-    today = datetime.utcnow().date()
-    return [m for m, d in _exhausted_models.items() if d == today]
+    return list(_exhausted_models_today())
 
 
 @dataclass
@@ -145,10 +187,11 @@ class GeminiClient:
     def all_models_exhausted(self) -> bool:
         """True if every model in this chain hit quota today. Callers can
         skip expensive prep work when this is the case."""
-        return all(_is_exhausted(m) for m in self.model_chain)
+        down = _exhausted_models_today()
+        return all(m in down for m in self.model_chain)
 
     def available_models(self) -> list[str]:
-        return [m for m in self.model_chain if not _is_exhausted(m)]
+        return [m for m in self.model_chain if m not in _exhausted_models_today()]
 
     # ── public: main entry point ──────────────────────────────
     def generate_json(

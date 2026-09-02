@@ -42,7 +42,7 @@ def _resume_text_hash(parsed: dict) -> str:
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
@@ -348,6 +348,24 @@ CREATE TABLE IF NOT EXISTS tailor_runs (
     created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tailor_runs_job ON tailor_runs(job_id, created_at DESC);
+
+-- v18: persist Gemini per-model daily state (quota exhaustion + successful
+-- request counts) so it survives Fly `auto_stop_machines` cycling.
+-- Previously lived only in RAM (core/llm/gemini.py `_exhausted_models` /
+-- `_request_counts`), reset on every machine wake. That RAM reset caused
+-- (a) re-probing exhausted models → wasted 429s, and (b) the fallback chain
+-- landing on a DIFFERENT model across runs → inconsistent scores (Mehran's
+-- unstable re-score, next-work.md cause b). Keyed (model, day); rolls over
+-- at UTC midnight, matching the gemini_usage convention. New table only —
+-- CREATE IF NOT EXISTS covers fresh + existing DBs, no data migration.
+CREATE TABLE IF NOT EXISTS gemini_model_state (
+    model      TEXT NOT NULL,
+    day        TEXT NOT NULL,
+    exhausted  INTEGER NOT NULL DEFAULT 0,
+    count      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (model, day)
+);
+CREATE INDEX IF NOT EXISTS idx_gemini_model_state_day ON gemini_model_state(day);
 """
 
 _SCHEMA_SQL = (

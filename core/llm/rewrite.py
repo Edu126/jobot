@@ -171,9 +171,24 @@ def rewrite_resume(
         persona=persona,
     )
 
+    # Structural-fidelity guard. On real resumes, gemini-flash-lite emits
+    # valid, complete JSON that occasionally COLLAPSES a whole section — a
+    # 22-item experience list comes back with 5 (~20% of aggressive runs,
+    # verified on a real user's resume against the Fly deploy; NOT a token
+    # cutoff — the JSON parses and the cover letter is fully present). A
+    # rewrite that silently drops most of someone's experience is worse than
+    # no tailoring, so we (1) retry once — the collapse is per-call random,
+    # not deterministic — and (2) if a section is STILL collapsed, restore it
+    # verbatim from the original. No role, employer, or degree is ever lost.
+    # This is the ADR-005 pattern (quality in the contract layer via silent
+    # retry + validation, not a user-facing "Regenerate" button).
     response = client.generate_json(prompt)
-    new_sections_raw = response.get("sections") or {}
-    new_sections = _coerce_sections(new_sections_raw)
+    new_sections = _coerce_sections(response.get("sections") or {})
+    if _collapsed_sections(editable_sections, new_sections):
+        response = client.generate_json(prompt)
+        new_sections = _coerce_sections(response.get("sections") or {})
+    for key in _collapsed_sections(editable_sections, new_sections):
+        new_sections[key] = list(editable_sections[key])
 
     # Re-attach the original header bucket so nothing is silently lost.
     if sections.get("header"):
@@ -241,6 +256,28 @@ def tailored_to_text(tailored: dict[str, Any]) -> str:
         for item in items:
             parts.append(str(item).strip())
     return "\n".join(parts).strip()
+
+
+# Sections where a big item-count drop means the model dropped whole entries
+# (a role, an employer, a degree) rather than legitimately trimming bullets.
+# Skills/summary can shrink for real; experience/education shrinking that hard
+# is data loss.
+_FIDELITY_SECTIONS = ("experience", "education")
+
+
+def _collapsed_sections(original: dict, tailored: dict) -> list[str]:
+    """Return the fidelity-critical sections whose tailored item count fell so
+    far below the original that entries were almost certainly dropped, not
+    trimmed. Threshold: under 60% of the original items, and the original had
+    enough items (>=4) for the ratio to mean something (a 3-bullet role
+    legitimately becoming 2 isn't a collapse)."""
+    collapsed = []
+    for key in _FIDELITY_SECTIONS:
+        orig_n = len(original.get(key) or [])
+        new_n = len(tailored.get(key) or [])
+        if orig_n >= 4 and new_n < 0.6 * orig_n:
+            collapsed.append(key)
+    return collapsed
 
 
 def _coerce_sections(raw: Any) -> dict[str, list[str]]:
