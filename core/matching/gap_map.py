@@ -28,7 +28,7 @@ from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
 from core.llm.sanitize import strip_md_escapes
 from core.matching import semantic_score as ss
 from core.resume import ai_summary
-from core.settings import get_reasoning_language, language_instruction
+from core.settings import language_instruction
 
 # Own prompt version (JD-free classification) — bump to invalidate the
 # gap_classification cache without deleting it (ADR-006 convention).
@@ -47,10 +47,6 @@ class GapMapEntry:
     suggestion: str     # defense hook (real) / reword (wording)
 
 
-def _resolve_lang(lang: str | None) -> str:
-    return lang if lang is not None else get_reasoning_language()
-
-
 def build_gap_map(
     resume_id: int,
     resume_text: str,
@@ -66,7 +62,7 @@ def build_gap_map(
     never dropped or faked."""
     if not resume_text.strip():
         return []
-    lang = _resolve_lang(lang)
+    lang = ss._resolve_lang(lang)
 
     counts = db.gap_counts_for_resume(
         resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION,
