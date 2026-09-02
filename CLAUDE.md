@@ -19,3 +19,12 @@ Mandatory: requirement notes before features, ADRs at the moment of decision.
 
 Never delete a superseded ADR; write a new one and mark the old
 `Superseded by ADR-YYY`.
+
+## Verification
+
+Visual / end-to-end verification runs on **jobbotv2-edu** (the user's Fly
+staging app), **not** locally. Use the `verify-on-edu` skill: it deploys the
+current code, seeds deterministic fixtures over SSH, drives the deploy from a
+headless browser, and restores -edu exactly as found. -edu holds the user's own
+data — the skill's backup/restore is mandatory; never skip it. Unit tests
+(`.venv/bin/python tests/test_*.py`) still run locally as the first gate.
