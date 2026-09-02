@@ -84,6 +84,18 @@ not a number on a dashboard.
 **First slice broken out → REQ-018** (gap enhancement, on-paper). LinkedIn
 profile eval is the next Cluster A slice (its own REQ when it starts).
 
+## Deferred decisions — capture only, decide LATER (Eduardo, 2026-09-02)
+
+- **Gap-detail / defense-hook packaging.** The per-gap extra detail (wording
+  reword + real-gap *defense hook*) could be a **paid** feature. Alternative:
+  keep the plain gaps free/visible and **relocate** the richer real-gap
+  material (defense · improvement · strategy) into a dedicated **"Preparation
+  for the interview"** surface (Cluster B) and/or the **candidate-profile
+  enhancement** surface — rather than living inline on the results detail.
+  Not decided; revisit when the aggregated gap map (REQ-019) and any Cluster B
+  scoping are on the table. Ties to "gap monetized 3×" (vision) and the
+  enhance→prepare seam (design memo 2026-09-01).
+
 ## Related
 
 Product vision (candidate-model moat; gap monetized 3×; on-candidate-side),

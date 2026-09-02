@@ -1,0 +1,47 @@
+{# Gap map (REQ-019 / ADR-022): the candidate's REAL gaps across all scored
+   jobs, ranked by how many roles each blocks. Lazy-loaded into #gap-map on the
+   Profile page. Each row shows the gap + a "in N roles" count; hovering reveals
+   its defense hook in the same fixed, viewport-clamped floating tooltip as the
+   per-job view (never pushes layout / adds horizontal scroll). Rows without a
+   hook (unclassified — quota out) render plain, honestly, still ranked. #}
+<div class="text-label mb-1 inline-flex items-center gap-1">
+  <i class="ph-thin ph-target i-3"></i>{{ _('profile.gap_map.title') }}
+</div>
+<p class="text-sm text-body-muted mb-3">{{ _('profile.gap_map.subtitle') }}</p>
+<div class="space-y-1.5">
+  {% for e in entries %}
+  {% set count_label = _('profile.gap_map.in_1_role') if e.count == 1 else _('profile.gap_map.in_n_roles', n=e.count) %}
+  {% if e.suggestion %}
+  <span x-data="{
+          open: false,
+          pos: '',
+          place(el) {
+            const r = el.getBoundingClientRect();
+            const w = Math.min(480, window.innerWidth - 32);
+            let left = Math.min(r.left, window.innerWidth - w - 16);
+            left = Math.max(16, left);
+            this.pos = 'left:' + left + 'px; top:' + (r.bottom + 6) + 'px; width:' + w + 'px';
+          }
+        }" class="block">
+    <span class="flex items-center justify-between gap-2 rounded-lg border border-base-300 px-3 py-2 cursor-help"
+          x-ref="row"
+          @mouseenter="place($refs.row); open = true"
+          @mouseleave="open = false"
+          @click="place($refs.row); open = !open">
+      <span class="font-medium text-sm text-base-content/90">{{ e.gap }}</span>
+      <span class="chip chip-neutral shrink-0">{{ count_label }}</span>
+    </span>
+    <span x-show="open" x-cloak :style="pos"
+          class="fixed z-[100] rounded-lg border border-base-300 bg-base-100 shadow-lg p-3 text-xs text-left space-y-1">
+      <span class="text-label block text-base-content/55">{{ _('jobs.gap_kind_real') }}</span>
+      <span class="block text-base-content/75 leading-relaxed">{{ e.suggestion }}</span>
+    </span>
+  </span>
+  {% else %}
+  <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 px-3 py-2">
+    <span class="font-medium text-sm text-base-content/90">{{ e.gap }}</span>
+    <span class="chip chip-neutral shrink-0">{{ count_label }}</span>
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>

@@ -193,6 +193,15 @@
   </div>
 
   {% if current %}
+  {# Gap map (REQ-019 / ADR-022): the candidate's REAL gaps across ALL scored
+     jobs, ranked by how many roles each blocks. Lazy — computed on load from
+     cached scores + a JD-free classification call; silently empty until some
+     jobs are scored or if the call is unavailable. #}
+  <section class="card-quiet mt-6" id="gap-map"
+           hx-get="/profile/gap-map" hx-trigger="load" hx-swap="innerHTML"></section>
+  {% endif %}
+
+  {% if current %}
     {% include "partials/contact_verify.html" %}
   {% endif %}
 

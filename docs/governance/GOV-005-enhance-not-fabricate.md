@@ -49,6 +49,12 @@ The rule, binding on every feature in this stage:
   mock questions, and reasoning practice are on-side. Anything that supplies
   live answers to a real assessment, or coaches the user to defeat an
   integrity check, is **banned** — it's "beat the ATS" in a new costume.
+- **Defense hook ≠ excuse (real gaps, added 2026-09-02).** For a real gap we
+  may coach the candidate to *frame* it honestly if asked — leading with true
+  transferable strength — but never to deny it, fake having it, or script a
+  misleading answer. It helps them say what's true under pressure; it does not
+  manufacture what isn't there. (Same line as practice ≠ cheat, applied to the
+  enhance→prepare handoff.)
 - **Candidate-side employer risk IS allowed.** Telling the candidate about an
   employer's risk/outlook (company outlook, layoffs, reviews) is on the
   candidate's side and LinkedIn-can't-build — explicitly permitted.

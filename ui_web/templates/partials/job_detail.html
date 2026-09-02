@@ -36,47 +36,47 @@
   {% include "partials/detail_analysis.html" %}
 
   {# ── Actions ──
-     Layout (2026-08-21): Open / Apply-on-company / Tailor grouped on
-     the LEFT (external-navigation + tailoring cluster); Mark-as-applied
-     pushed to the far RIGHT via ml-auto (tracking cluster). Prevents
-     the "sandwich" of Tailor's solid green primary between two ghost
-     buttons that was throwing the visual weight off. When the row
-     wraps on narrow viewports, ml-auto still keeps mark-applied on
-     the right edge of its wrap line — deliberate.
-     #}
-  <div class="flex items-center gap-2 flex-wrap pt-3 border-t border-base-300">
-    {% if job.job_url_direct and job.job_url_direct != job.job_url %}
-    <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
-       class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
-       title="Direct link to the company's career page">
-      Apply on {{ job.company }} <i class="ph-thin ph-arrow-square-out i-4"></i>
-    </a>
-    {% endif %}
-    {% if job.job_url %}
-    <a href="{{ job.job_url }}" target="_blank" rel="noopener"
-       class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
-      {% if job.job_url_direct and job.job_url_direct != job.job_url %}View on {{ job.site or 'board' }}
-      {% else %}{{ _('action.open_posting') }}{% endif %}
-      <i class="ph-thin ph-arrow-square-out i-4"></i>
-    </a>
-    {% endif %}
-    <button class="btn btn-sm {% if job.job_url_direct and job.job_url_direct != job.job_url %}bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium{% else %}btn-primary{% endif %} cursor-pointer"
-            hx-get="/jobs/tailor/{{ job.id }}"
-            hx-target="#tailor-drawer-body"
-            hx-swap="innerHTML"
-            @click="$store.tailor.openFor('{{ job.id }}')">
-      {{ _('action.tailor') }}
-    </button>
+     Layout (2026-09-02): everything LEFT-aligned. Row 1 = the
+     navigation + tailoring cluster (Apply directly / View / Open /
+     Tailor); row 2 = Mark-as-applied on its own line, also left-aligned
+     (Eduardo: keep it on a second row but drop the ml-auto right-push,
+     which read as misaligned). The direct-apply button uses a FIXED
+     "Apply directly" label — embedding the company name made the button
+     width uncontrollable and threw the row off. #}
+  <div class="pt-3 border-t border-base-300 space-y-2">
+    <div class="flex items-center gap-2 flex-wrap">
+      {% if job.job_url_direct and job.job_url_direct != job.job_url %}
+      <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
+         class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
+         title="Direct link to the company's career page">
+        {{ _('action.apply_directly') }} <i class="ph-thin ph-arrow-square-out i-4"></i>
+      </a>
+      {% endif %}
+      {% if job.job_url %}
+      <a href="{{ job.job_url }}" target="_blank" rel="noopener"
+         class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
+        {% if job.job_url_direct and job.job_url_direct != job.job_url %}View on {{ job.site or 'board' }}
+        {% else %}{{ _('action.open_posting') }}{% endif %}
+        <i class="ph-thin ph-arrow-square-out i-4"></i>
+      </a>
+      {% endif %}
+      <button class="btn btn-sm {% if job.job_url_direct and job.job_url_direct != job.job_url %}bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium{% else %}btn-primary{% endif %} cursor-pointer"
+              hx-get="/jobs/tailor/{{ job.id }}"
+              hx-target="#tailor-drawer-body"
+              hx-swap="innerHTML"
+              @click="$store.tailor.openFor('{{ job.id }}')">
+        {{ _('action.tailor') }}
+      </button>
+    </div>
 
-    {# Mark-as-applied — toggle. Pushed right via ml-auto on the
-       wrapper span. Non-destructive: click once to mark, click the
-       resulting "Applied" state to unmark (only if status is exactly
-       'applied' — interviewing/offer are preserved server-side). #}
-    <span class="ml-auto">
+    {# Mark-as-applied — toggle on its own row, left-aligned. Non-destructive:
+       click once to mark, click the resulting "Applied" state to unmark (only
+       if status is exactly 'applied' — interviewing/offer preserved server). #}
+    <div class="flex">
       {% with job_id=job.id, is_applied=job._is_applied %}
         {% include "partials/applied_action.html" %}
       {% endwith %}
-    </span>
+    </div>
   </div>
 
   {# ── Full JD (rendered with structure — headers, lists, bold) ── #}

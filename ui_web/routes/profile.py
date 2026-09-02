@@ -20,6 +20,7 @@ Notes:
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 from pathlib import Path
@@ -30,6 +31,8 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from core import db, events, updater
+from core.matching import gap_map
+from core.settings import get_reasoning_language
 from core.version import current as current_version
 from core.llm.gemini import (
     DEFAULT_MODEL_CHAIN,
@@ -260,6 +263,46 @@ async def get_ai_summary(request: Request):
 # user in an incident, do it from SSH:
 #   fly ssh console -a <app> -C "sqlite3 /data/jobot.db 'DELETE FROM resume_ai_summary WHERE resume_id = X'"
 # Then the next Profile visit regenerates under the hardened prompt.
+
+
+@router.get("/profile/gap-map")
+async def profile_gap_map(request: Request):
+    """Lazy fragment: the aggregated gap map (REQ-019 / ADR-022) — the
+    candidate's REAL gaps across ALL scored jobs, ranked by how many roles each
+    blocks, with a defense hook. Same hx-trigger="load" pattern as ai-summary:
+    the page paints instantly, this resolves the aggregation + one JD-free
+    classification call on its own. Renders nothing when no résumé / nothing
+    scored; degrades to cached classifications (or honest 'real') without a key
+    or on quota. Never blocks the page."""
+    current = db.get_current_resume()
+    if not current:
+        return HTMLResponse("", status_code=200)
+
+    resume_id = int(current["id"])
+    lang = get_reasoning_language()
+    client = None
+    api_key = resolve_api_key()
+    if api_key:
+        try:
+            client = GeminiClient(api_key=api_key)
+        except GeminiError:
+            client = None
+
+    # to_thread: build_gap_map may make a synchronous, blocking Gemini call on a
+    # cache miss — same event-loop reasoning as scoring / per-job enhance.
+    entries = await asyncio.to_thread(
+        gap_map.build_gap_map,
+        resume_id=resume_id,
+        resume_text=current["parsed"].get("raw_text", ""),
+        client=client,
+        lang=lang,
+    )
+    if not entries:
+        return HTMLResponse("", status_code=200)
+
+    return templates.TemplateResponse(
+        request, "partials/gap_map.html", {"entries": [e.__dict__ for e in entries]},
+    )
 
 
 @router.get("/profile/suggest-queries")

@@ -127,6 +127,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.view_in_applied": "View in applied jobs",
         "action.show_description": "Show description",
         "action.apply_on": "Apply on {company}",
+        "action.apply_directly": "Apply directly",
         "action.view_on": "View on {site}",
         # Jobs page — top-level copy
         "jobs.title": "Jobs",
@@ -278,6 +279,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.matched": "Matched",
         "jobs.gaps": "Gaps",
         "jobs.gaps_flagged": "Gaps flagged",
+        "jobs.gaps_hover_hint": "(hover each for how to close it)",
+        "jobs.gap_kind_wording": "Reword — already on your résumé",
+        "jobs.gap_kind_real": "How to defend it",
         # Filters
         "filters.only_new.tooltip": "Only recently added jobs (last 48 h) or new since your last Expand",
         "filters.hide_viewed.tooltip": "Hide jobs you've already spent time reading",
@@ -321,6 +325,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.subtitle": "Your resume, scored.",
         "profile.resume.current": "Current resume",
         "profile.resume.active": "Active",
+        "profile.gap_map.title": "Your gap map",
+        "profile.gap_map.subtitle": "Your real gaps across all your scored jobs, ranked by how many roles each blocks. Hover a gap for how to defend it.",
+        "profile.gap_map.in_n_roles": "in {n} roles",
+        "profile.gap_map.in_1_role": "in 1 role",
         "profile.resume.stats": "{words} words · ~{pages}p · {bullets} bullets",
         "profile.resume.uploaded": "Uploaded",
         "profile.action.view_resume": "View resume",
@@ -484,6 +492,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.view_in_applied": "Ver en postulaciones",
         "action.show_description": "Ver descripción",
         "action.apply_on": "Aplicar en {company}",
+        "action.apply_directly": "Aplicar directamente",
         "action.view_on": "Ver en {site}",
         # Página de empleos
         "jobs.title": "Empleos",
@@ -635,6 +644,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.matched": "Coincide",
         "jobs.gaps": "Brechas",
         "jobs.gaps_flagged": "Brechas señaladas",
+        "jobs.gaps_hover_hint": "(pasa el cursor para ver cómo cerrarla)",
+        "jobs.gap_kind_wording": "Reformula — ya está en tu CV",
+        "jobs.gap_kind_real": "Cómo defenderla",
         # Filtros
         "filters.only_new.tooltip": "Solo empleos añadidos recientemente (últimas 48 h) o nuevos desde tu última Ampliación",
         "filters.hide_viewed.tooltip": "Ocultar empleos que ya leíste con atención",
@@ -676,6 +688,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Perfil
         "profile.title": "Perfil",
         "profile.subtitle": "Tu currículum, puntuado.",
+        "profile.gap_map.title": "Tu mapa de brechas",
+        "profile.gap_map.subtitle": "Tus brechas reales en todos tus empleos evaluados, ordenadas por cuántos roles bloquea cada una. Pasa el cursor sobre una brecha para ver cómo defenderla.",
+        "profile.gap_map.in_n_roles": "en {n} roles",
+        "profile.gap_map.in_1_role": "en 1 rol",
         "profile.resume.current": "Currículum actual",
         "profile.resume.active": "Activo",
         "profile.resume.stats": "{words} palabras · ~{pages}p · {bullets} viñetas",

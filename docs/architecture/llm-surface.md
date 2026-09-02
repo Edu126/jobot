@@ -1,6 +1,6 @@
 # LLM Surface
 
-Last updated: 2026-08-27
+Last updated: 2026-09-01
 
 Every Gemini call in the app, in one place. If you add or remove a
 call, update this file — [ADR-008](../decisions/ADR-008-prompt-conventions.md)
@@ -15,7 +15,7 @@ stayed Spanish after the user flipped the UI to English (Mehran,
 which cache their output, and how those two interact. Debugging
 prompt quality or cost regressions with no map is guesswork.
 
-This is the map. Also: quality drift across 8 independent prompts,
+This is the map. Also: quality drift across 10 independent prompts,
 each with its own language-directive story, is the next-most-likely
 class of bug. Making the drift visible is step one.
 
@@ -45,6 +45,8 @@ for why.
 | 6 | `core/bi/pulse.py::generate_report` | Weekly GH Actions cron (`.github/workflows/pulse.yml`) + `/admin/pulse` manual | No | `admin_reports` table (one row per run) | None (admin-only, English) | JSON (unwraps `{"markdown": "..."}`) |
 | 7 | `ui_web/routes/profile.py::_generate_suggestions` | Jobs page "Quick fill" chips first render (lazy) | No | `suggested_queries(resume_id, lang)` | `get_output_language()` | JSON |
 | 8 | `core/resume/ai_summary.py::_grounded_or_none` (used by `get_or_generate` / `persona_line`) | Lazy fragment on Profile page after resume upload — **and now also** the first scoring call (#1) or tailor call (#2) for a resume that skipped Profile, via `persona_line()` | No, but retries **once** silently on ungrounded output | `resume_ai_summary(resume_id, lang)` — gained `domain`/`seniority` columns ([ADR-013](../decisions/ADR-013-persona-source-shared-resume-profile.md)) | `get_output_language()` | JSON validated via Pydantic + custom grounding check |
+| 9 | `core/matching/gap_enhance.py::_enhance` | Lazy fragment `/jobs/gap-enhance/{job_id}` on detail-pane open, only when the scored job has gaps ([REQ-018](../requirements/REQ-018-gap-enhancement-on-paper.md) / [ADR-021](../decisions/ADR-021-gap-enhancement-reuses-score-time-gaps.md)) | No (per-job) | `gap_enhancements(job_id, resume_hash, lang, prompt_version)` — résumé **text hash** like #1; `PROMPT_VERSION` in `gap_enhance.py` gates hits | `get_reasoning_language()` | JSON — per-gap `{gap, kind: wording\|real, suggestion}` (real → defense hook), reusing #1's `gaps` as input; honesty in-prompt (GOV-005, unsure → `real`). `temperature=0.0` |
+| 10 | `core/matching/gap_map.py::_classify` | Lazy fragment `/profile/gap-map` on Profile load, when the résumé has scored jobs with gaps ([REQ-019](../requirements/REQ-019-aggregated-gap-map.md) / [ADR-022](../decisions/ADR-022-aggregated-gap-map-mechanism.md)) | Yes — batched over all NEW distinct gaps in one call | `gap_classification(resume_hash, lang, gap, prompt_version)` — one row per distinct gap, so repeat renders classify only newly-seen gaps; `PROMPT_VERSION` in `gap_map.py` gates hits | `get_reasoning_language()` | JSON — **JD-free** per-gap `{gap, kind: wording\|real, suggestion}` (real → defense hook). Input = gaps aggregated from #1's `job_scores` (pure SQL, no LLM). `temperature=0.0` |
 
 ## Coverage the table doesn't capture
 
@@ -87,7 +89,7 @@ get recomputed on next read).
 
 ## Known drift risks (as of 2026-08-25)
 
-- **Language directive is not uniformly applied.** Sites #1/#2/#7/#8
+- **Language directive is not uniformly applied.** Sites #1/#2/#7/#8/#9/#10
   emit `language_instruction()`; sites #3/#4/#5/#6 don't. #3 and #4
   are extraction-only (defensible), but #5 (company briefing shown
   in a tailor drawer) probably *should* follow output_language and
@@ -100,7 +102,7 @@ get recomputed on next read).
 - **Prompt inline vs. shared**: only #2 uses a shared
   `core/llm/prompts.py`. Every other site has its prompt string
   living next to the call. That's fine for now — a shared prompt
-  library is premature at 8 sites — but the rules in
+  library is premature at 10 sites — but the rules in
   [ADR-008](../decisions/ADR-008-prompt-conventions.md) apply
   everywhere, inline or not.
 

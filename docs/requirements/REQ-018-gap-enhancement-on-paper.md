@@ -28,12 +28,24 @@ now**:
   skill but the JD's exact-title language isn't on the page), surface it and
   suggest the rewording the AI ranker rewards — "be seen · be ranked · be
   real," never "beat the ATS" (vision non-negotiable).
-- Where a gap is **real** (the user genuinely lacks it), say so plainly and
-  honestly — do **not** invent it (GOV-005). The "close it for real" path
-  (courses) is out of scope here, deferred to Phase 3.
+- Where a gap is **real** (the user genuinely lacks it), give a **defense hook**
+  (added 2026-09-02): an honest way to address it if a recruiter/interviewer
+  raises it — lead with the closest transferable strength in the résumé, frame
+  the gap plainly, never invent it (GOV-005), never pitch courses (Phase 3).
+  This is the cheap enhance→prepare ride-along: a real gap *is* the likely
+  interview objection (design memo 2026-09-01).
 
 This is the gap monetized on the first horizon ("on paper") and it seeds the
 candidate persona with what the user affirms is true.
+
+## UI (2026-09-02, live on edu)
+
+Gaps stay as neutral pills in the detail view; each pill reveals its detail on
+hover in a **fixed, viewport-clamped floating tooltip** (never pushes layout /
+adds horizontal scroll). Wording → the reword; real → the defense hook. An
+explicit "(hover for how to close it)" hint sits next to the "Gaps" label. No
+grouped/expanding list (rejected — pushed content down), no per-pill colour
+(the kind label lives inside the tooltip).
 
 ## Scope guardrails
 

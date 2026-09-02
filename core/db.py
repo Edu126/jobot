@@ -42,7 +42,7 @@ def _resume_text_hash(parsed: dict) -> str:
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 20
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
@@ -366,6 +366,46 @@ CREATE TABLE IF NOT EXISTS gemini_model_state (
     PRIMARY KEY (model, day)
 );
 CREATE INDEX IF NOT EXISTS idx_gemini_model_state_day ON gemini_model_state(day);
+
+-- v19: cache gap-enhancement output (REQ-018 / ADR-021). We turn a job's
+-- score-time `gaps` into per-gap honest next actions (wording gap vs real
+-- gap + suggestion). Derived from the résumé × job × language, so keyed the
+-- SAME way as job_scores: on the résumé TEXT hash (v17 convention) so a
+-- re-uploaded identical résumé reuses it, plus lang, plus prompt_version for
+-- logical invalidation (bump the version → old rows are misses, never
+-- deleted). One row per (job, résumé-text, lang, prompt_version); the
+-- enhancements themselves live as a JSON blob. Generated lazily on detail
+-- open, never at score time (ADR-021), so many scored-but-unopened jobs cost
+-- nothing. New table only — CREATE IF NOT EXISTS covers fresh + existing DBs.
+CREATE TABLE IF NOT EXISTS gap_enhancements (
+    job_id            TEXT NOT NULL,
+    resume_hash       TEXT NOT NULL,
+    lang              TEXT NOT NULL,
+    prompt_version    TEXT NOT NULL,
+    enhancements_json TEXT NOT NULL,
+    model             TEXT,
+    created_at        TEXT NOT NULL,
+    PRIMARY KEY (job_id, resume_hash, lang, prompt_version)
+);
+
+-- v20: per-distinct-gap classification for the aggregated GAP MAP (REQ-019 /
+-- ADR-022). The map counts each gap's frequency across the résumé's scored
+-- jobs (pure SQL over job_scores.gaps_json — no table needed), then classifies
+-- each DISTINCT gap JD-free (résumé × gap → wording|real + suggestion/defense
+-- hook). This caches that classification keyed on the résumé TEXT hash (v17
+-- convention) + lang + gap + prompt_version, so repeat renders are ~free and
+-- only newly-seen gaps cost an LLM call. Distinct from gap_enhancements, which
+-- is JD-specific (ADR-021); this one is candidate-level.
+CREATE TABLE IF NOT EXISTS gap_classification (
+    resume_hash     TEXT NOT NULL,
+    lang            TEXT NOT NULL,
+    gap             TEXT NOT NULL,
+    prompt_version  TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    suggestion      TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL,
+    PRIMARY KEY (resume_hash, lang, gap, prompt_version)
+);
 """
 
 _SCHEMA_SQL = (
@@ -1540,6 +1580,175 @@ def save_scores(
                     scoring_version,
                     str(s.get("model", "")),
                     now,
+                ),
+            )
+            n += 1
+    return n
+
+
+def get_cached_gap_enhancement(
+    job_id: str,
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    path: Path = DB_PATH,
+) -> Optional[list[dict]]:
+    """Return the cached per-gap enhancement list for this (job, résumé-text,
+    lang) under the current prompt version, or None on a miss (REQ-018 /
+    ADR-021). Keyed on the résumé TEXT hash like get_cached_scores, so an
+    identical re-upload reuses it; rows under a different lang/prompt_version
+    are misses so callers regenerate. Returns the decoded JSON list."""
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return None
+        row = conn.execute(
+            """SELECT enhancements_json FROM gap_enhancements
+               WHERE job_id = ? AND resume_hash = ? AND lang = ? AND prompt_version = ?""",
+            (job_id, resume_hash, lang, prompt_version),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        parsed = json.loads(row["enhancements_json"])
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, list) else None
+
+
+def save_gap_enhancement(
+    job_id: str,
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    enhancements: list[dict],
+    model: str = "",
+    path: Path = DB_PATH,
+) -> bool:
+    """Upsert the per-gap enhancement list for one (job, résumé-text, lang).
+    Keyed on the résumé text hash (resolved from resume_id here, like
+    save_scores). No-ops when the résumé is text-less/gone (get_cached_*
+    short-circuits on the same condition). Returns True on write."""
+    now = _now()
+    with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return False
+        conn.execute(
+            """INSERT INTO gap_enhancements (
+                job_id, resume_hash, lang, prompt_version,
+                enhancements_json, model, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(job_id, resume_hash, lang, prompt_version) DO UPDATE SET
+                enhancements_json = excluded.enhancements_json,
+                model = excluded.model,
+                created_at = excluded.created_at""",
+            (
+                job_id, resume_hash, lang, prompt_version,
+                json.dumps(enhancements, ensure_ascii=False),
+                model, now,
+            ),
+        )
+    return True
+
+
+def gap_counts_for_resume(
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    scoring_version: str,
+    path: Path = DB_PATH,
+) -> dict[str, int]:
+    """Aggregate every gap across THIS résumé's scored jobs → {gap: count}
+    (REQ-019 / ADR-022). Pure SQL over `job_scores.gaps_json` for the current
+    résumé text + lang + scoring version — no LLM. Count = how many of the
+    user's roles flag that gap (its rank in the map). Case-insensitive dedupe,
+    keeping the first-seen surface form as the display label."""
+    counts: dict[str, int] = {}
+    canonical: dict[str, str] = {}
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return {}
+        rows = conn.execute(
+            """SELECT gaps_json FROM job_scores
+               WHERE resume_hash = ? AND lang = ?
+                     AND prompt_version = ? AND scoring_version = ?""",
+            (resume_hash, lang, prompt_version, scoring_version),
+        ).fetchall()
+    for r in rows:
+        try:
+            gaps = json.loads(r["gaps_json"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(gaps, list):
+            continue
+        for g in gaps:
+            if not isinstance(g, str) or not g.strip():
+                continue
+            g = g.strip()
+            key = g.lower()
+            canonical.setdefault(key, g)
+            counts[key] = counts.get(key, 0) + 1
+    return {canonical[k]: n for k, n in counts.items()}
+
+
+def get_gap_classifications(
+    resume_id: int,
+    gaps: Iterable[str],
+    lang: str,
+    prompt_version: str,
+    path: Path = DB_PATH,
+) -> dict[str, dict]:
+    """Cached JD-free classifications for the given gaps (REQ-019 / ADR-022),
+    keyed on the résumé text hash + lang + gap + prompt_version. Returns
+    {gap: {"kind": ..., "suggestion": ...}} for hits only; misses are omitted
+    so the caller classifies just the new ones."""
+    gaps = list(gaps)
+    if not gaps:
+        return {}
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return {}
+        placeholders = ",".join("?" * len(gaps))
+        rows = conn.execute(
+            f"""SELECT gap, kind, suggestion FROM gap_classification
+                WHERE resume_hash = ? AND lang = ? AND prompt_version = ?
+                      AND gap IN ({placeholders})""",
+            (resume_hash, lang, prompt_version, *gaps),
+        ).fetchall()
+    return {r["gap"]: {"kind": r["kind"], "suggestion": r["suggestion"]} for r in rows}
+
+
+def save_gap_classifications(
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    items: Iterable[dict],
+    path: Path = DB_PATH,
+) -> int:
+    """Upsert JD-free gap classifications. Each item: {gap, kind, suggestion}.
+    Keyed on the résumé text hash (resolved here). No-ops on a text-less résumé.
+    Returns count written."""
+    now = _now()
+    n = 0
+    with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return 0
+        for it in items:
+            conn.execute(
+                """INSERT INTO gap_classification (
+                    resume_hash, lang, gap, prompt_version, kind, suggestion, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(resume_hash, lang, gap, prompt_version) DO UPDATE SET
+                    kind = excluded.kind,
+                    suggestion = excluded.suggestion,
+                    created_at = excluded.created_at""",
+                (
+                    resume_hash, lang, str(it["gap"]), prompt_version,
+                    str(it.get("kind", "real")), str(it.get("suggestion", "")), now,
                 ),
             )
             n += 1

@@ -19,7 +19,15 @@
     </div>
     {% endif %}
     {% if ai.gaps %}
-    <div>
+    {# Plain gaps block; the lazy loader (REQ-018 / ADR-021) self-replaces it
+       (same wrapper id) with the enhanced version — pills gain hover tooltips
+       and the (i) hint. Fires on insert (also after an OOB score swap). On any
+       failure the route re-renders these same plain pills, so chips are never
+       lost. #}
+    <div id="gaps-block-{{ job.id }}"
+         hx-get="/jobs/gap-enhance/{{ job.id }}"
+         hx-trigger="load"
+         hx-swap="outerHTML">
       <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-warning i-3"></i>{{ _('jobs.gaps') }}</div>
       <div class="flex flex-wrap gap-1">
         {% for g in ai.gaps %}<span class="chip chip-gap">{{ g }}</span>{% endfor %}
