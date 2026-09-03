@@ -323,8 +323,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Profile page
         "profile.title": "Profile",
         "profile.subtitle": "Your resume, scored.",
-        "profile.subtab.market": "Market Fit & Gap Map",
+        "profile.subtab.market": "Market Fit & Gaps",
         "profile.subtab.resume": "Parsed Resume & Details",
+        "profile.subtab.profile": "My Profile & Skills",
         "profile.resume.current": "Current resume",
         "profile.resume.active": "Active",
         "profile.gap_map.title": "Your gap map",
@@ -355,6 +356,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Legacy 3-tier labels, retained for backward compatibility.
         "profile.ats.needs_work": "Needs work",
         "profile.ats.serious": "Serious issues",
+        # Inline ATS report card (REQ-021 — replaces the See-report modal).
+        "profile.ats.report_title": "ATS report & recommendations",
+        "profile.ats.all_clear": "No fixes needed — your resume reads clean.",
+        "profile.ats.more_fixes": "{n} more",
+        "profile.ats.show_less": "Show less",
+        "profile.ats.checks_passed": "{n} checks passed",
+        "profile.ats.fix_prefix": "Fix",
         "profile.contact.label": "Contact info",
         "profile.contact.title": "What recruiters will see",
         "profile.contact.missing": "Missing — add it",
@@ -701,6 +709,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.subtitle": "Tu currículum, puntuado.",
         "profile.subtab.market": "Encaje de Mercado y Brechas",
         "profile.subtab.resume": "CV Analizado y Detalles",
+        "profile.subtab.profile": "Mi Perfil y Habilidades",
         "profile.gap_map.title": "Tu mapa de brechas",
         "profile.gap_map.subtitle": "Tus brechas reales en todos tus empleos evaluados, agrupadas por tema y ordenadas por cuántos roles bloquea cada una. Haz clic en una brecha para ver cómo defenderla.",
         "profile.gap_map.in_n_roles": "en {n} roles",
@@ -731,6 +740,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         # Legacy 3-tier labels
         "profile.ats.needs_work": "Requiere trabajo",
         "profile.ats.serious": "Problemas serios",
+        # Tarjeta de reporte ATS en línea (REQ-021 — reemplaza el modal).
+        "profile.ats.report_title": "Reporte ATS y recomendaciones",
+        "profile.ats.all_clear": "Sin ajustes pendientes — tu currículum se lee limpio.",
+        "profile.ats.more_fixes": "{n} más",
+        "profile.ats.show_less": "Ver menos",
+        "profile.ats.checks_passed": "{n} verificaciones superadas",
+        "profile.ats.fix_prefix": "Ajuste",
         "profile.contact.label": "Datos de contacto",
         "profile.contact.title": "Lo que verán los reclutadores",
         "profile.contact.missing": "Faltante — agrégalo",

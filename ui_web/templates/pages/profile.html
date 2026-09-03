@@ -4,565 +4,483 @@
 {% block content %}
 
 {# ══════════════════════════════════════════════════════════════════
-   PROFILE — Combo A refinement of the resume-first hero.
-     LEFT 50%  Current resume  →  inline ATS chip + See report modal
-                                  Replace dropdown + Older versions inline
-     RIGHT 50% Settings hub    →  seg-tabs: API key | Updates | Notifications
-     BELOW     Suggested queries strip + Saved searches full-width
-   ATS details, notifications state, quota bars — all preserved,
-   just reorganized so config never competes with content.
+   PROFILE — REQ-021 shell (Phase A).
+     HEADER   Persistent résumé card (identity · ATS badge · AI first-
+              read · Download/Replace/older folds). Lives ABOVE the tabs
+              so the document the whole page acts on never disappears.
+     TAB 1    My Profile & Skills → inline ATS report card (replaces the
+              old See-report modal) + parsed-section readout + contact.
+     TAB 2    Market Fit & Gaps  → the REQ-020 gap map (unchanged).
+     The big page title + the ATS modal were removed — the header IS the
+     top of the page, and the report insights are inline now.
    ══════════════════════════════════════════════════════════════════ #}
 
-<div class="mb-10">
-  <h1 class="text-display">{{ _('profile.title') }}</h1>
-  <p class="text-body-muted text-lg mt-2">{{ _('profile.subtitle') }}</p>
-</div>
-
-{# Root x-data — modal state + section toggles. Kept at page level so
-   the modal can be positioned as a sibling of the card that opened it.
-   Settings section extracted to the floating settings panel (base.html
-   include) — Profile is now only Profile per 2026-08-20 retro. #}
 <div class="space-y-6"
-     x-data="{ atsModal: false, subtab: '{{ 'resume' if just_regenerated else 'market' }}', showReplace: false, showOlder: false }"
-     x-init="{% if just_regenerated %}$store.toast.show('{{ _('profile.resume.reparsed_toast') }}', 'success'); history.replaceState({}, '', '/profile');{% endif %}"
-     @keydown.escape.window="atsModal = false">
+     x-data="{ subtab: 'profile', showReplace: false, showOlder: false }"
+     x-init="{% if just_regenerated %}$store.toast.show('{{ _('profile.resume.reparsed_toast') }}', 'success'); history.replaceState({}, '', '/profile');{% endif %}">
 
-  {# Sub-tabs (REQ-020 §2 IA): Market Fit & Gap Map (default) | Parsed Resume & Details.
-     The parsed-resume readout that used to be a "View resume" modal now lives in
-     tab 2; tab 1 is the score + gap map. #}
-  <div role="tablist" class="tabs tabs-boxed w-fit">
-    <button type="button" role="tab" class="tab" :class="subtab === 'market' ? 'tab-active' : ''" @click="subtab = 'market'">{{ _('profile.subtab.market') }}</button>
-    <button type="button" role="tab" class="tab" :class="subtab === 'resume' ? 'tab-active' : ''" @click="subtab = 'resume'">{{ _('profile.subtab.resume') }}</button>
-  </div>
+{% if current %}
 
-  {# ═══════ TAB 1 — Market Fit & Gap Map ═══════ #}
-  <div x-show="subtab === 'market'" class="space-y-6">
+  {# ═══════ PERSISTENT RÉSUMÉ HEADER ═══════ #}
+  <section class="card-quiet">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
 
-  {# ─── HERO — resume + inline score. Single column since 2026-08-20;
-     the settings hub that used to occupy the right slot moved to the
-     floating panel accessible from the gear icon. #}
-  <div>
-
-    {# ═══ Current resume with inline ATS chip ═══ #}
-    <section class="card-quiet">
-      {% if current %}
+      {# ── Identity + ATS score (the single big number lives here) ── #}
+      <div class="min-w-0">
         <div class="text-label">{{ _('profile.resume.current') }}</div>
         <h2 class="text-title mt-1 truncate">{{ current.filename }}</h2>
-        <div class="mt-2 flex items-center gap-2 flex-wrap">
+        <div class="mt-2 flex items-center gap-2 flex-wrap text-sm">
           <div class="pill pill-success inline-flex items-center gap-1.5">
             <span class="pill-dot live"></span>{{ _('profile.resume.active') }}
           </div>
-          <span class="text-sm text-body-muted">
+          <span class="text-body-muted">
             {% if current.parsed.stats.page_estimate == 1 %}
               {{ _('profile.resume.stats_1page', words=current.parsed.stats.word_count) }}
             {% else %}
               {{ _('profile.resume.stats_npages', words=current.parsed.stats.word_count, pages=current.parsed.stats.page_estimate) }}
             {% endif %}
           </span>
-        </div>
-        <div class="text-xs text-body-muted mt-1">
-          {{ _('profile.resume.uploaded') }} {{ current.uploaded_at | humanize }}
+          <span class="text-body-muted">· {{ _('profile.resume.uploaded') }} {{ current.uploaded_at | humanize }}</span>
         </div>
 
-        {# AI first read — role label + one-sentence gut check. Lazy-loads
-           (hx-trigger="load") so upload/switch stays instant; this fragment
-           eats the 1-3s Gemini round-trip on its own. Silently empty if no
-           API key or the call fails — never blocks anything. #}
-        <div id="ai-summary" class="mt-3"
-             hx-get="/profile/ai-summary"
-             hx-trigger="load"
-             hx-swap="innerHTML"></div>
-
-        {# ATS chip — one row: score / verdict / See report link ── #}
         {% if ats_report %}
-          {# 4-tier ATS labels (poor / almost there / good / excellent).
-             Tier resolution + thresholds live in ui_web/deps.py:ats_tier
-             so this chip and the modal below can't drift. #}
+          {# 4-tier ATS labels; tier resolution lives in deps.py:ats_tier so
+             this badge and the inline card in Tab 1 can't drift. #}
           {% set _tier = ats_tier(ats_report.score) %}
-        <div class="mt-4 pt-4 border-t border-base-300/70 flex items-center gap-3 flex-wrap">
+        <div class="mt-3 flex items-center gap-2 flex-wrap">
           <span class="text-label">ATS</span>
           <span style="font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; color: {{ _tier.color }}; font-variant-numeric: tabular-nums;">{{ ats_report.score }}</span>
           <span class="text-sm text-base-content/40">/100</span>
           <div class="pill {{ _tier.pill }}">{{ _('profile.ats.' + _tier.label_key) }}</div>
-          <div class="ml-auto flex items-center gap-4">
-            <button @click="subtab = 'resume'"
-                    class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1">
-              <i class="ph-thin ph-eye i-3"></i>{{ _('profile.action.view_resume') }}
-            </button>
-            <button @click="atsModal = true"
-                    class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1">
-              {{ _('profile.action.see_report') }} <i class="ph-thin ph-arrow-right i-3"></i>
-            </button>
-          </div>
         </div>
         {% endif %}
-
-        {# Actions row — Download, Replace toggle, Older versions toggle ── #}
-        <div class="flex items-center gap-2 mt-4 pt-4 border-t border-base-300/70 flex-wrap">
-          <a href="/profile/resume/{{ current.id }}/download"
-             class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
-            <i class="ph-thin ph-download-simple i-4"></i>{{ _('profile.action.download') }}
-          </a>
-          <button @click="showReplace = !showReplace; if (showReplace) showOlder = false"
-                  class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
-            <i class="ph-thin ph-arrows-clockwise i-4"></i>{{ _('profile.action.replace') }}
-            <i class="ph-thin i-3" :class="showReplace ? 'ph-caret-up' : 'ph-caret-down'"></i>
-          </button>
-          {% if older_resumes %}
-          <button @click="showOlder = !showOlder; if (showOlder) showReplace = false"
-                  class="text-xs text-body-muted hover:text-base-content cursor-pointer ml-auto inline-flex items-center gap-1">
-            <i class="ph-thin ph-clock-counter-clockwise i-3"></i>
-            {{ _('profile.older_versions', n=older_resumes|length) }}
-            <i class="ph-thin i-3" :class="showOlder ? 'ph-caret-up' : 'ph-caret-down'"></i>
-          </button>
-          {% endif %}
-        </div>
-
-        {# Upload form — folded under Replace ── #}
-        <div x-show="showReplace" x-cloak x-collapse class="mt-4 pt-4 border-t border-base-300/70">
-          <div class="text-label mb-2">{{ _('profile.upload.new_version') }}</div>
-          <form hx-post="/profile/resume/upload"
-                hx-encoding="multipart/form-data"
-                hx-target="#upload-status"
-                hx-swap="innerHTML"
-                hx-indicator="#upload-spin">
-            <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-              <input type="file" name="file" accept=".docx,.pdf" required
-                     class="file-input file-input-bordered file-input-sm w-full sm:flex-1">
-              <button type="submit" class="btn btn-primary btn-sm whitespace-nowrap">
-                <span id="upload-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
-                Upload
-              </button>
-            </div>
-            <div id="upload-status" class="mt-2 min-h-[1.25rem]"></div>
-            <div class="text-xs text-body-muted mt-2">
-              DOCX or PDF. Auto-sets as current on success.
-            </div>
-          </form>
-        </div>
-
-        {# Older versions — folded under toggle ── #}
-        {% if older_resumes %}
-        <div x-show="showOlder" x-cloak x-collapse class="mt-4 pt-4 border-t border-base-300/70">
-          <div class="text-label mb-2">Older versions</div>
-          <div class="space-y-2">
-            {% for r in older_resumes %}
-            <div class="border border-base-300 rounded-lg p-3 flex items-center justify-between gap-3"
-                 x-data="{ confirming: false }">
-              <div class="min-w-0 flex-1">
-                <div class="font-medium text-sm truncate">{{ r.filename }}</div>
-                <div class="text-xs text-body-muted mt-0.5">
-                  {{ r.source_format or '?' }} · {{ r.uploaded_at | humanize }}
-                </div>
-              </div>
-              <div class="shrink-0 flex items-center gap-1">
-                <a href="/profile/resume/{{ r.id }}/download"
-                   class="text-xs text-body-muted hover:text-base-content px-2 py-1">Download</a>
-                <button hx-post="/profile/resume/{{ r.id }}/switch"
-                        hx-swap="none"
-                        class="text-xs text-primary hover:underline px-2 py-1 cursor-pointer">Use this</button>
-                <button x-show="!confirming" @click="confirming = true"
-                        class="text-xs text-body-muted hover:text-error px-2 py-1 cursor-pointer">Delete</button>
-                <div x-show="confirming" x-cloak class="inline-flex items-center gap-1">
-                  <button hx-post="/profile/resume/{{ r.id }}/delete"
-                          hx-swap="none"
-                          class="btn btn-xs pill-danger cursor-pointer">Yes</button>
-                  <button @click="confirming = false"
-                          class="text-xs text-body-muted hover:text-base-content cursor-pointer">Cancel</button>
-                </div>
-              </div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-        {% endif %}
-
-      {% else %}
-        {# No resume yet — this card IS the upload CTA #}
-        <div class="text-label">No resume yet</div>
-        <h2 class="text-title mt-1">Upload your resume to start</h2>
-        <p class="text-sm text-body-muted mt-2">DOCX or PDF. Stays on your Mac.</p>
-        <form hx-post="/profile/resume/upload"
-              hx-encoding="multipart/form-data"
-              hx-target="#upload-status"
-              hx-swap="innerHTML"
-              hx-indicator="#upload-spin"
-              class="mt-4">
-          <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-            <input type="file" name="file" accept=".docx,.pdf" required
-                   class="file-input file-input-bordered file-input-sm w-full sm:flex-1">
-            <button type="submit" class="btn btn-primary btn-sm whitespace-nowrap">
-              <span id="upload-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
-              Upload
-            </button>
-          </div>
-          <div id="upload-status" class="mt-2 min-h-[1.25rem]"></div>
-        </form>
-      {% endif %}
-    </section>
-
-  </div>
-
-  {% if current %}
-  {# Gap map (REQ-019 / ADR-022): the candidate's REAL gaps across ALL scored
-     jobs, ranked by how many roles each blocks. Lazy — computed on load from
-     cached scores + a JD-free classification call; silently empty until some
-     jobs are scored or if the call is unavailable. #}
-  <section class="card-quiet mt-6" id="gap-map"
-           hx-get="/profile/gap-map" hx-trigger="load" hx-swap="innerHTML"></section>
-  {% endif %}
-
-  </div> {# ═══ end TAB 1 — Market Fit & Gap Map ═══ #}
-
-  {# ═══════ TAB 2 — Parsed Resume & Details ═══════ #}
-  <div x-show="subtab === 'resume'" x-cloak class="space-y-6">
-
-  {# Parsed sections readout — the "is this how my resume looks after parsing?"
-     document view. Moved out of the old "View resume" modal into this tab
-     (REQ-020). Data from core.resume.anomalies.analyze (deterministic, no LLM).
-     Regenerate cleanly (LLM re-parse) lives in the header. #}
-  {% if current and preview_report %}
-  <section class="card-quiet">
-    <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
-      <div class="min-w-0">
-        <div class="text-label">{{ _('profile.subtab.resume') }}</div>
-        <h2 class="text-title mt-1 truncate max-w-md">{{ current.filename }}</h2>
       </div>
-      <div class="flex items-center gap-2">
-        <div id="regen-status" class="text-xs text-error"></div>
-        {# Regenerate cleanly — LLM re-parse pass. Fires an HX-Refresh on success
-           so this tab + ATS re-render on the fixed parse (the page reopens on
-           this tab via just_regenerated); on error, HTML lands in #regen-status. #}
-        <button type="button"
-                hx-post="/profile/resume/{{ current.id }}/regenerate"
-                hx-target="#regen-status"
-                hx-swap="innerHTML"
-                hx-indicator="#regen-spin"
-                hx-disabled-elt="this"
-                class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content inline-flex items-center gap-1.5">
-          <span id="regen-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
-          <i class="ph-thin ph-sparkle i-4"></i>Regenerate cleanly
-        </button>
+
+      {# ── AI first-read — lazy (REQ-003). Eats the 1-3s Gemini round-trip
+           on its own; silently empty if no key or the call fails. ── #}
+      <div class="md:border-l md:border-base-300/70 md:pl-6 flex items-center">
+        <div id="ai-summary" class="w-full"
+             hx-get="/profile/ai-summary"
+             hx-trigger="load"
+             hx-swap="innerHTML"></div>
       </div>
     </div>
 
-    <div class="mb-5 text-sm">
-      {% if preview_report.anomaly_count == 0 %}
-        <span class="inline-flex items-center gap-1.5">
-          <i class="ph-thin ph-check-circle i-4" style="color: oklch(var(--su));"></i>
-          {{ _('profile.resume.looks_clean') }}
-        </span>
-      {% else %}
-        <span class="inline-flex items-center gap-1.5 text-warning">
-          <i class="ph-thin ph-warning i-4"></i>{{ preview_report.banner }}
-        </span>
+    {# ── Actions row — Download, Replace toggle, Older versions toggle ── #}
+    <div class="flex items-center gap-2 mt-5 pt-4 border-t border-base-300/70 flex-wrap">
+      <a href="/profile/resume/{{ current.id }}/download"
+         class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
+        <i class="ph-thin ph-download-simple i-4"></i>{{ _('profile.action.download') }}
+      </a>
+      <button @click="showReplace = !showReplace; if (showReplace) showOlder = false"
+              class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
+        <i class="ph-thin ph-arrows-clockwise i-4"></i>{{ _('profile.action.replace') }}
+        <i class="ph-thin i-3" :class="showReplace ? 'ph-caret-up' : 'ph-caret-down'"></i>
+      </button>
+      {% if older_resumes %}
+      <button @click="showOlder = !showOlder; if (showOlder) showReplace = false"
+              class="text-xs text-body-muted hover:text-base-content cursor-pointer ml-auto inline-flex items-center gap-1">
+        <i class="ph-thin ph-clock-counter-clockwise i-3"></i>
+        {{ _('profile.older_versions', n=older_resumes|length) }}
+        <i class="ph-thin i-3" :class="showOlder ? 'ph-caret-up' : 'ph-caret-down'"></i>
+      </button>
       {% endif %}
     </div>
 
-    <div class="space-y-8">
-      {% if preview_report.sections %}
-        {% for s in preview_report.sections %}
-        <div>
-          <h3 class="text-lg font-bold text-base-content uppercase tracking-wide pb-1 mb-3 border-b border-base-300">{{ s.title }}</h3>
-          {% if s.groups %}
-            <div class="space-y-2.5">
-              {% for g in s.groups %}
-              <div>
-                {% if g.label %}
-                <div class="text-sm font-semibold text-base-content mb-1">{{ g.label }}</div>
-                {% endif %}
-                <div class="flex flex-wrap gap-1">
-                  {% for tok in g.tokens %}
-                  <span class="chip chip-neutral">{{ tok }}</span>
-                  {% endfor %}
-                </div>
-              </div>
-              {% endfor %}
+    {# Upload form — folded under Replace ── #}
+    <div x-show="showReplace" x-cloak x-collapse class="mt-4 pt-4 border-t border-base-300/70">
+      <div class="text-label mb-2">{{ _('profile.upload.new_version') }}</div>
+      <form hx-post="/profile/resume/upload"
+            hx-encoding="multipart/form-data"
+            hx-target="#upload-status"
+            hx-swap="innerHTML"
+            hx-indicator="#upload-spin">
+        <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+          <input type="file" name="file" accept=".docx,.pdf" required
+                 class="file-input file-input-bordered file-input-sm w-full sm:flex-1">
+          <button type="submit" class="btn btn-primary btn-sm whitespace-nowrap">
+            <span id="upload-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+            Upload
+          </button>
+        </div>
+        <div id="upload-status" class="mt-2 min-h-[1.25rem]"></div>
+        <div class="text-xs text-body-muted mt-2">
+          DOCX or PDF. Auto-sets as current on success.
+        </div>
+      </form>
+    </div>
+
+    {# Older versions — folded under toggle ── #}
+    {% if older_resumes %}
+    <div x-show="showOlder" x-cloak x-collapse class="mt-4 pt-4 border-t border-base-300/70">
+      <div class="text-label mb-2">Older versions</div>
+      <div class="space-y-2">
+        {% for r in older_resumes %}
+        <div class="border border-base-300 rounded-lg p-3 flex items-center justify-between gap-3"
+             x-data="{ confirming: false }">
+          <div class="min-w-0 flex-1">
+            <div class="font-medium text-sm truncate">{{ r.filename }}</div>
+            <div class="text-xs text-body-muted mt-0.5">
+              {{ r.source_format or '?' }} · {{ r.uploaded_at | humanize }}
             </div>
-          {% elif s.lines %}
-            <div class="space-y-1.5">
-              {% for ln in s.lines %}
-              {% if ln.bold %}
-              <div class="text-base font-bold text-base-content mt-4 first:mt-0 break-words">
-                {{ ln.text }}
-              </div>
-              {% else %}
-              <div class="text-sm text-base-content/90 pl-5 -indent-3 break-words">
-                <span class="text-base-content/50 mr-2">•</span>{{ ln.text }}
-              </div>
-              {% endif %}
-              {% endfor %}
+          </div>
+          <div class="shrink-0 flex items-center gap-1">
+            <a href="/profile/resume/{{ r.id }}/download"
+               class="text-xs text-body-muted hover:text-base-content px-2 py-1">Download</a>
+            <button hx-post="/profile/resume/{{ r.id }}/switch"
+                    hx-swap="none"
+                    class="text-xs text-primary hover:underline px-2 py-1 cursor-pointer">Use this</button>
+            <button x-show="!confirming" @click="confirming = true"
+                    class="text-xs text-body-muted hover:text-error px-2 py-1 cursor-pointer">Delete</button>
+            <div x-show="confirming" x-cloak class="inline-flex items-center gap-1">
+              <button hx-post="/profile/resume/{{ r.id }}/delete"
+                      hx-swap="none"
+                      class="btn btn-xs pill-danger cursor-pointer">Yes</button>
+              <button @click="confirming = false"
+                      class="text-xs text-body-muted hover:text-base-content cursor-pointer">Cancel</button>
             </div>
-          {% else %}
-            <div class="text-sm text-body-muted italic">(empty)</div>
-          {% endif %}
+          </div>
         </div>
         {% endfor %}
-      {% else %}
-        <div class="text-sm text-body-muted italic">
-          No sections detected. Try re-uploading as DOCX for cleaner parsing.
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ═══════ SUB-TABS ═══════ #}
+  <div role="tablist" class="tabs tabs-boxed w-fit">
+    <button type="button" role="tab" class="tab" :class="subtab === 'profile' ? 'tab-active' : ''" @click="subtab = 'profile'">{{ _('profile.subtab.profile') }}</button>
+    <button type="button" role="tab" class="tab" :class="subtab === 'market' ? 'tab-active' : ''" @click="subtab = 'market'">{{ _('profile.subtab.market') }}</button>
+  </div>
+
+  {# ═══════ TAB — My Profile & Skills ═══════ #}
+  <div x-show="subtab === 'profile'" class="space-y-6">
+
+    {# ── Inline ATS report + recommendations (REQ-021).
+         Replaces the old modal. The header owns the big score; this card
+         owns the ACTIONS: top-3 fixes inline, the rest folded in-place
+         (never a new layer), passed checks collapsed. Density guard: the
+         card never grows unbounded regardless of issue count. ── #}
+    {% if ats_report %}
+    {% set criticals = ats_report.issues | selectattr("severity", "equalto", "critical") | list %}
+    {% set warnings = ats_report.issues | selectattr("severity", "equalto", "warning") | list %}
+    {% set infos = ats_report.issues | selectattr("severity", "equalto", "info") | list %}
+    {# Fixes ordered by severity so the 3 shown inline are the ones that matter most. #}
+    {% set fixes = criticals + warnings + infos %}
+    {% set _tier = ats_tier(ats_report.score) %}
+    <section class="card-quiet" x-data="{ showAllFixes: false }">
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="text-label inline-flex items-center gap-1.5">
+          <i class="ph-thin ph-gauge i-4"></i>{{ _('profile.ats.report_title') }}
         </div>
+        <div class="pill {{ _tier.pill }}">{{ _('profile.ats.' + _tier.label_key) }}</div>
+      </div>
+
+      {% if fixes %}
+      <div class="mt-4 space-y-2">
+        {% for issue in fixes %}
+        <div x-show="showAllFixes || {{ loop.index0 }} < 3"{% if loop.index0 >= 3 %} x-cloak{% endif %}
+             class="rounded-lg p-3 text-sm border"
+             {% if issue.severity == 'critical' %}style="background: oklch(var(--er) / 0.06); border-color: oklch(var(--er) / 0.25);"
+             {% elif issue.severity == 'warning' %}style="background: oklch(var(--wa) / 0.08); border-color: oklch(var(--wa) / 0.30);"
+             {% else %}style="border-color: oklch(var(--b3));"{% endif %}>
+          <div class="flex items-start gap-2">
+            {% if issue.severity == 'critical' %}
+            <i class="ph-thin ph-warning-octagon i-4 mt-0.5 shrink-0" style="color: oklch(var(--er));"></i>
+            {% elif issue.severity == 'warning' %}
+            <i class="ph-thin ph-warning i-4 mt-0.5 shrink-0" style="color: oklch(var(--wa) / 0.85);"></i>
+            {% else %}
+            <i class="ph-thin ph-lightbulb i-4 mt-0.5 shrink-0 text-base-content/45"></i>
+            {% endif %}
+            <div class="min-w-0">
+              <div class="font-medium">{{ issue.message }}</div>
+              <div class="text-body-muted text-xs mt-1">{{ _('profile.ats.fix_prefix') }}: {{ issue.fix }}</div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if fixes|length > 3 %}
+      <button @click="showAllFixes = !showAllFixes"
+              class="text-xs text-primary hover:underline mt-3 cursor-pointer inline-flex items-center gap-1">
+        <span x-show="!showAllFixes">{{ _('profile.ats.more_fixes', n=fixes|length - 3) }}</span>
+        <span x-show="showAllFixes" x-cloak>{{ _('profile.ats.show_less') }}</span>
+        <i class="ph-thin i-3" :class="showAllFixes ? 'ph-caret-up' : 'ph-caret-down'"></i>
+      </button>
       {% endif %}
-    </div>
-  </section>
-  {% endif %}
+      {% else %}
+      <p class="text-sm text-body-muted mt-3 inline-flex items-center gap-1.5">
+        <i class="ph-thin ph-check-circle i-4" style="color: oklch(var(--su));"></i>{{ _('profile.ats.all_clear') }}
+      </p>
+      {% endif %}
 
-  {% if current %}
+      {% if ats_report.passed %}
+      <details class="mt-4">
+        <summary class="text-label cursor-pointer select-none inline-flex items-center gap-1">
+          <i class="ph-thin ph-check-circle i-4" style="color: oklch(var(--su));"></i>{{ _('profile.ats.checks_passed', n=ats_report.passed|length) }}
+        </summary>
+        <ul class="mt-3 space-y-1 text-sm text-body-muted">
+          {% for check in ats_report.passed %}<li>• {{ check }}</li>{% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {# ── Parsed-section readout — the "is this how my resume looks after
+         parsing?" document view. Deterministic (core.resume.anomalies),
+         no LLM. Structured Summary/Experience/Skills modules are a later
+         REQ (blocked on parse quality). ── #}
+    {% if preview_report %}
+    <section class="card-quiet">
+      <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <div class="text-label">{{ _('profile.subtab.resume') }}</div>
+        <div class="flex items-center gap-2">
+          <div id="regen-status" class="text-xs text-error"></div>
+          {# Regenerate cleanly — LLM re-parse pass. Fires an HX-Refresh on success
+             so this tab + ATS re-render on the fixed parse (page reopens here via
+             just_regenerated); on error, HTML lands in #regen-status. #}
+          <button type="button"
+                  hx-post="/profile/resume/{{ current.id }}/regenerate"
+                  hx-target="#regen-status"
+                  hx-swap="innerHTML"
+                  hx-indicator="#regen-spin"
+                  hx-disabled-elt="this"
+                  class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content inline-flex items-center gap-1.5">
+            <span id="regen-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+            <i class="ph-thin ph-sparkle i-4"></i>Regenerate cleanly
+          </button>
+        </div>
+      </div>
+
+      <div class="mb-5 text-sm">
+        {% if preview_report.anomaly_count == 0 %}
+          <span class="inline-flex items-center gap-1.5">
+            <i class="ph-thin ph-check-circle i-4" style="color: oklch(var(--su));"></i>
+            {{ _('profile.resume.looks_clean') }}
+          </span>
+        {% else %}
+          <span class="inline-flex items-center gap-1.5 text-warning">
+            <i class="ph-thin ph-warning i-4"></i>{{ preview_report.banner }}
+          </span>
+        {% endif %}
+      </div>
+
+      <div class="space-y-8">
+        {% if preview_report.sections %}
+          {% for s in preview_report.sections %}
+          <div>
+            <h3 class="text-lg font-bold text-base-content uppercase tracking-wide pb-1 mb-3 border-b border-base-300">{{ s.title }}</h3>
+            {% if s.groups %}
+              <div class="space-y-2.5">
+                {% for g in s.groups %}
+                <div>
+                  {% if g.label %}
+                  <div class="text-sm font-semibold text-base-content mb-1">{{ g.label }}</div>
+                  {% endif %}
+                  <div class="flex flex-wrap gap-1">
+                    {% for tok in g.tokens %}
+                    <span class="chip chip-neutral">{{ tok }}</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            {% elif s.lines %}
+              <div class="space-y-1.5">
+                {% for ln in s.lines %}
+                {% if ln.bold %}
+                <div class="text-base font-bold text-base-content mt-4 first:mt-0 break-words">
+                  {{ ln.text }}
+                </div>
+                {% else %}
+                <div class="text-sm text-base-content/90 pl-5 -indent-3 break-words">
+                  <span class="text-base-content/50 mr-2">•</span>{{ ln.text }}
+                </div>
+                {% endif %}
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="text-sm text-body-muted italic">(empty)</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-sm text-body-muted italic">
+            No sections detected. Try re-uploading as DOCX for cleaner parsing.
+          </div>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+
     {% include "partials/contact_verify.html" %}
-  {% endif %}
 
-  {# ═════════ Danger zone ═════════
-     Two destructive actions moved here from Journey per user request
-     (2026-08-20). Both use typed-confirmation modals — clicking a
-     button opens a modal, user types the phrase, submit is disabled
-     until phrase matches. Server ALSO validates the phrase — the
-     modal is not the only defense. #}
-  {# Language-aware placeholder text for the typed-confirmation
-     modals. Server accepts both EN + ES phrases; the modal just
-     shows the one that matches the user's current UI language. #}
-  {% set _lang = current_ui_language() %}
-  {% set _delete_phrase = 'borrartodo' if _lang == 'es' else 'delete all' %}
-  {% set _reset_phrase = 'reiniciar' if _lang == 'es' else 'reset stats' %}
-  {# Phrase lists injected from the server (ui_web/deps.py) so client-
-     side check + server-side check share ONE source. Adding a new
-     accepted phrase means editing deps.py only. #}
-  {% set _delete_phrases_json = DANGER_DELETE_PHRASES | list | tojson %}
-  {% set _reset_phrases_json = DANGER_RESET_PHRASES | list | tojson %}
-  {# x-data attribute MUST be single-quoted: tojson emits double-quoted
-     JSON strings, and embedding them in a double-quoted attribute would
-     close the attribute on the first inner ". Keep string literals
-     inside this block double-quoted for the same reason. #}
-  <section class="card-quiet mt-6"
-           x-data='{
-             deleteAllModal: false,
-             resetStatsModal: false,
-             deleteAllPhrase: "",
-             resetStatsPhrase: "",
-             DELETE_PHRASES: {{ _delete_phrases_json }},
-             RESET_PHRASES: {{ _reset_phrases_json }},
-             deleteAllOk() {
-               return this.DELETE_PHRASES.includes(this.deleteAllPhrase.trim().toLowerCase());
-             },
-             resetStatsOk() {
-               return this.RESET_PHRASES.includes(this.resetStatsPhrase.trim().toLowerCase());
-             },
-           }'>
-    <div class="text-label mb-2 inline-flex items-center gap-1.5">
-      <i class="ph-thin ph-warning-circle i-4" style="color: oklch(var(--er) / 0.8);"></i>
-      {{ _('profile.danger.title') }}
-    </div>
-    <p class="text-sm text-body-muted mb-4">
-      {{ _('profile.danger.subtitle') }}
-    </p>
-
-    <div class="flex flex-wrap gap-3">
-      <button type="button" @click="resetStatsModal = true; resetStatsPhrase = ''"
-              class="btn btn-sm btn-outline cursor-pointer">
-        <i class="ph-thin ph-arrow-counter-clockwise i-4"></i>{{ _('profile.danger.reset_stats') }}
-      </button>
-      <button type="button" @click="deleteAllModal = true; deleteAllPhrase = ''"
-              class="btn btn-sm cursor-pointer"
-              style="background: oklch(var(--er)); color: oklch(var(--erc)); border-color: oklch(var(--er));">
-        <i class="ph-thin ph-trash i-4"></i>{{ _('profile.danger.delete_all') }}
-      </button>
-    </div>
-
-    {# ── Reset-stats modal ── #}
-    <div x-show="resetStatsModal" x-cloak
-         @keydown.escape.window="resetStatsModal = false"
-         class="fixed inset-0 z-[120] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/40" @click="resetStatsModal = false"></div>
-      <div class="relative bg-base-100 rounded-xl shadow-2xl w-full max-w-md p-5"
-           style="border: 1px solid oklch(var(--b3));">
-        <div class="text-title mb-1">{{ _('profile.danger.reset_stats') }}</div>
-        <p class="text-sm text-body-muted mb-4">
-          {{ _('profile.danger.reset_stats.explainer') }}
-        </p>
-        <label class="block text-sm mb-1">{{ _('profile.danger.type_to_confirm', phrase=_reset_phrase) | safe }}</label>
-        <input id="reset-stats-input"
-               type="text" x-model="resetStatsPhrase"
-               autocomplete="off"
-               class="input input-bordered input-sm w-full font-mono"
-               placeholder="{{ _reset_phrase }}">
-        <div id="reset-stats-result" class="text-sm mt-2"></div>
-        <div class="flex items-center gap-2 mt-4">
-          <button type="button"
-                  hx-post="/profile/data/reset-stats"
-                  hx-vals='js:{confirmation: document.getElementById("reset-stats-input").value}'
-                  hx-target="#reset-stats-result"
-                  hx-swap="innerHTML"
-                  :disabled="!resetStatsOk()"
-                  class="btn btn-sm btn-primary cursor-pointer"
-                  :class="!resetStatsOk() ? 'opacity-40 cursor-not-allowed' : ''">
-            {{ _('profile.danger.confirm_reset') }}
-          </button>
-          <button type="button" @click="resetStatsModal = false"
-                  class="btn btn-sm btn-ghost cursor-pointer">
-            {{ _('action.cancel') }}
-          </button>
-        </div>
+    {# ═════════ Danger zone ═════════
+       Two destructive actions (2026-08-20 user request). Both use typed-
+       confirmation modals — server ALSO validates the phrase, the modal is
+       not the only defense. #}
+    {% set _lang = current_ui_language() %}
+    {% set _delete_phrase = 'borrartodo' if _lang == 'es' else 'delete all' %}
+    {% set _reset_phrase = 'reiniciar' if _lang == 'es' else 'reset stats' %}
+    {% set _delete_phrases_json = DANGER_DELETE_PHRASES | list | tojson %}
+    {% set _reset_phrases_json = DANGER_RESET_PHRASES | list | tojson %}
+    {# x-data attribute MUST be single-quoted: tojson emits double-quoted
+       JSON strings; a double-quoted attribute would close on the first inner
+       ". Keep string literals inside this block double-quoted for the same
+       reason. #}
+    <section class="card-quiet"
+             x-data='{
+               deleteAllModal: false,
+               resetStatsModal: false,
+               deleteAllPhrase: "",
+               resetStatsPhrase: "",
+               DELETE_PHRASES: {{ _delete_phrases_json }},
+               RESET_PHRASES: {{ _reset_phrases_json }},
+               deleteAllOk() {
+                 return this.DELETE_PHRASES.includes(this.deleteAllPhrase.trim().toLowerCase());
+               },
+               resetStatsOk() {
+                 return this.RESET_PHRASES.includes(this.resetStatsPhrase.trim().toLowerCase());
+               },
+             }'>
+      <div class="text-label mb-2 inline-flex items-center gap-1.5">
+        <i class="ph-thin ph-warning-circle i-4" style="color: oklch(var(--er) / 0.8);"></i>
+        {{ _('profile.danger.title') }}
       </div>
-    </div>
+      <p class="text-sm text-body-muted mb-4">
+        {{ _('profile.danger.subtitle') }}
+      </p>
 
-    {# ── Delete-all modal ── #}
-    <div x-show="deleteAllModal" x-cloak
-         @keydown.escape.window="deleteAllModal = false"
-         class="fixed inset-0 z-[120] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/40" @click="deleteAllModal = false"></div>
-      <div class="relative bg-base-100 rounded-xl shadow-2xl w-full max-w-md p-5"
-           style="border: 1px solid oklch(var(--er) / 0.4);">
-        <div class="text-title mb-1" style="color: oklch(var(--er));">
-          {{ _('profile.danger.delete_all') }}
-        </div>
-        <p class="text-sm text-body-muted mb-4">
-          {{ _('profile.danger.delete_all.explainer') }}
-        </p>
-        <label class="block text-sm mb-1">{{ _('profile.danger.type_to_confirm', phrase=_delete_phrase) | safe }}</label>
-        <input id="delete-all-input"
-               type="text" x-model="deleteAllPhrase"
-               autocomplete="off"
-               class="input input-bordered input-sm w-full font-mono"
-               placeholder="{{ _delete_phrase }}">
-        <div id="delete-all-result" class="text-sm mt-2"></div>
-        <div class="flex items-center gap-2 mt-4">
-          <button type="button"
-                  hx-post="/profile/data/delete-all"
-                  hx-vals='js:{confirmation: document.getElementById("delete-all-input").value}'
-                  hx-target="#delete-all-result"
-                  hx-swap="innerHTML"
-                  :disabled="!deleteAllOk()"
-                  class="btn btn-sm cursor-pointer"
-                  :class="!deleteAllOk() ? 'opacity-40 cursor-not-allowed' : ''"
-                  style="background: oklch(var(--er)); color: oklch(var(--erc)); border-color: oklch(var(--er));">
-            {{ _('profile.danger.confirm_delete') }}
-          </button>
-          <button type="button" @click="deleteAllModal = false"
-                  class="btn btn-sm btn-ghost cursor-pointer">
-            {{ _('action.cancel') }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  {# Suggested queries moved to the Jobs quick-fill row — that's where
-     the user starts a search, so having them one row above the search
-     input is the natural spot. Endpoints preserved for the Shuffle
-     button in Jobs. #}
-
-  {# Saved searches CRUD lives on the Jobs quick-fill row now — you save
-     one when you love a Broad search result. The DB table + endpoints stay
-     wired so Jobs still consumes them; Profile just stops managing them. #}
-
-  </div> {# ═══ end TAB 2 — Parsed Resume & Details ═══ #}
-
-  {# ═════════ ATS report modal ═════════
-     Shown when user clicks "See report →" on the Current resume card.
-     Backdrop click OR Escape closes it. Content: all critical / warning /
-     info issues + passed checks. Same data the earlier version showed
-     as an inline card, just moved into a focused modal so the hero row
-     stays compact. #}
-  {% if ats_report %}
-  <div x-show="atsModal" x-cloak
-       x-transition:enter="transition ease-out duration-200"
-       x-transition:enter-start="opacity-0"
-       x-transition:enter-end="opacity-100"
-       x-transition:leave="transition ease-in duration-150"
-       x-transition:leave-start="opacity-100"
-       x-transition:leave-end="opacity-0"
-       class="modal-scrim"
-       @click.self="atsModal = false">
-    <div class="modal-panel"
-         x-transition:enter="transition ease-out duration-250"
-         x-transition:enter-start="opacity-0 scale-97"
-         x-transition:enter-end="opacity-100 scale-100">
-      <div class="modal-panel__header">
-        <div>
-          <div class="text-label">ATS report</div>
-          <h2 class="text-title mt-1 truncate max-w-md">{{ current.filename if current else 'Resume' }}</h2>
-        </div>
-        <button @click="atsModal = false"
-                class="text-body-muted hover:text-base-content cursor-pointer"
-                aria-label="Close">
-          <i class="ph-thin ph-x i-5"></i>
+      <div class="flex flex-wrap gap-3">
+        <button type="button" @click="resetStatsModal = true; resetStatsPhrase = ''"
+                class="btn btn-sm btn-outline cursor-pointer">
+          <i class="ph-thin ph-arrow-counter-clockwise i-4"></i>{{ _('profile.danger.reset_stats') }}
+        </button>
+        <button type="button" @click="deleteAllModal = true; deleteAllPhrase = ''"
+                class="btn btn-sm cursor-pointer"
+                style="background: oklch(var(--er)); color: oklch(var(--erc)); border-color: oklch(var(--er));">
+          <i class="ph-thin ph-trash i-4"></i>{{ _('profile.danger.delete_all') }}
         </button>
       </div>
 
-      <div class="modal-panel__body space-y-5">
-        {# Score summary at the top of the modal #}
-        <div class="flex items-baseline gap-2">
-          {% set _tier = ats_tier(ats_report.score) %}
-          <span style="font-size: 2.75rem; font-weight: 700; letter-spacing: -0.03em; color: {{ _tier.color }}; font-variant-numeric: tabular-nums; line-height: 1;">{{ ats_report.score }}</span>
-          <span class="text-lg font-medium text-base-content/30">/ 100</span>
-          <div class="pill {{ _tier.pill }} ml-3 self-center">{{ _('profile.ats.' + _tier.label_key) }}</div>
-        </div>
-
-        {% set criticals = ats_report.issues | selectattr("severity", "equalto", "critical") | list %}
-        {% set warnings = ats_report.issues | selectattr("severity", "equalto", "warning") | list %}
-        {% set infos = ats_report.issues | selectattr("severity", "equalto", "info") | list %}
-
-        {% if criticals %}
-        <div>
-          <div class="text-label mb-2 inline-flex items-center gap-1" style="color: oklch(var(--er));">
-            <i class="ph-thin ph-warning-octagon i-4"></i>{{ criticals|length }} critical
-          </div>
-          <div class="space-y-2">
-            {% for issue in criticals %}
-            <div class="rounded-lg p-3 text-sm" style="background: oklch(var(--er) / 0.06); border: 1px solid oklch(var(--er) / 0.25);">
-              <div class="font-medium">{{ issue.message }}</div>
-              <div class="text-body-muted text-xs mt-1">Fix: {{ issue.fix }}</div>
-            </div>
-            {% endfor %}
-          </div>
-        </div>
-        {% endif %}
-
-        {% if warnings %}
-        <div>
-          <div class="text-label mb-2 inline-flex items-center gap-1" style="color: oklch(var(--wa) / 0.85);">
-            <i class="ph-thin ph-warning i-4"></i>{{ warnings|length }} warning{{ 's' if warnings|length > 1 }}
-          </div>
-          <div class="space-y-2">
-            {% for issue in warnings %}
-            <div class="rounded-lg p-3 text-sm" style="background: oklch(var(--wa) / 0.08); border: 1px solid oklch(var(--wa) / 0.30);">
-              <div class="font-medium">{{ issue.message }}</div>
-              <div class="text-body-muted text-xs mt-1">Fix: {{ issue.fix }}</div>
-            </div>
-            {% endfor %}
+      {# ── Reset-stats modal ── #}
+      <div x-show="resetStatsModal" x-cloak
+           @keydown.escape.window="resetStatsModal = false"
+           class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40" @click="resetStatsModal = false"></div>
+        <div class="relative bg-base-100 rounded-xl shadow-2xl w-full max-w-md p-5"
+             style="border: 1px solid oklch(var(--b3));">
+          <div class="text-title mb-1">{{ _('profile.danger.reset_stats') }}</div>
+          <p class="text-sm text-body-muted mb-4">
+            {{ _('profile.danger.reset_stats.explainer') }}
+          </p>
+          <label class="block text-sm mb-1">{{ _('profile.danger.type_to_confirm', phrase=_reset_phrase) | safe }}</label>
+          <input id="reset-stats-input"
+                 type="text" x-model="resetStatsPhrase"
+                 autocomplete="off"
+                 class="input input-bordered input-sm w-full font-mono"
+                 placeholder="{{ _reset_phrase }}">
+          <div id="reset-stats-result" class="text-sm mt-2"></div>
+          <div class="flex items-center gap-2 mt-4">
+            <button type="button"
+                    hx-post="/profile/data/reset-stats"
+                    hx-vals='js:{confirmation: document.getElementById("reset-stats-input").value}'
+                    hx-target="#reset-stats-result"
+                    hx-swap="innerHTML"
+                    :disabled="!resetStatsOk()"
+                    class="btn btn-sm btn-primary cursor-pointer"
+                    :class="!resetStatsOk() ? 'opacity-40 cursor-not-allowed' : ''">
+              {{ _('profile.danger.confirm_reset') }}
+            </button>
+            <button type="button" @click="resetStatsModal = false"
+                    class="btn btn-sm btn-ghost cursor-pointer">
+              {{ _('action.cancel') }}
+            </button>
           </div>
         </div>
-        {% endif %}
-
-        {% if infos %}
-        <details>
-          <summary class="text-label cursor-pointer select-none inline-flex items-center gap-1">
-            <i class="ph-thin ph-lightbulb i-4"></i>{{ infos|length }} nice-to-have
-          </summary>
-          <div class="space-y-2 mt-3">
-            {% for issue in infos %}
-            <div class="rounded-lg p-3 text-sm border border-base-300">
-              <div>{{ issue.message }}</div>
-              <div class="text-body-muted text-xs mt-1">Fix: {{ issue.fix }}</div>
-            </div>
-            {% endfor %}
-          </div>
-        </details>
-        {% endif %}
-
-        {% if ats_report.passed %}
-        <details>
-          <summary class="text-label cursor-pointer select-none inline-flex items-center gap-1">
-            <i class="ph-thin ph-check-circle i-4" style="color: oklch(var(--su));"></i>{{ ats_report.passed|length }} check{{ 's' if ats_report.passed|length > 1 }} passed
-          </summary>
-          <ul class="mt-3 space-y-1 text-sm text-body-muted">
-            {% for check in ats_report.passed %}<li>• {{ check }}</li>{% endfor %}
-          </ul>
-        </details>
-        {% endif %}
       </div>
-    </div>
+
+      {# ── Delete-all modal ── #}
+      <div x-show="deleteAllModal" x-cloak
+           @keydown.escape.window="deleteAllModal = false"
+           class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40" @click="deleteAllModal = false"></div>
+        <div class="relative bg-base-100 rounded-xl shadow-2xl w-full max-w-md p-5"
+             style="border: 1px solid oklch(var(--er) / 0.4);">
+          <div class="text-title mb-1" style="color: oklch(var(--er));">
+            {{ _('profile.danger.delete_all') }}
+          </div>
+          <p class="text-sm text-body-muted mb-4">
+            {{ _('profile.danger.delete_all.explainer') }}
+          </p>
+          <label class="block text-sm mb-1">{{ _('profile.danger.type_to_confirm', phrase=_delete_phrase) | safe }}</label>
+          <input id="delete-all-input"
+                 type="text" x-model="deleteAllPhrase"
+                 autocomplete="off"
+                 class="input input-bordered input-sm w-full font-mono"
+                 placeholder="{{ _delete_phrase }}">
+          <div id="delete-all-result" class="text-sm mt-2"></div>
+          <div class="flex items-center gap-2 mt-4">
+            <button type="button"
+                    hx-post="/profile/data/delete-all"
+                    hx-vals='js:{confirmation: document.getElementById("delete-all-input").value}'
+                    hx-target="#delete-all-result"
+                    hx-swap="innerHTML"
+                    :disabled="!deleteAllOk()"
+                    class="btn btn-sm cursor-pointer"
+                    :class="!deleteAllOk() ? 'opacity-40 cursor-not-allowed' : ''"
+                    style="background: oklch(var(--er)); color: oklch(var(--erc)); border-color: oklch(var(--er));">
+              {{ _('profile.danger.confirm_delete') }}
+            </button>
+            <button type="button" @click="deleteAllModal = false"
+                    class="btn btn-sm btn-ghost cursor-pointer">
+              {{ _('action.cancel') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div> {# ═══ end TAB — My Profile & Skills ═══ #}
+
+  {# ═══════ TAB — Market Fit & Gaps ═══════
+     Gap map (REQ-019 / ADR-022): the candidate's REAL gaps across ALL scored
+     jobs, ranked by how many roles each blocks. Lazy — computed on load from
+     cached scores + a JD-free classification call; silently empty until some
+     jobs are scored or if the call is unavailable. Engine unchanged (REQ-020). #}
+  <div x-show="subtab === 'market'" x-cloak class="space-y-6">
+    <section class="card-quiet" id="gap-map"
+             hx-get="/profile/gap-map" hx-trigger="load" hx-swap="innerHTML"></section>
   </div>
-  {% endif %}
+
+{% else %}
+
+  {# ═══════ No résumé yet — this card IS the upload CTA ═══════ #}
+  <section class="card-quiet">
+    <div class="text-label">No resume yet</div>
+    <h2 class="text-title mt-1">Upload your resume to start</h2>
+    <p class="text-sm text-body-muted mt-2">DOCX or PDF. Stays on your Mac.</p>
+    <form hx-post="/profile/resume/upload"
+          hx-encoding="multipart/form-data"
+          hx-target="#upload-status"
+          hx-swap="innerHTML"
+          hx-indicator="#upload-spin"
+          class="mt-4">
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+        <input type="file" name="file" accept=".docx,.pdf" required
+               class="file-input file-input-bordered file-input-sm w-full sm:flex-1">
+        <button type="submit" class="btn btn-primary btn-sm whitespace-nowrap">
+          <span id="upload-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+          Upload
+        </button>
+      </div>
+      <div id="upload-status" class="mt-2 min-h-[1.25rem]"></div>
+    </form>
+  </section>
+
+{% endif %}
 
 </div>
 
