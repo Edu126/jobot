@@ -369,16 +369,16 @@ html, body {
    color. Reveals a subtle pulse (once per session, after 10 min) to
    draw the eye when the user hasn't clicked it. */
 .feedback-fab {
-  /* TOP-LEFT sticky FAB with visible "Feedback" label. History: right →
-     bottom-left (2026-08-21) → top-left (2026-09-02, user: bottom-left covered
-     the gap-map pills). Sits just BELOW the h-16 sticky header so it clears the
-     "Jobot v2" logo (FAB z-60 > header z-30). Pill shape + text = obvious
-     affordance; z-index: 60 puts it above sticky headers but below dialogs. */
+  /* BOTTOM-LEFT icon-only FAB. History: right → bottom-left (2026-08-21) →
+     top-left (2026-09-02, covered gap-map pills) → bottom-left icon-only
+     (2026-09-03, top-left grazed the "Profile" title; a small corner icon
+     clears both the pills and the H1). z-index: 60 sits above sticky headers
+     but below dialogs. */
   position: fixed;
-  top: calc(4rem + 0.75rem);
+  bottom: calc(1.25rem + env(safe-area-inset-bottom));
   left: 1.25rem;
   z-index: 60;
-  padding: 0.65rem 1.1rem;
+  padding: 0.7rem;
   border-radius: 999px;
   background: oklch(var(--p));
   color: oklch(var(--pc));
@@ -410,18 +410,9 @@ html, body {
   line-height: 1;
 }
 .feedback-fab__label {
-  line-height: 1;
-}
-/* On very narrow screens, drop the text and go icon-only pill.
-   Bumped from a fixed circle to a rounded square so hit target
-   stays big. */
-@media (max-width: 480px) {
-  .feedback-fab {
-    padding: 0.7rem 0.75rem;
-  }
-  .feedback-fab__label {
-    display: none;
-  }
+  /* Icon-only FAB (2026-09-03) — the text label is always hidden now; the
+     chat-dots glyph + aria-label/title carry the affordance. */
+  display: none;
 }
 .feedback-fab--pulse {
   animation: feedback-pulse 1.4s ease-out 3;
