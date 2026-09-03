@@ -1829,6 +1829,59 @@ def save_company_outlook(
     return True
 
 
+def get_prep_kit(
+    prep_session_id: int,
+    lang: str,
+    prompt_version: str,
+    path: Path = DB_PATH,
+) -> Optional[dict]:
+    """Cached kit blob for a prep session (REQ-023 / ADR-028), or None on a
+    miss. Read-only cache keyed (session, lang, prompt_version) — no user-edit
+    layer (copy-first). Returns {kit: {...}, model, created_at}."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT kit_json, model, created_at FROM prep_kits
+               WHERE prep_session_id = ? AND lang = ? AND prompt_version = ?""",
+            (prep_session_id, lang, prompt_version),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        kit = json.loads(row["kit_json"])
+    except (TypeError, ValueError):
+        return None
+    return {
+        "kit": kit if isinstance(kit, dict) else {},
+        "model": row["model"] or "",
+        "created_at": row["created_at"],
+    }
+
+
+def save_prep_kit(
+    prep_session_id: int,
+    lang: str,
+    prompt_version: str,
+    kit: dict,
+    model: str = "",
+    path: Path = DB_PATH,
+) -> bool:
+    """Upsert one kit blob for a session/lang under the current prompt version."""
+    now = _now()
+    with tx(path) as conn:
+        conn.execute(
+            """INSERT INTO prep_kits (
+                prep_session_id, lang, prompt_version, kit_json, model, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(prep_session_id, lang, prompt_version) DO UPDATE SET
+                kit_json = excluded.kit_json,
+                model = excluded.model,
+                created_at = excluded.created_at""",
+            (prep_session_id, lang, prompt_version,
+             json.dumps(kit, ensure_ascii=False), model, now),
+        )
+    return True
+
+
 def scored_jobs_for_resume(
     resume_id: int,
     lang: str,
