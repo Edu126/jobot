@@ -47,6 +47,7 @@ VALID_KINDS = ("wording", "real")
 PILLARS = ("technical", "certifications", "domain")
 DEFAULT_PILLAR = "domain"   # where an unknown/ambiguous category lands (ADR-023)
 TOP_PER_PILLAR = 5
+TOP_N_CLOSEST = 3           # jobs in the "Top 3 Closest Roles" lens (ADR-025)
 
 
 @dataclass
@@ -61,27 +62,59 @@ class GapCluster:
         return asdict(self)
 
 
+def scored_jobs(resume_id: int, lang: str | None = None) -> list[dict]:
+    """The résumé's scored jobs ranked by fit score desc — {job_id, title,
+    company, score} (ADR-025). Powers the Job-specific dropdown + Top-3 lens.
+    Keeps the scoring-version constants in this module, not the route."""
+    lang = ss._resolve_lang(lang)
+    return db.scored_jobs_for_resume(resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION)
+
+
+def _scope_job_ids(resume_id: int, lang: str, scope: tuple) -> set[str] | None:
+    """Resolve a context lens (ADR-025) to the set of job_ids that feed the
+    counts. None = all scored jobs (no filter). ("top3",) → the 3 highest-scored;
+    ("job", job_id) → that one job; anything else → all."""
+    kind = scope[0] if scope else "all"
+    if kind == "job":
+        jid = scope[1] if len(scope) > 1 else ""
+        return {jid} if jid else set()
+    if kind == "top3":
+        jobs = db.scored_jobs_for_resume(
+            resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION,
+        )
+        return {j["job_id"] for j in jobs[:TOP_N_CLOSEST]}
+    return None   # "all"
+
+
 def build_gap_map(
     resume_id: int,
     resume_text: str,
     client: GeminiClient | None,
     *,
     lang: str | None = None,
+    scope: tuple = ("all",),
 ) -> dict[str, list[GapCluster]]:
     """Return the candidate's REAL gaps bucketed into the 3 pillars, each pillar
     ranked by cluster frequency and capped at TOP_PER_PILLAR. Empty pillars when
-    nothing's scored or the résumé is text-less. `client` may be None (no API
-    key) — then we render from cached classifications only and never classify new
-    gaps. Gaps we can't classify (no client / quota out) still appear, honestly,
-    as real with no suggestion (own cluster, domain pillar) — never dropped or
-    faked. Dismissed clusters (ADR-024) are filtered out."""
+    nothing's scored or the résumé is text-less. `scope` (ADR-025) narrows which
+    scored jobs feed the counts — ("all",) / ("top3",) / ("job", job_id); the
+    per-gap classifications are scope-independent and reused, so switching lens
+    costs no LLM call. `client` may be None (no API key) — then we render from
+    cached classifications only and never classify new gaps. Gaps we can't
+    classify (no client / quota out) still appear, honestly, as real with no
+    suggestion (own cluster, domain pillar) — never dropped or faked. Dismissed
+    clusters (ADR-024) are filtered out."""
     empty: dict[str, list[GapCluster]] = {p: [] for p in PILLARS}
     if not resume_text.strip():
         return empty
     lang = ss._resolve_lang(lang)
 
+    job_ids = _scope_job_ids(resume_id, lang, scope)
+    if job_ids is not None and not job_ids:
+        return empty   # a job/top3 lens that resolved to no jobs
+
     counts = db.gap_counts_for_resume(
-        resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION,
+        resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION, job_ids=job_ids,
     )
     if not counts:
         return empty

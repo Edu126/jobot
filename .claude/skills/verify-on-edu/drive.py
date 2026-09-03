@@ -52,6 +52,32 @@ with sync_playwright() as p:
     overflow = page.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
     check("no_horizontal_scroll", overflow <= 1, f"overflow={overflow}px")
 
+    # Context lenses (REQ-020 Phase 2): All / Top 3 / Job-specific live INSIDE
+    # #gap-map (the profile sub-tabs are outside it).
+    def gap_canons() -> set[str]:
+        return {t.strip() for t in page.locator("#gap-map .group .font-medium").all_inner_texts()}
+
+    ctx_tabs = page.locator("#gap-map [role=tab]")
+    check("context_tabs_present", ctx_tabs.count() == 3, f"{ctx_tabs.count()} context tabs")
+    all_canons = gap_canons()
+
+    ctx_tabs.nth(1).click()   # Top 3 Closest
+    page.wait_for_selector("#gap-map .group", timeout=10000)
+    page.wait_for_timeout(500)
+    top3_canons = gap_canons()
+    check("top3_lens_narrows", bool(top3_canons) and top3_canons < all_canons,
+          f"all={sorted(all_canons)} top3={sorted(top3_canons)}")
+    page.screenshot(path=str(OUT / "05_top3_lens.png"), full_page=True)
+
+    page.locator("#gap-map [role=tab]").nth(2).click()   # Job Specific
+    page.wait_for_timeout(700)
+    check("job_lens_dropdown", page.locator("#gap-map select").count() == 1, "job dropdown present")
+    page.screenshot(path=str(OUT / "06_job_lens.png"), full_page=True)
+
+    page.locator("#gap-map [role=tab]").nth(0).click()   # back to All
+    page.wait_for_selector("#gap-map .group", timeout=10000)
+    page.wait_for_timeout(400)
+
     # Sub-tab switch → Parsed Resume & Details.
     page.get_by_role("tab").nth(1).click()
     page.wait_for_timeout(400)

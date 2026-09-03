@@ -11,6 +11,31 @@
 </div>
 <p class="text-sm text-body-muted mb-3">{{ _('profile.gap_map.subtitle') }}</p>
 
+{# Context lens (REQ-020 Phase 2 / ADR-025): All / Top 3 Closest / Job-specific.
+   Each control re-fetches THIS fragment into #gap-map with the new lens — the
+   tabs + dropdown come back re-rendered with the active state from the server.
+   Classifications are reused across lenses (no LLM cost). #}
+<div class="flex flex-wrap items-center gap-2 mb-3" hx-indicator="#gap-map-spin">
+  <div role="tablist" class="tabs tabs-boxed tabs-sm">
+    <button type="button" role="tab" class="tab {{ 'tab-active' if context == 'all' else '' }}"
+            hx-get="/profile/gap-map?context=all" hx-target="#gap-map" hx-swap="innerHTML">{{ _('profile.gap_map.ctx.all') }}</button>
+    <button type="button" role="tab" class="tab {{ 'tab-active' if context == 'top3' else '' }}"
+            hx-get="/profile/gap-map?context=top3" hx-target="#gap-map" hx-swap="innerHTML">{{ _('profile.gap_map.ctx.top3') }}</button>
+    <button type="button" role="tab" class="tab {{ 'tab-active' if context == 'job' else '' }}"
+            hx-get="/profile/gap-map?context=job" hx-target="#gap-map" hx-swap="innerHTML">{{ _('profile.gap_map.ctx.job') }}</button>
+  </div>
+  {% if context == 'job' %}
+  <select class="select select-bordered select-sm max-w-xs"
+          name="job_id" hx-get="/profile/gap-map" hx-vals='{"context": "job"}'
+          hx-target="#gap-map" hx-swap="innerHTML" hx-trigger="change">
+    {% for j in scored_jobs %}
+    <option value="{{ j.job_id }}" {{ 'selected' if j.job_id == job_id else '' }}>{{ j.title }}{% if j.company %} — {{ j.company }}{% endif %}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+  <span id="gap-map-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+</div>
+
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
   {% for col in columns %}
   <div class="card bg-base-100 border border-base-300 shadow-sm">
@@ -43,7 +68,7 @@
                {% endif %}>
             <span class="font-medium text-sm text-base-content/90 truncate">{{ c.canonical }}</span>
             <span class="flex items-center gap-1 shrink-0">
-              <span class="chip chip-neutral">{{ count_label }}</span>
+              {% if show_counts %}<span class="chip chip-neutral">{{ count_label }}</span>{% endif %}
               <button type="button"
                       class="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-base-content/40 hover:text-error"
                       aria-label="{{ _('profile.gap_map.dismiss') }}"

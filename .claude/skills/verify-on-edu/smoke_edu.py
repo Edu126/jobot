@@ -56,13 +56,14 @@ PARSED = {
     },
 }
 
-# gaps per fixture job → drives the counts (case-insensitive distinct strings).
-JOB_GAPS = {
-    SMOKE_JOB_IDS[0]: ["Kubernetes", "Fluent French", "PMP certification", "10 years healthcare experience"],
-    SMOKE_JOB_IDS[1]: ["Kubernetes", "Bilingual French (CBC)", "Terraform", "Agile at scale"],
-    SMOKE_JOB_IDS[2]: ["Kubernetes", "Fluent French", "PMP certification", "10 years healthcare experience"],
-    SMOKE_JOB_IDS[3]: ["Terraform"],
-    SMOKE_JOB_IDS[4]: [],
+# (score, gaps) per fixture job. Distinct scores so the Top-3 lens visibly drops
+# the low-scored jobs' gaps (Terraform / Power BI / Docker live only in sj4/sj5).
+JOB_SPEC = {
+    SMOKE_JOB_IDS[0]: (92, ["Kubernetes", "Fluent French", "PMP certification"]),
+    SMOKE_JOB_IDS[1]: (85, ["Kubernetes", "Bilingual French (CBC)", "10 years healthcare experience"]),
+    SMOKE_JOB_IDS[2]: (78, ["Kubernetes", "Agile at scale"]),
+    SMOKE_JOB_IDS[3]: (40, ["Terraform", "Power BI"]),
+    SMOKE_JOB_IDS[4]: (20, ["Docker deep expertise"]),
 }
 
 # JD-free classifications (real + category + canonical) — two French variants
@@ -72,6 +73,10 @@ CLASSIFICATIONS = [
      "suggestion": "Lead with your Docker and CI/CD containerization work."},
     {"gap": "Terraform", "kind": "real", "category": "technical", "canonical": "Terraform",
      "suggestion": "Point to your CloudFormation infra-as-code exposure."},
+    {"gap": "Power BI", "kind": "real", "category": "technical", "canonical": "Power BI",
+     "suggestion": "Point to your Excel/analytics reporting; BI tooling is adjacent."},
+    {"gap": "Docker deep expertise", "kind": "real", "category": "technical", "canonical": "Docker",
+     "suggestion": "You use Docker in CI; frame the depth honestly."},
     {"gap": "Fluent French", "kind": "real", "category": "certifications", "canonical": "French proficiency",
      "suggestion": "Frame your conversational French and willingness to certify."},
     {"gap": "Bilingual French (CBC)", "kind": "real", "category": "certifications", "canonical": "French proficiency",
@@ -112,12 +117,15 @@ def seed() -> None:
     _purge_smoke_rows()
 
     rid = db.save_resume(SMOKE_FILENAME, PARSED, b"smoke", set_current=True)
+    titles = {SMOKE_JOB_IDS[0]: "Platform PM", SMOKE_JOB_IDS[1]: "Delivery Lead",
+              SMOKE_JOB_IDS[2]: "Program Manager", SMOKE_JOB_IDS[3]: "Infra PM",
+              SMOKE_JOB_IDS[4]: "DevOps PM"}
     for jid in SMOKE_JOB_IDS:
-        db.upsert_job({"id": jid, "title": "Senior PM", "company": "SmokeCo", "description": "d"})
+        db.upsert_job({"id": jid, "title": titles[jid], "company": "SmokeCo", "description": "d"})
     db.save_scores(rid, [
-        {"job_id": jid, "score": 55, "verdict": "stretch", "reasoning": "r",
-         "matched": [], "gaps": g, "model": "seed"}
-        for jid, g in JOB_GAPS.items()
+        {"job_id": jid, "score": score, "verdict": "stretch", "reasoning": "r",
+         "matched": [], "gaps": gaps, "model": "seed"}
+        for jid, (score, gaps) in JOB_SPEC.items()
     ], LANG, ss.PROMPT_VERSION, ss.SCORING_VERSION)
     db.save_gap_classifications(rid, LANG, gm.PROMPT_VERSION, CLASSIFICATIONS)
 

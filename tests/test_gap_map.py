@@ -180,6 +180,57 @@ def test_build_map_keeps_unclassified_as_real() -> None:
                     "unclassified → default pillar, no invented suggestion")
 
 
+def test_context_scopes_top3_and_job() -> None:
+    """REQ-020 Phase 2 / ADR-025: the All / Top 3 / Job-specific lenses narrow
+    which scored jobs feed the counts, reusing the same classifications."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "t.db"
+        db.init_db(db_path)
+        with _EnvDB(db_path):
+            rid = db.save_resume("cv.pdf", {"raw_text": "text"}, b"x")
+            lang = "en"
+            # scores: jA=90, jB=80, jC=70, jD=10 (jD excluded from Top 3).
+            spec = [("jA", 90, ["Kubernetes"]),
+                    ("jB", 80, ["Kubernetes", "Terraform"]),
+                    ("jC", 70, ["PMP"]),
+                    ("jD", 10, ["Docker"])]
+            for jid, _s, _g in spec:
+                db.upsert_job({"id": jid, "title": f"Role {jid}", "company": "Co", "description": "d"})
+            db.save_scores(rid, [
+                {"job_id": jid, "score": s, "verdict": "stretch", "reasoning": "r",
+                 "matched": [], "gaps": g, "model": "m"}
+                for jid, s, g in spec
+            ], lang, ss.PROMPT_VERSION, ss.SCORING_VERSION)
+            db.save_gap_classifications(rid, lang, gm.PROMPT_VERSION, [
+                {"gap": "Kubernetes", "kind": "real", "category": "technical", "canonical": "Kubernetes", "suggestion": "s"},
+                {"gap": "Terraform", "kind": "real", "category": "technical", "canonical": "Terraform", "suggestion": "s"},
+                {"gap": "PMP", "kind": "real", "category": "certifications", "canonical": "PMP", "suggestion": "s"},
+                {"gap": "Docker", "kind": "real", "category": "technical", "canonical": "Docker", "suggestion": "s"},
+            ])
+
+            # Ranking drives Top-3 selection + the dropdown.
+            ranked = [j["job_id"] for j in gm.scored_jobs(rid, lang)]
+            _assert(ranked == ["jA", "jB", "jC", "jD"], f"ranked by score desc, got {ranked}")
+
+            def canons(pillars):
+                return {c.canonical for p in gm.PILLARS for c in pillars[p]}
+
+            all_c = canons(gm.build_gap_map(rid, "text", None, lang=lang, scope=("all",)))
+            _assert(all_c == {"Kubernetes", "Terraform", "PMP", "Docker"}, f"all lens, got {all_c}")
+
+            top3 = gm.build_gap_map(rid, "text", None, lang=lang, scope=("top3",))
+            _assert("Docker" not in canons(top3), "Top 3 excludes the lowest-scored job's gap")
+            k = [c for c in top3["technical"] if c.canonical == "Kubernetes"][0]
+            _assert(k.count == 2, f"Kubernetes counted in jA+jB within Top 3, got {k.count}")
+
+            job = gm.build_gap_map(rid, "text", None, lang=lang, scope=("job", "jD"))
+            _assert(canons(job) == {"Docker"}, f"Job-specific = that job's gaps only, got {canons(job)}")
+
+            # Unknown/empty job scope → empty (route defaults the id before calling).
+            _assert(canons(gm.build_gap_map(rid, "text", None, lang=lang, scope=("job", ""))) == set(),
+                    "blank job id → empty")
+
+
 def main() -> int:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

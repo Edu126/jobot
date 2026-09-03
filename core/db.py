@@ -1677,18 +1677,54 @@ def save_gap_enhancement(
     return True
 
 
+def scored_jobs_for_resume(
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    scoring_version: str,
+    path: Path = DB_PATH,
+) -> list[dict]:
+    """This résumé's scored jobs ranked by fit score desc (REQ-020 Phase 2 /
+    ADR-025). Each: {job_id, title, company, score}. Powers the Top-3 lens
+    (first 3 job_ids) and the Job-specific dropdown. Empty on a text-less
+    résumé."""
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return []
+        rows = conn.execute(
+            """SELECT js.job_id AS job_id, j.title AS title, j.company AS company,
+                      js.score AS score
+               FROM job_scores js JOIN jobs j ON j.id = js.job_id
+               WHERE js.resume_hash = ? AND js.lang = ?
+                     AND js.prompt_version = ? AND js.scoring_version = ?
+               ORDER BY js.score DESC, js.job_id ASC""",
+            (resume_hash, lang, prompt_version, scoring_version),
+        ).fetchall()
+    return [
+        {"job_id": r["job_id"], "title": r["title"], "company": r["company"], "score": r["score"]}
+        for r in rows
+    ]
+
+
 def gap_counts_for_resume(
     resume_id: int,
     lang: str,
     prompt_version: str,
     scoring_version: str,
     path: Path = DB_PATH,
+    *,
+    job_ids: set[str] | None = None,
 ) -> dict[str, int]:
     """Aggregate every gap across THIS résumé's scored jobs → {gap: count}
     (REQ-019 / ADR-022). Pure SQL over `job_scores.gaps_json` for the current
     résumé text + lang + scoring version — no LLM. Count = how many of the
     user's roles flag that gap (its rank in the map). Case-insensitive dedupe,
-    keeping the first-seen surface form as the display label."""
+    keeping the first-seen surface form as the display label. When `job_ids` is
+    given, only those jobs feed the count (REQ-020 Phase 2 lenses / ADR-025);
+    None = all scored jobs. An empty set yields no counts."""
+    if job_ids is not None and not job_ids:
+        return {}
     counts: dict[str, int] = {}
     canonical: dict[str, str] = {}
     with connect(path) as conn:
@@ -1696,12 +1732,14 @@ def gap_counts_for_resume(
         if not resume_hash:
             return {}
         rows = conn.execute(
-            """SELECT gaps_json FROM job_scores
+            """SELECT job_id, gaps_json FROM job_scores
                WHERE resume_hash = ? AND lang = ?
                      AND prompt_version = ? AND scoring_version = ?""",
             (resume_hash, lang, prompt_version, scoring_version),
         ).fetchall()
     for r in rows:
+        if job_ids is not None and r["job_id"] not in job_ids:
+            continue
         try:
             gaps = json.loads(r["gaps_json"])
         except (TypeError, ValueError):

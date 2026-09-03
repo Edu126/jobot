@@ -266,20 +266,43 @@ async def get_ai_summary(request: Request):
 
 
 @router.get("/profile/gap-map")
-async def profile_gap_map(request: Request):
-    """Lazy fragment: the aggregated gap map (REQ-019 / ADR-022) — the
-    candidate's REAL gaps across ALL scored jobs, ranked by how many roles each
-    blocks, with a defense hook. Same hx-trigger="load" pattern as ai-summary:
-    the page paints instantly, this resolves the aggregation + one JD-free
-    classification call on its own. Renders nothing when no résumé / nothing
-    scored; degrades to cached classifications (or honest 'real') without a key
-    or on quota. Never blocks the page."""
+async def profile_gap_map(request: Request, context: str = "all", job_id: str = ""):
+    """Lazy fragment: the aggregated gap map (REQ-019 / ADR-022, panel REQ-020).
+    Same hx-trigger="load" pattern as ai-summary: the page paints instantly, this
+    resolves the aggregation + one JD-free classification call on its own.
+
+    `context` is the lens (ADR-025): "all" (every scored job), "top3" (the 3
+    highest-scored), or "job" (one job via `job_id`). The context tabs + the
+    Job-specific dropdown re-fetch this fragment with the new params. We render
+    the fragment (tabs included) whenever ANYTHING is scored — even if the chosen
+    lens has no real gaps — so the switcher never disappears; only the initial
+    'nothing scored at all' case hides the whole section. Degrades to cached
+    classifications (or honest 'real') without a key or on quota. Never blocks."""
     current = db.get_current_resume()
     if not current:
         return HTMLResponse("", status_code=200)
 
     resume_id = int(current["id"])
     lang = get_reasoning_language()
+
+    # The scored jobs power the Top-3 lens + the Job-specific dropdown. Nothing
+    # scored → no gap map at all (hide the section on the initial load).
+    scored = await asyncio.to_thread(gap_map.scored_jobs, resume_id, lang)
+    if not scored:
+        return HTMLResponse("", status_code=200)
+
+    # Resolve the lens. Job-specific with an unknown/blank id defaults to the top.
+    if context not in ("all", "top3", "job"):
+        context = "all"
+    if context == "job":
+        if job_id not in {j["job_id"] for j in scored}:
+            job_id = scored[0]["job_id"]
+        scope: tuple = ("job", job_id)
+    elif context == "top3":
+        scope = ("top3",)
+    else:
+        scope = ("all",)
+
     client = None
     api_key = resolve_api_key()
     if api_key:
@@ -296,17 +319,20 @@ async def profile_gap_map(request: Request):
         resume_text=current["parsed"].get("raw_text", ""),
         client=client,
         lang=lang,
+        scope=scope,
     )
-    # Nothing real to show across any pillar → render nothing (the section hides).
-    if not any(pillars.values()):
-        return HTMLResponse("", status_code=200)
-
     columns = [
         {"key": p, "clusters": [c.to_dict() for c in pillars[p]]}
         for p in gap_map.PILLARS
     ]
     return templates.TemplateResponse(
-        request, "partials/gap_map.html", {"columns": columns},
+        request, "partials/gap_map.html", {
+            "columns": columns,
+            "context": context,
+            "job_id": job_id,
+            "scored_jobs": scored,
+            "show_counts": context != "job",
+        },
     )
 
 
