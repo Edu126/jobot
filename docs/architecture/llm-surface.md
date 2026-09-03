@@ -1,6 +1,6 @@
 # LLM Surface
 
-Last updated: 2026-09-01
+Last updated: 2026-09-03
 
 Every Gemini call in the app, in one place. If you add or remove a
 call, update this file — [ADR-008](../decisions/ADR-008-prompt-conventions.md)
@@ -41,7 +41,8 @@ for why.
 | 2 | `core/llm/rewrite.py::rewrite_resume` | Tailor button on a job card | No (per-run) | Not cached — persisted per-run in tailor state | `get_output_language()` | JSON |
 | 3 | `core/resume/ai_regenerate.py::regenerate_sections` | "Regenerate cleanly" on Profile when PDF parse looks off | No | None (one-shot fix-up) | None (structural extraction — output is section keys, not user prose) | JSON |
 | 4 | `core/jobs/from_url.py::extract_job_from_text` | "From URL" flow + manual-paste fallback | No | None (per-URL) | None (extraction — output is JD fields, not generated prose) | JSON |
-| 5 | `core/llm/company_research.py::fetch_company_context` | Tailor tab opt-in checkbox | No | None | None (English-only briefing today) | **Plain text** — GoogleSearch tool is incompatible with `response_mime_type=json` |
+| 5 | `core/llm/company_research.py::fetch_company_context` | Tailor tab opt-in checkbox **+ Prep company outlook (hop 1)** | No | Via #11's `company_outlook` table (this hop produces the grounded text #11 structures) | `language_instruction(lang)` (ADR-027 — fixed the standing rule-2 gap) | **Plain text** — GoogleSearch tool is incompatible with `response_mime_type=json`. **Only call that spends Google Search grounding quota** (charged to the per-identity cap here). |
+| 11 | `core/prep/company_outlook.py::_structure` | Prep company outlook (hop 2), lazy on session open + the "Refresh news intel" action ([REQ-023](../requirements/REQ-023-prep-land-it-kit.md) / [ADR-027](../decisions/ADR-027-company-outlook-persistent-cache-shared.md)) | No | `company_outlook(company_norm, role_title, lang, prompt_version)` — normalized company (`prep.matching.normalize_company`) × role × lang × every varying dim (ADR-008 rule 3); shared by Tailor + Prep; `PROMPT_VERSION` in `company_outlook.py` gates hits | `get_output_language()` | JSON — reshapes #5's grounded briefing into `{culture_tone, strategic_focus, recent_news:[{headline,date,url}]}`. Adds NO facts (GOV-005); empty fields render as "nothing found". `temperature=0.0` |
 | 6 | `core/bi/pulse.py::generate_report` | Weekly GH Actions cron (`.github/workflows/pulse.yml`) + `/admin/pulse` manual | No | `admin_reports` table (one row per run) | None (admin-only, English) | JSON (unwraps `{"markdown": "..."}`) |
 | 7 | `ui_web/routes/profile.py::_generate_suggestions` | Jobs page "Quick fill" chips first render (lazy) | No | `suggested_queries(resume_id, lang)` | `get_output_language()` | JSON |
 | 8 | `core/resume/ai_summary.py::_grounded_or_none` (used by `get_or_generate` / `persona_line`) | Lazy fragment on Profile page after resume upload — **and now also** the first scoring call (#1) or tailor call (#2) for a resume that skipped Profile, via `persona_line()` | No, but retries **once** silently on ungrounded output | `resume_ai_summary(resume_id, lang)` — gained `domain`/`seniority` columns ([ADR-013](../decisions/ADR-013-persona-source-shared-resume-profile.md)) | `get_output_language()` | JSON validated via Pydantic + custom grounding check |
@@ -66,6 +67,19 @@ for why.
 - **Quota accounting**: every call flows through
   `core.llm.usage.check_and_charge` for the per-identity daily cap.
   Only #6 (pulse cron) binds a synthetic `cron:pulse` identity.
+- **Grounding quota is SEPARATE from the fallback chain.** Site #5
+  (`company_research`, GoogleSearch tool) spends a distinct **Google
+  Search grounding** allowance, not the per-model `generate_content`
+  limits above. Verified 2026-09-03
+  ([pricing](https://ai.google.dev/gemini-api/docs/pricing)): free tier
+  = **5,000 grounded searches/month** (then $14/1k); paid tier (Gemini
+  2.5 Flash/-Lite) = **1,500/day** (then $35/1k). Only the *grounded*
+  call counts — the planned two-hop structuring pass (ADR-027) is a
+  normal `generate_content` call on the chain. Gotcha: on a *no-billing*
+  free account, grounding has been reported to bill against the base
+  `generate_content` daily quota instead of the 5,000/mo bucket — check
+  AI Studio → Quotas for the real assigned limit. Plan B if it bites: a
+  dedicated search API (Brave/Tavily) → normal Gemini (ADR-004 swap).
 - **Kill switch**: `LLM_DISABLED=1` env var short-circuits every
   site via `feature_flags.is_llm_disabled()` — most routes check
   before instantiating a client, but a few sites rely on the
@@ -89,11 +103,11 @@ get recomputed on next read).
 
 ## Known drift risks (as of 2026-08-25)
 
-- **Language directive is not uniformly applied.** Sites #1/#2/#7/#8/#9/#10
-  emit `language_instruction()`; sites #3/#4/#5/#6 don't. #3 and #4
-  are extraction-only (defensible), but #5 (company briefing shown
-  in a tailor drawer) probably *should* follow output_language and
-  doesn't. Fix pending.
+- **Language directive is not uniformly applied.** Sites
+  #1/#2/#5/#7/#8/#9/#10/#11 emit `language_instruction()`; sites #3/#4/#6
+  don't. #3 and #4 are extraction-only (defensible). #5's gap was **fixed**
+  2026-09-03 (ADR-027 — `fetch_company_context` now takes `lang`). #6
+  (admin pulse) stays English-only until an admin-language toggle exists.
 - **Cache-key parity.** Fixed 2026-08-25 (v14): sites #1, #7, #8 all
   now key on `lang`. Same rebuild-and-copy migration pattern; old
   rows preserved with `lang=''` so an unmigrated deploy loses no

@@ -893,6 +893,12 @@ async def data_delete_all(request: Request, confirmation: str = Form("")):
             # + the user's ✕ dismissals (REQ-018/019/020). Left behind, they're
             # orphaned LLM analysis of a résumé the user just deleted.
             "gap_enhancements", "gap_classification", "gap_dismissals",
+            # Prep / land-it kit (REQ-023). prep_kits CASCADEs off prep_sessions,
+            # but delete it explicitly first for intent; prep_sessions keys on
+            # resume_hash (no FK cascade from resumes) and company_outlook has no
+            # FK at all → both must be wiped by hand or they orphan (same trap as
+            # the gap caches above, [[project_delete_all_resume_hash_tables]]).
+            "prep_kits", "prep_sessions", "company_outlook",
             "resumes", "jobs",
             "saved_searches", "search_tasks",
             "events", "feedback", "admin_reports",

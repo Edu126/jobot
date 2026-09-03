@@ -42,7 +42,7 @@ def _resume_text_hash(parsed: dict) -> str:
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
@@ -419,6 +419,64 @@ CREATE TABLE IF NOT EXISTS gap_dismissals (
     canonical    TEXT NOT NULL,
     created_at   TEXT NOT NULL,
     PRIMARY KEY (resume_hash, lang, canonical)
+);
+
+-- v21: the Prep / "land it" kit (REQ-023). Three new tables, all
+-- CREATE IF NOT EXISTS (fresh + existing DBs, no data migration).
+--
+-- prep_sessions (ADR-026): a per-VACANCY prep workspace, created at the
+-- callback moment (which lands months after apply). SELF-CONTAINED — carries
+-- the vacancy's own fields so it survives even if the job row / live posting
+-- disappears; `job_id` is an OPTIONAL binding set only when matching succeeds
+-- (ON DELETE SET NULL, not CASCADE, so wiping a job doesn't drop the session).
+-- `resume_hash` is the candidate key (v17 convention). Creating a session IS
+-- the callback signal (no separate event). `status` is a light lifecycle
+-- (mockup "Interview Scheduled").
+CREATE TABLE IF NOT EXISTS prep_sessions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    resume_hash    TEXT NOT NULL,
+    job_id         TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+    company        TEXT NOT NULL,
+    role_title     TEXT NOT NULL DEFAULT '',
+    jd_text        TEXT NOT NULL DEFAULT '',
+    lang           TEXT NOT NULL DEFAULT '',
+    source         TEXT NOT NULL,                  -- from_job | pasted_link | pasted_text
+    status         TEXT NOT NULL DEFAULT 'scheduled',
+    created_at     TEXT NOT NULL,
+    last_opened_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_prep_sessions_resume ON prep_sessions(resume_hash);
+
+-- company_outlook (ADR-027): structured, cached company briefing, SHARED by
+-- the Tailor opt-in and Prep. Built two-hop (GoogleSearch grounded text →
+-- JSON structuring). Keyed on every varying dimension (ADR-008 rule 3):
+-- normalized company × role × lang × prompt_version. `outlook_json` holds
+-- {culture_tone, strategic_focus, recent_news:[{headline,date,url}]};
+-- `verified_at` drives freshness (the sanctioned "Refresh news intel").
+CREATE TABLE IF NOT EXISTS company_outlook (
+    company_norm   TEXT NOT NULL,
+    role_title     TEXT NOT NULL DEFAULT '',
+    lang           TEXT NOT NULL DEFAULT '',
+    prompt_version TEXT NOT NULL DEFAULT '',
+    outlook_json   TEXT NOT NULL,
+    sources_json   TEXT NOT NULL DEFAULT '[]',
+    model          TEXT,
+    verified_at    TEXT NOT NULL,
+    PRIMARY KEY (company_norm, role_title, lang, prompt_version)
+);
+
+-- prep_kits (ADR-028): the read-only cached kit blob per session — STAR Q&A
+-- bank (incl. defense-hook reuse) + reverse-interview questions. One blob,
+-- keyed (session, lang, prompt_version); no user-edit layer (copy-first).
+-- CASCADE on the session: deleting the session drops its kit.
+CREATE TABLE IF NOT EXISTS prep_kits (
+    prep_session_id INTEGER NOT NULL REFERENCES prep_sessions(id) ON DELETE CASCADE,
+    lang            TEXT NOT NULL DEFAULT '',
+    prompt_version  TEXT NOT NULL DEFAULT '',
+    kit_json        TEXT NOT NULL,
+    model           TEXT,
+    created_at      TEXT NOT NULL,
+    PRIMARY KEY (prep_session_id, lang, prompt_version)
 );
 """
 
@@ -973,6 +1031,33 @@ def get_tailor_run(job_id: str, run_index: int = -1, path: Path = DB_PATH) -> di
         return runs[run_index]["tailored"]
     except IndexError:
         return None
+
+
+def prep_match_candidates(resume_hash: str, path: Path = DB_PATH) -> list[dict]:
+    """The Prep matching search space (REQ-023 / ADR-026): every TAILORED job
+    (the strongest 'I applied here' signal, and where our reuse is richest) plus
+    THIS résumé's SCORED jobs. Deduped by job_id; `tailored` flags rows that
+    came from a tailor run so they can rank first on ties. Each row:
+    {job_id, title, company, job_url, job_url_direct, description, tailored}."""
+    if not resume_hash:
+        # No candidate identity → only the (résumé-agnostic) tailored set is safe.
+        resume_hash = "\x00never"
+    with connect(path) as conn:
+        rows = conn.execute(
+            """
+            SELECT j.id AS job_id, j.title AS title, j.company AS company,
+                   j.job_url AS job_url, j.job_url_direct AS job_url_direct,
+                   j.description AS description,
+                   MAX(CASE WHEN t.job_id IS NOT NULL THEN 1 ELSE 0 END) AS tailored
+            FROM jobs j
+            LEFT JOIN tailor_runs t ON t.job_id = j.id
+            LEFT JOIN job_scores js ON js.job_id = j.id AND js.resume_hash = ?
+            WHERE t.job_id IS NOT NULL OR js.job_id IS NOT NULL
+            GROUP BY j.id
+            """,
+            (resume_hash,),
+        ).fetchall()
+    return [{**dict(r), "tailored": bool(r["tailored"])} for r in rows]
 
 
 def get_dismissed_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str]:
@@ -1671,6 +1756,73 @@ def save_gap_enhancement(
             (
                 job_id, resume_hash, lang, prompt_version,
                 json.dumps(enhancements, ensure_ascii=False),
+                model, now,
+            ),
+        )
+    return True
+
+
+def get_company_outlook(
+    company_norm: str,
+    role_title: str,
+    lang: str,
+    prompt_version: str,
+    path: Path = DB_PATH,
+) -> Optional[dict]:
+    """Cached structured company briefing (REQ-023 / ADR-027), or None on a
+    miss. Keyed on normalized company × role × lang × prompt_version — every
+    varying dimension (ADR-008 rule 3). Shared by the Tailor opt-in and Prep.
+    Returns {outlook: {...}, sources: [...], model, verified_at}."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT outlook_json, sources_json, model, verified_at
+               FROM company_outlook
+               WHERE company_norm = ? AND role_title = ? AND lang = ? AND prompt_version = ?""",
+            (company_norm, role_title, lang, prompt_version),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        outlook = json.loads(row["outlook_json"])
+        sources = json.loads(row["sources_json"])
+    except (TypeError, ValueError):
+        return None
+    return {
+        "outlook": outlook if isinstance(outlook, dict) else {},
+        "sources": sources if isinstance(sources, list) else [],
+        "model": row["model"] or "",
+        "verified_at": row["verified_at"],
+    }
+
+
+def save_company_outlook(
+    company_norm: str,
+    role_title: str,
+    lang: str,
+    prompt_version: str,
+    outlook: dict,
+    sources: list[str],
+    model: str = "",
+    path: Path = DB_PATH,
+) -> bool:
+    """Upsert one structured briefing. `verified_at` (write time) drives the
+    freshness the 'Refresh news intel' affordance overwrites (ADR-027)."""
+    now = _now()
+    with tx(path) as conn:
+        conn.execute(
+            """INSERT INTO company_outlook (
+                company_norm, role_title, lang, prompt_version,
+                outlook_json, sources_json, model, verified_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(company_norm, role_title, lang, prompt_version) DO UPDATE SET
+                outlook_json = excluded.outlook_json,
+                sources_json = excluded.sources_json,
+                model = excluded.model,
+                verified_at = excluded.verified_at""",
+            (
+                company_norm, role_title, lang, prompt_version,
+                json.dumps(outlook, ensure_ascii=False),
+                json.dumps(sources, ensure_ascii=False),
                 model, now,
             ),
         )
