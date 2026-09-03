@@ -1868,6 +1868,28 @@ def dismiss_gap_cluster(
     return True
 
 
+def undismiss_gap_cluster(
+    resume_id: int, lang: str, canonical: str, path: Path = DB_PATH,
+) -> bool:
+    """Restore a gap cluster the user dismissed by mistake (REQ-021 — the Undo
+    toast + the hidden-gaps footer). Deletes the dismissal row so build_gap_map
+    stops filtering it. Matches on the lower-cased canonical, symmetric with
+    `dismiss_gap_cluster`. Idempotent; returns False on a text-less résumé or
+    empty label."""
+    canonical = (canonical or "").strip().lower()
+    if not canonical:
+        return False
+    with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return False
+        conn.execute(
+            "DELETE FROM gap_dismissals WHERE resume_hash = ? AND lang = ? AND canonical = ?",
+            (resume_hash, lang, canonical),
+        )
+    return True
+
+
 # ---------- admin pulse reports (BI agent) ----------
 
 def save_pulse_report(

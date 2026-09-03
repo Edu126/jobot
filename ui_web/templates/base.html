@@ -205,6 +205,21 @@
         },
       });
 
+      // Gap-map ✕ dismiss → Undo toast (REQ-021). The dismiss POST re-renders
+      // #gap-map and fires an `HX-Trigger: gap-dismissed` carrying the labels +
+      // the lens; Undo POSTs /restore back into #gap-map so the pill reappears.
+      document.body.addEventListener('gap-dismissed', (e) => {
+        const d = e.detail || {};
+        Alpine.store('toast').show(d.msg, 'success', {
+          label: d.undo,
+          onClick: () => htmx.ajax('POST', '/profile/gap-map/restore', {
+            target: '#gap-map',
+            swap: 'innerHTML',
+            values: { canonical: d.canonical, context: d.context, job_id: d.job_id },
+          }),
+        });
+      });
+
       // Swipe-to-save / swipe-to-dismiss on `article.job-swipeable` cards.
       // Below lg only — desktop keeps the heart button + right sidebar
       // pattern. Horizontal-only gestures; vertical scrolls cancel the

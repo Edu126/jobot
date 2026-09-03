@@ -341,6 +341,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.gap_map.ctx.all": "All Scored Jobs",
         "profile.gap_map.ctx.top3": "Top 3 Closest",
         "profile.gap_map.ctx.job": "Job Specific",
+        # Undo / restore for the ✕ dismiss (REQ-021).
+        "profile.gap_map.dismissed_toast": "Gap \"{label}\" hidden",
+        "profile.gap_map.undo": "Undo",
+        "profile.gap_map.hidden_n": "Hidden gaps ({n})",
+        "profile.gap_map.restore": "Restore this gap",
         "profile.resume.stats": "{words} words · ~{pages}p · {bullets} bullets",
         "profile.resume.uploaded": "Uploaded",
         "profile.action.view_resume": "View resume",
@@ -723,6 +728,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.gap_map.ctx.all": "Todos los empleos",
         "profile.gap_map.ctx.top3": "Top 3 cercanos",
         "profile.gap_map.ctx.job": "Empleo específico",
+        # Deshacer / restaurar el ✕ dismiss (REQ-021).
+        "profile.gap_map.dismissed_toast": "Brecha \"{label}\" ocultada",
+        "profile.gap_map.undo": "Deshacer",
+        "profile.gap_map.hidden_n": "Brechas ocultas ({n})",
+        "profile.gap_map.restore": "Restaurar esta brecha",
         "profile.resume.current": "Currículum actual",
         "profile.resume.active": "Activo",
         "profile.resume.stats": "{words} palabras · ~{pages}p · {bullets} viñetas",

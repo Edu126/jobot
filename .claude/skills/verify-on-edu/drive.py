@@ -121,14 +121,30 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     page.screenshot(path=str(OUT / "04_popover.png"), full_page=True)
 
-    # ✕ dismiss removes the pill (htmx outerHTML swap).
+    # ✕ dismiss re-renders the map without the pill (REQ-021: full-map swap).
     before = page.locator("#gap-map .group").count()
     first.hover()
     first.get_by_role("button").first.click()
-    page.wait_for_timeout(800)
+    page.wait_for_selector("#gap-map .group", timeout=10000)
+    page.wait_for_timeout(600)
     after = page.locator("#gap-map .group").count()
     check("dismiss_removes_pill", after == before - 1, f"{before} → {after}")
     page.screenshot(path=str(OUT / "05_after_dismiss.png"), full_page=True)
+
+    # Hidden-gaps footer appears (REQ-021) — the reverse of the ✕.
+    hidden = page.get_by_text("Hidden gaps", exact=False)
+    check("hidden_gaps_footer", hidden.count() >= 1, "hidden-gaps fold present after dismiss")
+
+    # Restore from the footer → the cluster comes back (count returns).
+    if hidden.count():
+        hidden.first.click()                       # open the <details>
+        page.wait_for_timeout(300)
+        page.locator("#gap-map details button").first.click()
+        page.wait_for_selector("#gap-map .group", timeout=10000)
+        page.wait_for_timeout(600)
+        restored = page.locator("#gap-map .group").count()
+        check("restore_brings_pill_back", restored == before, f"{after} → {restored}")
+        page.screenshot(path=str(OUT / "06_after_restore.png"), full_page=True)
 
     browser.close()
 

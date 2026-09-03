@@ -159,6 +159,12 @@ def test_dismiss_filters_cluster() -> None:
             # Stored lower-cased so a re-cased canonical still matches (ADR-024).
             _assert("french proficiency" in db.get_gap_dismissals(rid, lang), "dismissal readable (lower-cased)")
 
+            # Restore (REQ-021 Undo) — reversible, casing-insensitive, cluster
+            # comes back on the next build.
+            _assert(db.undismiss_gap_cluster(rid, lang, "French Proficiency"), "undismiss persisted")
+            _assert("french proficiency" not in db.get_gap_dismissals(rid, lang), "dismissal cleared")
+            _assert(len(_flat(gm.build_gap_map(rid, "spanish only", None, lang=lang))) == 1, "cluster restored")
+
 
 def test_build_map_keeps_unclassified_as_real() -> None:
     with tempfile.TemporaryDirectory() as tmp:

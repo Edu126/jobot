@@ -75,9 +75,9 @@
                       title="{{ _('profile.gap_map.dismiss') }}"
                       @click.stop
                       hx-post="/profile/gap-map/dismiss"
-                      hx-vals='{{ {"canonical": c.canonical} | tojson }}'
-                      hx-target="closest .group"
-                      hx-swap="outerHTML">
+                      hx-vals='{{ {"canonical": c.canonical, "context": context, "job_id": job_id} | tojson }}'
+                      hx-target="#gap-map"
+                      hx-swap="innerHTML">
                 <i class="ph-thin ph-x i-3"></i>
               </button>
             </span>
@@ -107,3 +107,29 @@
   </div>
   {% endfor %}
 </div>
+
+{# Hidden gaps (REQ-021): clusters the user dismissed as false positives. A
+   discreet fold to restore any killed by mistake — the reverse of the ✕. Each
+   chip re-renders the whole panel via /restore. #}
+{% if dismissed %}
+<div class="mt-4 pt-3 border-t border-base-300/60">
+  <details>
+    <summary class="text-xs text-body-muted cursor-pointer select-none inline-flex items-center gap-1 hover:text-base-content">
+      <i class="ph-thin ph-eye-slash i-3"></i>{{ _('profile.gap_map.hidden_n', n=dismissed|length) }}
+    </summary>
+    <div class="mt-2 flex flex-wrap gap-1.5">
+      {% for d in dismissed %}
+      <button type="button"
+              class="chip chip-neutral inline-flex items-center gap-1 cursor-pointer hover:text-primary"
+              title="{{ _('profile.gap_map.restore') }}"
+              hx-post="/profile/gap-map/restore"
+              hx-vals='{{ {"canonical": d, "context": context, "job_id": job_id} | tojson }}'
+              hx-target="#gap-map"
+              hx-swap="innerHTML">
+        <i class="ph-thin ph-arrow-counter-clockwise i-3"></i>{{ d | title }}
+      </button>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+{% endif %}

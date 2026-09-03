@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -33,6 +34,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from core import db, events, updater
 from core.matching import gap_map
 from core.settings import get_reasoning_language
+from ..i18n import translate
 from core.version import current as current_version
 from core.llm.gemini import (
     DEFAULT_MODEL_CHAIN,
@@ -265,19 +267,10 @@ async def get_ai_summary(request: Request):
 # Then the next Profile visit regenerates under the hardened prompt.
 
 
-@router.get("/profile/gap-map")
-async def profile_gap_map(request: Request, context: str = "all", job_id: str = ""):
-    """Lazy fragment: the aggregated gap map (REQ-019 / ADR-022, panel REQ-020).
-    Same hx-trigger="load" pattern as ai-summary: the page paints instantly, this
-    resolves the aggregation + one JD-free classification call on its own.
-
-    `context` is the lens (ADR-025): "all" (every scored job), "top3" (the 3
-    highest-scored), or "job" (one job via `job_id`). The context tabs + the
-    Job-specific dropdown re-fetch this fragment with the new params. We render
-    the fragment (tabs included) whenever ANYTHING is scored — even if the chosen
-    lens has no real gaps — so the switcher never disappears; only the initial
-    'nothing scored at all' case hides the whole section. Degrades to cached
-    classifications (or honest 'real') without a key or on quota. Never blocks."""
+async def _render_gap_map(request: Request, context: str, job_id: str) -> Response:
+    """Build + render the gap-map fragment for a lens. Shared by the lazy GET and
+    by the ✕ dismiss / Undo restore POSTs so all three paint the SAME panel (incl.
+    the hidden-gaps footer). Returns an empty 200 when nothing is scored yet."""
     current = db.get_current_resume()
     if not current:
         return HTMLResponse("", status_code=200)
@@ -325,6 +318,9 @@ async def profile_gap_map(request: Request, context: str = "all", job_id: str = 
         {"key": p, "clusters": [c.to_dict() for c in pillars[p]]}
         for p in gap_map.PILLARS
     ]
+    # Dismissed clusters (REQ-021): stored lower-cased; the footer offers a
+    # one-click restore for false positives killed by mistake.
+    dismissed = sorted(db.get_gap_dismissals(resume_id, lang))
     return templates.TemplateResponse(
         request, "partials/gap_map.html", {
             "columns": columns,
@@ -332,20 +328,67 @@ async def profile_gap_map(request: Request, context: str = "all", job_id: str = 
             "job_id": job_id,
             "scored_jobs": scored,
             "show_counts": context != "job",
+            "dismissed": dismissed,
         },
     )
 
 
+@router.get("/profile/gap-map")
+async def profile_gap_map(request: Request, context: str = "all", job_id: str = ""):
+    """Lazy fragment: the aggregated gap map (REQ-019 / ADR-022, panel REQ-020).
+    Same hx-trigger="load" pattern as ai-summary: the page paints instantly, this
+    resolves the aggregation + one JD-free classification call on its own.
+
+    `context` is the lens (ADR-025): "all" (every scored job), "top3" (the 3
+    highest-scored), or "job" (one job via `job_id`). The context tabs + the
+    Job-specific dropdown re-fetch this fragment with the new params. Degrades to
+    cached classifications (or honest 'real') without a key or on quota."""
+    return await _render_gap_map(request, context, job_id)
+
+
 @router.post("/profile/gap-map/dismiss")
-async def profile_gap_map_dismiss(canonical: str = Form(...)):
+async def profile_gap_map_dismiss(
+    request: Request,
+    canonical: str = Form(...),
+    context: str = Form("all"),
+    job_id: str = Form(""),
+):
     """Mark a gap cluster as a false positive so the map drops it (REQ-020 /
-    ADR-024). The ✕ on a pill. htmx swaps the pill out via an empty-body 200
-    (a 204 would leave it on screen); the map is derived, nothing else to
-    re-render."""
+    ADR-024). The ✕ on a pill re-renders the whole panel (so the hidden-gaps
+    footer updates too) and fires an `HX-Trigger` the client turns into an Undo
+    toast (REQ-021)."""
     current = db.get_current_resume()
-    if current:
-        db.dismiss_gap_cluster(int(current["id"]), get_reasoning_language(), canonical)
-    return HTMLResponse("", status_code=200)
+    if not current:
+        return HTMLResponse("", status_code=200)
+    db.dismiss_gap_cluster(int(current["id"]), get_reasoning_language(), canonical)
+    resp = await _render_gap_map(request, context, job_id)
+    # Payload the base.html listener turns into a toast with an Undo action.
+    resp.headers["HX-Trigger"] = json.dumps({
+        "gap-dismissed": {
+            "msg": translate("profile.gap_map.dismissed_toast", label=canonical),
+            "undo": translate("profile.gap_map.undo"),
+            "canonical": canonical,
+            "context": context,
+            "job_id": job_id,
+        }
+    })
+    return resp
+
+
+@router.post("/profile/gap-map/restore")
+async def profile_gap_map_restore(
+    request: Request,
+    canonical: str = Form(...),
+    context: str = Form("all"),
+    job_id: str = Form(""),
+):
+    """Undo a dismissal (REQ-021) — from the Undo toast or the hidden-gaps footer.
+    Deletes the dismissal row and re-renders the panel so the cluster reappears."""
+    current = db.get_current_resume()
+    if not current:
+        return HTMLResponse("", status_code=200)
+    db.undismiss_gap_cluster(int(current["id"]), get_reasoning_language(), canonical)
+    return await _render_gap_map(request, context, job_id)
 
 
 @router.get("/profile/suggest-queries")
