@@ -17,12 +17,16 @@ lives in that session and in `founder-roadmap.md` / `milestones.md`.
 ## The heart
 
 > Applying to a job is a task of **high cognitive load** — repetitive,
-> demoralizing, blank-page after blank-page. **Jobot carries that load.**
+> demoralizing, blank-page after blank-page. The user carries that load;
+> **jobot lightens the weight.** The star is the user — jobot is the
+> support team so they can shine, discover and present their greatest
+> potential. (ADR-032: user is hero, jobot is guide.)
 
 Everything else — score, tailoring, autofill, culture-fit answers — is a
 *projection* of one promise: **that you apply more, better, and without
-burning out.** If a decision doesn't lower cognitive load or improve
-outcome, it isn't jobot.
+burning out — presenting your *real* potential, never a fabricated one.**
+If a decision doesn't lower cognitive load or help the user present their
+true potential, it isn't jobot.
 
 ## The core reframe: episodic → continuous
 
