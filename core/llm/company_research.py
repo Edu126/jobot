@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from google import genai
 from google.genai import types
 
+from core.settings import language_instruction
+
 from .gemini import DEFAULT_MODEL, GeminiError
 
 
@@ -45,7 +47,7 @@ applying for that role should know.
 
 Be factual. If you can't find solid information, say so plainly — DO NOT
 invent details. Keep the briefing under 250 words.
-
+{language_line}
 Company name: {company}
 {role_line}
 """
@@ -56,15 +58,29 @@ def fetch_company_context(
     company: str,
     role_title: str = "",
     model_name: str = DEFAULT_MODEL,
+    lang: str = "",
 ) -> CompanyResearch:
-    """Run a grounded Gemini search and return a plain-text briefing."""
+    """Run a grounded Gemini search (hop 1 of ADR-027) and return a plain-text
+    briefing + citation URLs. `lang` applies `language_instruction` so the
+    briefing comes back in the user's language/register (ADR-008 rule 2 — the
+    fix for this call's standing tech-debt). This is the one call that spends
+    Google Search grounding quota (llm-surface); it's charged against the
+    per-identity cap here so it doesn't slip the accounting."""
     if not api_key:
         raise GeminiError("No Gemini API key for company research.")
     if not company.strip():
         return CompanyResearch(summary="", sources=[])
 
+    # Count the grounded call + honor the LLM_DISABLED kill switch, same as
+    # GeminiClient.generate_json does for JSON calls.
+    from core.llm import usage as llm_usage
+    llm_usage.check_and_charge(model="any")
+
+    language_line = f"\n{language_instruction(lang)}\n" if lang else ""
     role_line = f"Role title: {role_title.strip()}" if role_title.strip() else ""
-    prompt = _PROMPT_TEMPLATE.format(company=company.strip(), role_line=role_line)
+    prompt = _PROMPT_TEMPLATE.format(
+        company=company.strip(), role_line=role_line, language_line=language_line
+    )
 
     client = genai.Client(api_key=api_key)
     config = types.GenerateContentConfig(

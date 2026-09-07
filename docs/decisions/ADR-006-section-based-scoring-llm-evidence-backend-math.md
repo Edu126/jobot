@@ -1,7 +1,7 @@
 # ADR-006: Section-based scoring — LLM returns evidence, backend owns the math
 
 Date: 2026-08-21
-Status: Accepted
+Status: Superseded by [ADR-015](ADR-015-archive-section-scoring-single-value.md)
 Relates to: REQ-004
 
 ## Context

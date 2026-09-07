@@ -1,0 +1,5 @@
+{# Shared Prep macros. Keep the fit-band → pill-colour mapping in ONE place so a
+   colour change (or a fourth band) touches one file, not three (REQ-025). #}
+{% macro band_pill_class(band) -%}
+{{ {'strong': 'pill-success', 'solid': 'pill-info', 'stretch': 'pill-warn'}.get(band, 'pill-neutral') }}
+{%- endmacro %}

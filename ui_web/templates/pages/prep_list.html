@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}{{ _('prep.page_title') }}{% endblock %}
+{% block container_class %}max-w-7xl{% endblock %}
+
+{% block content %}
+{% import "partials/prep_macros.html" as pm %}
+<div class="space-y-6">
+
+  <h1 class="text-xl font-semibold">{{ _('prep.list.heading') }}</h1>
+
+  {% if not has_resume %}
+    <div class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+      {{ _('profile.no_resume') if false else 'Upload a résumé on the Profile tab first.' }}
+    </div>
+  {% else %}
+
+  {# ---- entry (ADR-030): ONE smart input — a job link OR a pasted JD. We
+     import the posting + score it, then confirm before building. A multi-line
+     paste collapses to a "N lines pasted" chip (capture-not-preview, like
+     Claude's paste affordance). Company/role are optional (auto-filled from the
+     posting) and demoted to a collapsible — the link/paste is the real path. #}
+  <div class="rounded-xl border border-base-300 bg-base-100 p-4">
+    <h2 class="font-medium mb-3">{{ _('prep.entry.heading') }}</h2>
+    <form hx-post="/prep/start" hx-target="#prep-entry-result" hx-swap="innerHTML"
+          x-data="{ busy: false, more: false,
+                    v: '',
+                    get n() { const t = this.v.trim(); return t ? t.split(/\r?\n/).length : 0; },
+                    get captured() { return this.n > 1; } }"
+          @htmx:before-request="busy = true" @htmx:after-request="busy = false"
+          class="space-y-3">
+
+      {# smart input: link OR pasted JD → collapses to a chip once it's a paste #}
+      <div>
+        <textarea name="vacancy" x-model="v" x-show="!captured" rows="3"
+                  data-testid="prep-smart-input"
+                  placeholder="{{ _('prep.entry.smart_ph') }}"
+                  class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm resize-none"></textarea>
+        <div x-show="captured" x-cloak data-testid="prep-paste-chip"
+             class="flex items-center gap-2 rounded-lg border border-base-300 bg-base-200/50 px-3 py-2 text-sm">
+          <i class="ph-thin ph-file-text text-base-content/60"></i>
+          <span x-text="n + ' {{ _('prep.entry.lines_pasted') }}'"></span>
+          <button type="button" @click="v = ''" title="{{ _('prep.entry.clear') }}"
+                  class="ml-auto text-base-content/50 hover:text-base-content">
+            <i class="ph-thin ph-x"></i>
+          </button>
+        </div>
+      </div>
+
+      {# optional company/role — auto-filled from the posting on confirm #}
+      <button type="button" @click="more = !more"
+              class="text-xs text-base-content/60 hover:text-base-content inline-flex items-center gap-1">
+        <i class="ph-thin" :class="more ? 'ph-caret-down' : 'ph-caret-right'"></i>
+        {{ _('prep.entry.optional_toggle') }}
+      </button>
+      <div x-show="more" x-cloak class="grid sm:grid-cols-2 gap-3">
+        {# Client-side autocomplete (Alpine) over the user's recent companies/
+           titles — starts after 2 chars, caps at 8. Single-quoted x-data wrapper
+           is REQUIRED for the tojson lists (double-quoted breaks Alpine). #}
+        <div class="relative"
+             x-data='{ q: "", open: false, items: {{ ac_companies | tojson }},
+                       get matches() { const s = this.q.trim().toLowerCase();
+                         return s.length < 2 ? [] : this.items.filter(x => x.toLowerCase().includes(s)).slice(0, 8); } }'
+             @click.outside="open = false">
+          <input name="company" x-model="q" autocomplete="off"
+                 @focus="open = true" @input="open = true" @keydown.escape="open = false"
+                 placeholder="{{ _('prep.entry.company') }}"
+                 class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+          <div x-show="open && matches.length" x-cloak
+               class="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-auto rounded-lg border border-base-300 bg-base-100 shadow-lg">
+            <template x-for="m in matches" :key="m">
+              <button type="button" @click="q = m; open = false"
+                      class="block w-full text-left px-3 py-2 text-sm hover:bg-base-200" x-text="m"></button>
+            </template>
+          </div>
+        </div>
+        <div class="relative"
+             x-data='{ q: "", open: false, items: {{ ac_titles | tojson }},
+                       get matches() { const s = this.q.trim().toLowerCase();
+                         return s.length < 2 ? [] : this.items.filter(x => x.toLowerCase().includes(s)).slice(0, 8); } }'
+             @click.outside="open = false">
+          <input name="role_title" x-model="q" autocomplete="off"
+                 @focus="open = true" @input="open = true" @keydown.escape="open = false"
+                 placeholder="{{ _('prep.entry.role') }}"
+                 class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+          <div x-show="open && matches.length" x-cloak
+               class="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-auto rounded-lg border border-base-300 bg-base-100 shadow-lg">
+            <template x-for="m in matches" :key="m">
+              <button type="button" @click="q = m; open = false"
+                      class="block w-full text-left px-3 py-2 text-sm hover:bg-base-200" x-text="m"></button>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-base-content/60">{{ _('prep.entry.hint') }}</p>
+      <div class="flex items-center gap-3">
+        <button type="submit" :disabled="busy"
+                class="btn btn-sm btn-primary inline-flex items-center gap-1.5">
+          <span x-show="!busy">{{ _('prep.entry.submit') }}</span>
+          <span x-show="busy" x-cloak class="inline-flex items-center gap-1.5">
+            <i class="ph-thin ph-circle-notch animate-spin"></i>{{ _('prep.entry.importing') }}
+          </span>
+        </button>
+      </div>
+      <div id="prep-entry-result"></div>
+    </form>
+  </div>
+
+  {# ---- the sessions list (one per interview prepped) ---- #}
+  {% if sessions %}
+    <div class="space-y-2">
+      {% for s in sessions %}
+      <a href="/prep/{{ s.id }}"
+         class="flex items-center justify-between gap-3 rounded-xl border border-base-300 bg-base-100 p-4 hover:bg-base-200/50 transition">
+        <div class="min-w-0">
+          <div class="font-medium truncate">{{ s.role_title or '—' }}</div>
+          <div class="text-sm text-base-content/60 truncate">{{ s.company }}</div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          {% if s.band %}
+            <span class="pill {{ pm.band_pill_class(s.band) }} text-xs">{{ _('prep.fit.band.' + s.band) }}</span>
+          {% endif %}
+          <span class="text-xs text-base-content/50">{{ _('prep.detail.status.' + (s.status or 'scheduled')) }}</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-sm text-base-content/60">{{ _('prep.list.empty') }}</p>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}

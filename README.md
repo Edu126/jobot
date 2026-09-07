@@ -2,7 +2,7 @@
 
 An AI job-search assistant. Search boards, get AI-scored matches, tailor your resume + cover letter for each role, and track your applications — either locally on your Mac or on your own private Fly.io instance. Data never leaves your instance except for LLM calls to Google Gemini.
 
-Originally built for AEC (architecture / engineering / construction) job hunters in Ottawa; the scoring pipeline is being generalized to work across any domain from the candidate's own resume context (see `docs/requirements/REQ-005-remove-aec-scoring-bias.md`).
+Originally built for AEC (architecture / engineering / construction) job hunters in Ottawa, it now scores across any domain: matching is anchored to a domain-neutral persona derived from the candidate's own resume, with no hard-coded industry bias (see [`docs/decisions/ADR-013-persona-source-shared-resume-profile.md`](docs/decisions/ADR-013-persona-source-shared-resume-profile.md)).
 
 ## Quick start (macOS)
 
@@ -13,11 +13,12 @@ Originally built for AEC (architecture / engineering / construction) job hunters
 
 ## What it does
 
-- **Broad search** — scrape LinkedIn + Indeed with up to 3 queries at once, AI-score every result against your resume
+- **Broad search** — scrape LinkedIn + Indeed with up to 3 queries at once, AI-score every result against your resume. Results land in a master/detail workspace: a scannable left list (compact progress-ring score + title + company) and a right pane with the full match/gap analysis
 - **Targeted analysis** — paste any job URL (LinkedIn, Indeed, Workday, Greenhouse, company career page) → fetch, extract, score
 - **Tailor** — Conservative / Balanced / Aggressive levels rewrite your resume + cover letter to match a specific JD. Preserves history, shows score delta, exports to DOCX
-- **Applications** — kanban-style tracking (interested → applied → interviewing → offer / rejected / withdrawn)
+- **Journey** — the honest "how am I doing?" view: kanban pipeline (interested → applied → interviewing → offer / rejected / withdrawn), a conversion funnel, and weekly activity, in plain English
 - **ATS report** — 20+ checks on your resume against ATS parsers
+- **Onboarding** — first-run wizard (language pick + guided tour via Driver.js) for new users, and a "what's new" bell so returning users notice when features land
 
 ## Stack
 

@@ -1,0 +1,135 @@
+{# Interview questions (ADR-028), redesign 2026-09-05 (REQ-025): two tabs —
+   "Likely questions" (they ask you) and "Questions to ask" (you ask them),
+   directional + jargon-free (was "STAR Q&A", too HR-technical and not all STAR).
+   Likely = KIND-CHIP filter + ACCORDION list: all questions visible at a glance
+   (coverage), expand one to reveal the answer, 👍/👎 → BI-loop feedback. No
+   pagination, so controls never jump with card height. Read-only, copy-first. #}
+{% if not kit or kit.is_empty() %}
+  {# Transient generation failure OR honestly-empty: offer a real retry, not a
+     dead "reopen later" (REQ-025 #4). Retries the lazy fragment in place. #}
+  <div class="rounded-xl border border-base-300 bg-base-100 p-4 flex items-center gap-3"
+       data-testid="prep-kit-empty">
+    <span class="text-sm text-base-content/60">{{ _('prep.kit.empty') }}</span>
+    <button hx-get="/prep/{{ session_id }}/kit" hx-target="#prep-kit" hx-swap="innerHTML"
+            class="btn btn-xs inline-flex items-center gap-1" data-testid="prep-kit-retry">
+      <i class="ph-thin ph-arrow-clockwise"></i>{{ _('prep.kit.retry') }}
+    </button>
+  </div>
+{% else %}
+{% set kinds = kit.star_qa | map(attribute='kind') | unique | list %}
+<div class="rounded-xl border border-base-300 bg-base-100 p-4"
+     x-data="{ tab: 'likely', kind: 'all', open: null }">
+
+  {# ---- grounded-on layers (REQ-025): the REAL inputs the kit stands on ---- #}
+  {% if layers %}
+  <div data-testid="kit-layers"
+       class="flex flex-wrap items-center gap-1.5 mb-3 text-[11px] text-base-content/50">
+    <span>{{ _('prep.kit.grounded_on') }}</span>
+    <span class="pill pill-neutral text-[11px]">{{ _('prep.kit.layer.resume') }}</span>
+    {% if layers.jd %}<span class="pill pill-neutral text-[11px]">{{ _('prep.kit.layer.jd') }}</span>
+    {% elif layers.role %}<span class="pill pill-neutral text-[11px]">{{ _('prep.kit.layer.role') }}</span>{% endif %}
+    {% if layers.company %}<span class="pill pill-neutral text-[11px]">{{ layers.company }}</span>{% endif %}
+    {% if layers.gaps %}<span class="pill pill-warn text-[11px]">{{ layers.gaps }} {{ _('prep.kit.layer.gaps') }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {# ---- tab bar ---- #}
+  <div class="flex gap-1 border-b border-base-300 mb-4">
+    <button @click="tab='likely'" data-testid="tab-likely"
+            :class="tab==='likely' ? 'border-primary text-base-content' : 'border-transparent text-base-content/50'"
+            class="px-3 py-2 text-sm font-medium border-b-2 -mb-px">
+      {{ _('prep.tab.likely') }}
+    </button>
+    <button @click="tab='reverse'" data-testid="tab-reverse"
+            :class="tab==='reverse' ? 'border-primary text-base-content' : 'border-transparent text-base-content/50'"
+            class="px-3 py-2 text-sm font-medium border-b-2 -mb-px">
+      {{ _('prep.tab.reverse') }}
+    </button>
+  </div>
+
+  {# ---- LIKELY: kind-chip filter + accordion ---- #}
+  <div x-show="tab==='likely'">
+    {% if kit.star_qa %}
+      {# kind filter chips #}
+      <div class="flex flex-wrap gap-1.5 mb-3">
+        <button type="button" @click="kind='all'; open=null" data-testid="qa-chip"
+                :class="kind==='all' ? 'bg-primary text-primary-content border-primary' : 'border-base-300 text-base-content/60'"
+                class="rounded-full border px-2.5 py-1 text-xs">{{ _('prep.qa.all') }}</button>
+        {% for k in kinds %}
+        <button type="button" @click="kind='{{ k }}'; open=null" data-testid="qa-chip"
+                :class="kind==='{{ k }}' ? 'bg-primary text-primary-content border-primary' : 'border-base-300 text-base-content/60'"
+                class="rounded-full border px-2.5 py-1 text-xs">{{ _('prep.kind.' + k) }}</button>
+        {% endfor %}
+      </div>
+
+      {# accordion — all questions listed; expand one at a time #}
+      <div class="divide-y divide-base-300 border-t border-base-300">
+        {% for q in kit.star_qa %}
+        <div x-show="kind==='all' || kind==='{{ q.kind }}'" data-testid="qa-item" data-kind="{{ q.kind }}">
+          <button type="button" @click="open === {{ loop.index0 }} ? open=null : open={{ loop.index0 }}"
+                  class="w-full flex items-center gap-2 py-3 text-left">
+            <span class="pill {% if q.kind == 'defensive_gap' %}pill-warn{% else %}pill-neutral{% endif %} text-[11px] shrink-0">
+              {{ _('prep.kind.' + q.kind) }}
+            </span>
+            <span class="text-sm font-medium flex-1 min-w-0">{{ q.question }}</span>
+            <i class="ph-thin ph-caret-down shrink-0 transition-transform" :class="open === {{ loop.index0 }} ? 'rotate-180' : ''"></i>
+          </button>
+
+          <div x-show="open === {{ loop.index0 }}" x-cloak class="pb-3">
+            {% if q.star %}
+              <div class="rounded-lg bg-base-200/40 p-3 text-sm space-y-1">
+                {% for k, v in [('S', q.star.situation), ('T', q.star.task), ('A', q.star.action), ('R', q.star.result)] %}
+                  {% if v %}<p><span class="font-semibold text-base-content/50">{{ k }}:</span> {{ v }}</p>{% endif %}
+                {% endfor %}
+              </div>
+            {% elif q.talking_points %}
+              <ul class="rounded-lg bg-base-200/40 p-3 text-sm list-disc list-inside space-y-0.5">
+                {% for p in q.talking_points %}<li>{{ p }}</li>{% endfor %}
+              </ul>
+            {% endif %}
+
+            {# per-item thumbs → BI-loop feedback. Form inputs escape natively. #}
+            <div class="mt-2 flex items-center gap-2" x-data="{ voted: false }">
+              <span class="text-xs text-base-content/50">{{ _('prep.feedback.helpful') }}</span>
+              <form hx-post="/prep/{{ session_id }}/qa-feedback" hx-swap="none"
+                    @htmx:after-request="voted = true" x-show="!voted" class="flex gap-1">
+                <input type="hidden" name="kind" value="{{ q.kind }}">
+                <input type="hidden" name="question" value="{{ q.question }}">
+                <button name="vote" value="up" data-testid="thumb-up" class="text-base-content/50 hover:text-success" title="👍"><i class="ph-thin ph-thumbs-up"></i></button>
+                <button name="vote" value="down" class="text-base-content/50 hover:text-error" title="👎"><i class="ph-thin ph-thumbs-down"></i></button>
+              </form>
+              <span x-show="voted" x-cloak data-testid="voted-thanks" class="text-xs text-success">{{ _('prep.feedback.thanks') }}</span>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  {# ---- REVERSE: questions to ask them (list, copy-first) ---- #}
+  <div x-show="tab==='reverse'" x-cloak>
+    <div class="space-y-3">
+      {% for cat, items in kit.reverse_qs | sort(attribute='category') | groupby('category') %}
+      <div>
+        <div class="text-xs font-semibold text-base-content/50 mb-1">{{ cat }}</div>
+        <ul class="space-y-1.5">
+          {% for it in items %}
+          <li class="flex items-start justify-between gap-2 text-sm">
+            <span>{{ it.question }}</span>
+            <button type="button" data-copy="{{ it.question }}"
+                    onclick="navigator.clipboard.writeText(this.dataset.copy)"
+                    class="text-xs text-base-content/50 hover:text-base-content shrink-0"
+                    title="{{ _('prep.kit.copy') }}">
+              <i class="ph-thin ph-copy"></i>
+            </button>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endif %}

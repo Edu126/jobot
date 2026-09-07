@@ -9,7 +9,9 @@ never silently.
 
 Scope note: this doc is about **jobot's architecture**. How we
 collaborate as builders (peer-architect mode, sprint hygiene) lives in
-Claude's memory, not here.
+Claude's memory, not here. The **product & business** north star —
+what we build, for whom, why anyone pays — lives one level up in
+`docs/product/vision.md`; this technical vision must serve it.
 
 ## What jobot is
 

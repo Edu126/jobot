@@ -1,0 +1,25 @@
+{# Fuzzy-match confirm chips (ADR-026): propose the few likely jobs, one-tap
+   confirm. Never auto-bind below an exact URL — a wrong bind grounds the whole
+   kit on the wrong JD (GOV-005). #}
+<div class="mt-3 rounded-lg border border-base-300 bg-base-200/40 p-3 space-y-2">
+  <p class="text-sm font-medium">{{ _('prep.confirm.heading') }}</p>
+  {% for c in candidates %}
+  <form hx-post="/prep/confirm" hx-target="#prep-entry-result" hx-swap="innerHTML">
+    <input type="hidden" name="job_id" value="{{ c.job_id }}">
+    <button type="submit"
+            class="w-full text-left rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm hover:bg-base-200 transition">
+      <span class="font-medium">{{ c.title }}</span>
+      <span class="text-base-content/60"> · {{ c.company }}</span>
+    </button>
+  </form>
+  {% endfor %}
+  <form hx-post="/prep/confirm" hx-target="#prep-entry-result" hx-swap="innerHTML">
+    <input type="hidden" name="job_id" value="">
+    <input type="hidden" name="company" value="{{ company }}">
+    <input type="hidden" name="role_title" value="{{ role_title }}">
+    <input type="hidden" name="jd_text" value="{{ jd_text }}">
+    <button type="submit" class="text-xs text-base-content/60 underline mt-1">
+      {{ _('prep.confirm.none') }}
+    </button>
+  </form>
+</div>

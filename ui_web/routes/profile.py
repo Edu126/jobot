@@ -20,7 +20,9 @@ Notes:
 """
 from __future__ import annotations
 
+import asyncio
 import io
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -30,6 +32,9 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from core import db, events, updater
+from core.matching import gap_map
+from core.settings import get_reasoning_language
+from ..i18n import translate
 from core.version import current as current_version
 from core.llm.gemini import (
     DEFAULT_MODEL_CHAIN,
@@ -260,6 +265,130 @@ async def get_ai_summary(request: Request):
 # user in an incident, do it from SSH:
 #   fly ssh console -a <app> -C "sqlite3 /data/jobot.db 'DELETE FROM resume_ai_summary WHERE resume_id = X'"
 # Then the next Profile visit regenerates under the hardened prompt.
+
+
+async def _render_gap_map(request: Request, context: str, job_id: str) -> Response:
+    """Build + render the gap-map fragment for a lens. Shared by the lazy GET and
+    by the ✕ dismiss / Undo restore POSTs so all three paint the SAME panel (incl.
+    the hidden-gaps footer). Returns an empty 200 when nothing is scored yet."""
+    current = db.get_current_resume()
+    if not current:
+        return HTMLResponse("", status_code=200)
+
+    resume_id = int(current["id"])
+    lang = get_reasoning_language()
+
+    # The scored jobs power the Top-3 lens + the Job-specific dropdown. Nothing
+    # scored → no gap map at all (hide the section on the initial load).
+    scored = await asyncio.to_thread(gap_map.scored_jobs, resume_id, lang)
+    if not scored:
+        return HTMLResponse("", status_code=200)
+
+    # Resolve the lens. Job-specific with an unknown/blank id defaults to the top.
+    if context not in ("all", "top3", "job"):
+        context = "all"
+    if context == "job":
+        if job_id not in {j["job_id"] for j in scored}:
+            job_id = scored[0]["job_id"]
+        scope: tuple = ("job", job_id)
+    elif context == "top3":
+        scope = ("top3",)
+    else:
+        scope = ("all",)
+
+    client = None
+    api_key = resolve_api_key()
+    if api_key:
+        try:
+            client = GeminiClient(api_key=api_key)
+        except GeminiError:
+            client = None
+
+    # to_thread: build_gap_map may make a synchronous, blocking Gemini call on a
+    # cache miss — same event-loop reasoning as scoring / per-job enhance.
+    pillars = await asyncio.to_thread(
+        gap_map.build_gap_map,
+        resume_id=resume_id,
+        resume_text=current["parsed"].get("raw_text", ""),
+        client=client,
+        lang=lang,
+        scope=scope,
+    )
+    columns = [
+        {"key": p, "clusters": [c.to_dict() for c in pillars[p]]}
+        for p in gap_map.PILLARS
+    ]
+    # Dismissed clusters (REQ-021): stored lower-cased; the footer offers a
+    # one-click restore for false positives killed by mistake.
+    dismissed = sorted(db.get_gap_dismissals(resume_id, lang))
+    return templates.TemplateResponse(
+        request, "partials/gap_map.html", {
+            "columns": columns,
+            "context": context,
+            "job_id": job_id,
+            "scored_jobs": scored,
+            "show_counts": context != "job",
+            "dismissed": dismissed,
+        },
+    )
+
+
+@router.get("/profile/gap-map")
+async def profile_gap_map(request: Request, context: str = "all", job_id: str = ""):
+    """Lazy fragment: the aggregated gap map (REQ-019 / ADR-022, panel REQ-020).
+    Same hx-trigger="load" pattern as ai-summary: the page paints instantly, this
+    resolves the aggregation + one JD-free classification call on its own.
+
+    `context` is the lens (ADR-025): "all" (every scored job), "top3" (the 3
+    highest-scored), or "job" (one job via `job_id`). The context tabs + the
+    Job-specific dropdown re-fetch this fragment with the new params. Degrades to
+    cached classifications (or honest 'real') without a key or on quota."""
+    return await _render_gap_map(request, context, job_id)
+
+
+@router.post("/profile/gap-map/dismiss")
+async def profile_gap_map_dismiss(
+    request: Request,
+    canonical: str = Form(...),
+    context: str = Form("all"),
+    job_id: str = Form(""),
+):
+    """Mark a gap cluster as a false positive so the map drops it (REQ-020 /
+    ADR-024). The ✕ on a pill re-renders the whole panel (so the hidden-gaps
+    footer updates too) and fires an `HX-Trigger` the client turns into an Undo
+    toast (REQ-021)."""
+    current = db.get_current_resume()
+    if not current:
+        return HTMLResponse("", status_code=200)
+    db.dismiss_gap_cluster(int(current["id"]), get_reasoning_language(), canonical)
+    resp = await _render_gap_map(request, context, job_id)
+    # Payload the base.html listener turns into a toast with an Undo action.
+    resp.headers["HX-Trigger"] = json.dumps({
+        "gap-dismissed": {
+            "msg": translate("profile.gap_map.dismissed_toast", label=canonical),
+            "undo": translate("profile.gap_map.undo"),
+            "canonical": canonical,
+            "context": context,
+            "job_id": job_id,
+        }
+    })
+    return resp
+
+
+@router.post("/profile/gap-map/restore")
+async def profile_gap_map_restore(
+    request: Request,
+    canonical: str = Form(...),
+    context: str = Form("all"),
+    job_id: str = Form(""),
+):
+    """Undo a dismissal (REQ-021) — from the Undo toast or the hidden-gaps footer.
+    Deletes the dismissal row and re-renders the panel so the cluster reappears."""
+    current = db.get_current_resume()
+    if not current:
+        return HTMLResponse("", status_code=200)
+    db.undismiss_gap_cluster(int(current["id"]), get_reasoning_language(), canonical)
+    return await _render_gap_map(request, context, job_id)
 
 
 @router.get("/profile/suggest-queries")
@@ -759,6 +888,17 @@ async def data_delete_all(request: Request, confirmation: str = Form("")):
         for table in (
             "job_scores", "applications", "viewed_jobs", "dismissed_jobs",
             "suggested_queries", "resume_ai_summary",
+            # Gap-feature caches keyed on resume_hash (no FK cascade → must be
+            # explicit): per-job enhancements + the gap-map classification cache
+            # + the user's ✕ dismissals (REQ-018/019/020). Left behind, they're
+            # orphaned LLM analysis of a résumé the user just deleted.
+            "gap_enhancements", "gap_classification", "gap_dismissals",
+            # Prep / land-it kit (REQ-023). prep_kits CASCADEs off prep_sessions,
+            # but delete it explicitly first for intent; prep_sessions keys on
+            # resume_hash (no FK cascade from resumes) and company_outlook has no
+            # FK at all → both must be wiped by hand or they orphan (same trap as
+            # the gap caches above, [[project_delete_all_resume_hash_tables]]).
+            "prep_kits", "prep_sessions", "company_outlook",
             "resumes", "jobs",
             "saved_searches", "search_tasks",
             "events", "feedback", "admin_reports",

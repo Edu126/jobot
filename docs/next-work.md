@@ -18,6 +18,117 @@ fixes.
 [ADR-007](decisions/ADR-007-domain-neutral-persona-from-resume-context.md),
 [ADR-013](decisions/ADR-013-persona-source-shared-resume-profile.md).
 
+## PENDING — REQ-016 sprint hygiene (deferred by Eduardo 2026-08-31)
+`/simplify` + `/code-review low` on the REQ-016 commits (`e630742` B-layer,
+`d01a305` validation harness + disclaimer + A-layer rollback) NOT run yet —
+Eduardo wants it folded into a larger project-wide review later. Also pending:
+his marks on `data/ab_scoring_2026-08-31.md` (the cross-language prompt go/no-go).
+
+## 2026-08-31 — Cache/memory architecture map + Mehran resume-gen feedback (MAP ONLY, do not fix yet)
+
+Opened by Eduardo. Suspicion: "part of the cache stays in RAM, not DB."
+**Confirmed — yes.** Audit of where state lives:
+
+**In-RAM (module-level, lost on process death):**
+- `core/llm/gemini.py` — `_exhausted_models` (model→quota-exhaustion date) and
+  `_request_counts` ((model,date)→count). Comment acknowledges "cleared on
+  restart."
+- `core/settings.py` — `_cache` dict. **Write-through to DB**, repopulates on
+  miss → lower risk.
+- `core/jobs/ats/oracle_hcm.py` — `_SITE_COMPANY_CACHE` scrape optimisation.
+  Minor.
+
+**Durable (DB/file — already migrated, safe):** task state (`core/jobs/tasks.py`,
+PR-2 migration off the old in-memory `ui_web.state.search_tasks`), job-search
+cache (`data/jobs_cache/*.json`), scores / suggestions / ai_summary (SQLite).
+
+**Risk of keeping the RAM state, esp. on Fly `auto_stop_machines='stop'`:**
+The machine cycles often → `_exhausted_models` + `_request_counts` reset every
+cycle. Effects: (a) re-probe exhausted models → wasted 429s; (b) the fallback
+chain can pick a *different model* across runs → **inconsistent model →
+inconsistent scores/quality**; (c) request-count shown to the user is wrong
+after any restart; (d) if ever scaled >1 machine, per-process RAM state never
+shares → divergence.
+
+**Mehran feedback (search-by-link, LinkedIn job 4454079380, aggressive resume gen):**
+1. *3 aggressive attempts → totally different scores each.* Mapped root causes:
+   (a) scoring `temperature = 0.4` in `core/llm/gemini.py` → inherent run-to-run
+   LLM non-determinism; (b) probable model-fallback divergence from the RAM-reset
+   exhaustion state landing different runs on different models. This is exactly
+   what [REQ-015](requirements/REQ-015-deterministic-scoring-redesign.md) /
+   [REQ-016](requirements/REQ-016-scoring-v2-rank-aware-honest-fit.md) target.
+2. *First aggressive run truncated the resume's experience.* Separate from cache
+   — a generation/writer truncation bug (candidates: `MAX_RESUME_CHARS`,
+   `core/resume/ai_regenerate.py`, `core/resume/writer.py`). Same class as the
+   "mid-word evidence truncation" already fixed once in Sprint 7 hygiene.
+
+**Improvement options:**
+- ~~Persist gemini exhaustion + request counts to DB (mirror the PR-2
+  task-state migration); small table keyed `(model, date)`.~~ **DONE
+  2026-09-01** — schema v18 `gemini_model_state(model, day, exhausted, count)`;
+  `core/llm/gemini.py` reads/writes it (helpers swallow DB errors → old
+  "assume available" fallback so CLI/tests never break). Kills Mehran's
+  cause (b): the fallback chain now stays on the SAME model across Fly
+  restarts instead of re-probing and diverging. Test:
+  `tests/test_gemini_model_state.py` (round-trip + durability).
+- ~~Scoring `temperature → 0` for determinism (REQ-015/016).~~ **DONE
+  2026-08-31** — per-call override on `generate_json` (scoring passes 0.0,
+  generation keeps 0.4). Kills cause (a).
+- ~~Score cache keyed on **resume-text hash** (not `resume_id`).~~ **DONE
+  2026-08-31** — schema v17: `job_scores` PK re-keyed on the resume text hash
+  (`resumes.text_hash`), resolved from `resume_id` inside `db.py` so no call
+  site changed. A regenerated-but-equivalent resume now reuses its scores.
+- ~~Investigate the regen truncation separately (writer / ai_regenerate).~~
+  **FIXED 2026-09-01 — reproduced LIVE on Mehran's Fly app (`jobbotv2-hermana`,
+  resume id 9 × job `li-4454079380`, aggressive level) and evidence-driven.**
+  What it is NOT (ruled out by repro): a token cutoff. At the 8192 default the
+  truncated run returned *complete, valid JSON with the full cover letter* —
+  just 5 of 22 experience items. `generate_json` never raised MAX_TOKENS, so
+  the model was **choosing** to emit ~5 items (interprets aggressive "collapse
+  bullets" as "keep the top few"). ~20% of runs, non-deterministic (temp 0.4),
+  same model each time (so not fallback divergence either). Two guessed fixes
+  were tried and **both empirically refuted** on the machine, then reverted:
+  (a) `max_output_tokens=16384` — irrelevant, it's not a token cutoff; (b) an
+  `_OUTPUT_SCHEMA` "never drop an entry" rule — A/B on real data showed no
+  effect (1/5 collapse with AND without it). **Actual fix:** a structural-
+  fidelity guard in `core/llm/rewrite.py` (ADR-005 contract-layer pattern) —
+  `_collapsed_sections` flags experience/education dropping below 60% of the
+  original item count, `rewrite_resume` then retries once (per-call random →
+  ~20%²≈4% residual) and restores any still-collapsed section verbatim from
+  the original. No role/employer/degree can ever be silently lost. Live
+  validation (6 guarded trials on Mehran's data): both catastrophic collapses
+  (5/22) recovered to 22/22; legitimate aggressive trims (18–21/22) correctly
+  pass through untouched. Test: `tests/test_rewrite_fidelity.py` (deterministic,
+  fake client). **Note:** count-based threshold is a proxy — refining to true
+  role-header counting was skipped (header detection is fragile; the 0.6 gap
+  between collapse ~0.23 and legit trim ~0.82+ is clean).
+
+Landed alongside the above (REQ-016 B-layer pass, 2026-08-31): the 5→3→1
+`semantic_score.py` prompt reframe — coverage-anchored scoring + cross-language
+rule + wrong-language gap (ADR-017/018), `PROMPT_VERSION` bumped.
+
+REQ-016 A-layer (2026-08-31): `lite_score.rank()` wired at the score-batch
+boundary then **ROLLED BACK** ([ADR-020](decisions/ADR-020-defer-lite-score-a-layer.md))
+— the chain scores every job anyway, so it only reordered (no call saving) at
+higher CPU and gave no cross-language gain. `affinity` retained; `lite_score`
+unwired until a real top-N cap is chosen. A/B + determinism harnesses added
+(`scripts/scoring_bakeoff.py --ab` / `--determinism`), now **batch-of-5** =
+production path. **ACTION for Eduardo:** mark `data/ab_scoring_<date>.md` — the
+ground-truth go/no-go on the NEW prompt. Batch findings: composition shifts
+scores (Mehran 88 solo→75 in-batch), NEW less drifty than OLD, cross-language
+wins clear (Andrea EN 45→62, wrong-language gap firing).
+
+Determinism finding (2026-08-31, [ADR-019](decisions/ADR-019-gemini-scoring-nondeterministic-stability-via-cache.md)):
+`--determinism` demo proved **temp=0 does NOT make Gemini deterministic** —
+same model, same prompt, drift ±3–10 + band-edge bucket flips. Not fallback
+divergence (model verified constant). Decision: user-facing stability = the
+text-hash cache freezing the first score (not temperature); keep temp=0; ship an
+honest tailor-tab disclaimer (`tailor.score_disclaimer`, EN/ES). Escalation if a
+real user complains = median-of-3 on first write (deferred). ~~**Still open:**
+persist gemini exhaustion/counts to DB (fallback divergence across restarts —
+separate from this same-model finding); regen truncation bug.~~ **Both closed
+2026-09-01 — see the two DONE/ADDRESSED bullets above.**
+
 ## What's the sprint
 Section-based scoring (LLM produces per-section evidence, backend
 does the math) + domain-neutral persona derived from resume context

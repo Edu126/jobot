@@ -12,6 +12,7 @@ from typing import Any
 
 from .gemini import GeminiClient
 from .prompts import Level, build_rewrite_prompt
+from .sanitize import strip_md_escapes
 
 
 # LLMs sometimes emit placeholders in the cover letter or summary even when
@@ -171,9 +172,24 @@ def rewrite_resume(
         persona=persona,
     )
 
+    # Structural-fidelity guard. On real resumes, gemini-flash-lite emits
+    # valid, complete JSON that occasionally COLLAPSES a whole section — a
+    # 22-item experience list comes back with 5 (~20% of aggressive runs,
+    # verified on a real user's resume against the Fly deploy; NOT a token
+    # cutoff — the JSON parses and the cover letter is fully present). A
+    # rewrite that silently drops most of someone's experience is worse than
+    # no tailoring, so we (1) retry once — the collapse is per-call random,
+    # not deterministic — and (2) if a section is STILL collapsed, restore it
+    # verbatim from the original. No role, employer, or degree is ever lost.
+    # This is the ADR-005 pattern (quality in the contract layer via silent
+    # retry + validation, not a user-facing "Regenerate" button).
     response = client.generate_json(prompt)
-    new_sections_raw = response.get("sections") or {}
-    new_sections = _coerce_sections(new_sections_raw)
+    new_sections = _coerce_sections(response.get("sections") or {})
+    if _collapsed_sections(editable_sections, new_sections):
+        response = client.generate_json(prompt)
+        new_sections = _coerce_sections(response.get("sections") or {})
+    for key in _collapsed_sections(editable_sections, new_sections):
+        new_sections[key] = list(editable_sections[key])
 
     # Re-attach the original header bucket so nothing is silently lost.
     if sections.get("header"):
@@ -183,7 +199,7 @@ def rewrite_resume(
     if isinstance(cover_letter, list):
         # Some LLM outputs split paragraphs into a list — re-join.
         cover_letter = "\n\n".join(str(p).strip() for p in cover_letter if p)
-    cover_letter = (cover_letter or "").strip()
+    cover_letter = strip_md_escapes((cover_letter or "").strip())
 
     # Post-process placeholders. Belt-and-suspenders next to the prompt rule.
     candidate_name = contact.get("name", "").strip()
@@ -243,6 +259,28 @@ def tailored_to_text(tailored: dict[str, Any]) -> str:
     return "\n".join(parts).strip()
 
 
+# Sections where a big item-count drop means the model dropped whole entries
+# (a role, an employer, a degree) rather than legitimately trimming bullets.
+# Skills/summary can shrink for real; experience/education shrinking that hard
+# is data loss.
+_FIDELITY_SECTIONS = ("experience", "education")
+
+
+def _collapsed_sections(original: dict, tailored: dict) -> list[str]:
+    """Return the fidelity-critical sections whose tailored item count fell so
+    far below the original that entries were almost certainly dropped, not
+    trimmed. Threshold: under 60% of the original items, and the original had
+    enough items (>=4) for the ratio to mean something (a 3-bullet role
+    legitimately becoming 2 isn't a collapse)."""
+    collapsed = []
+    for key in _FIDELITY_SECTIONS:
+        orig_n = len(original.get(key) or [])
+        new_n = len(tailored.get(key) or [])
+        if orig_n >= 4 and new_n < 0.6 * orig_n:
+            collapsed.append(key)
+    return collapsed
+
+
 def _coerce_sections(raw: Any) -> dict[str, list[str]]:
     """Defensive cleanup of the LLM's sections dict.
 
@@ -263,26 +301,26 @@ def _coerce_section_value(value: Any) -> list[str]:
     if value is None:
         return []
     if isinstance(value, str):
-        return [value] if value.strip() else []
+        return [strip_md_escapes(value.strip())] if value.strip() else []
     if isinstance(value, list):
         result: list[str] = []
         for item in value:
             if isinstance(item, str):
                 if item.strip():
-                    result.append(item.strip())
+                    result.append(strip_md_escapes(item.strip()))
             elif isinstance(item, dict):
                 # flatten "title: ... | bullets: [...]" shapes if the LLM
                 # ignores the format instruction
                 title = item.get("title") or item.get("role") or item.get("heading")
                 if title:
-                    result.append(str(title).strip())
+                    result.append(strip_md_escapes(str(title).strip()))
                 bullets = item.get("bullets") or item.get("achievements") or []
                 if isinstance(bullets, list):
                     for b in bullets:
                         if isinstance(b, str) and b.strip():
-                            result.append(b.strip())
+                            result.append(strip_md_escapes(b.strip()))
             elif item is not None:
-                result.append(str(item))
+                result.append(strip_md_escapes(str(item)))
         return result
     if isinstance(value, dict):
         # treat as a single titled block

@@ -1,0 +1,40 @@
+{# Detail-pane score-dependent analysis (reasoning + matched + gaps).
+   Rendered inside job_detail.html on selection AND OOB-swapped by
+   /score-batch when the open job is scored, so the analysis fills in
+   without a whole-pane refetch. Empty until a score exists. Scoped id so
+   the OOB only lands on the open pane. #}
+<div id="detail-analysis-{{ job.id }}"{% if oob %} hx-swap-oob="true"{% endif %} class="space-y-4{% if not ai %} hidden{% endif %}">
+  {% if ai %}
+  {% if ai.reasoning %}
+  <p class="text-sm italic text-base-content/85 leading-relaxed quoted">{{ ai.reasoning }}</p>
+  {% endif %}
+  {% if ai.matched or ai.gaps %}
+  <div class="grid grid-cols-1 gap-3 text-sm">
+    {% if ai.matched %}
+    <div>
+      <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-check i-3"></i>{{ _('jobs.matched') }}</div>
+      <div class="flex flex-wrap gap-1">
+        {% for m in ai.matched %}<span class="chip chip-matched">{{ m }}</span>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if ai.gaps %}
+    {# Plain gaps block; the lazy loader (REQ-018 / ADR-021) self-replaces it
+       (same wrapper id) with the enhanced version — pills gain hover tooltips
+       and the (i) hint. Fires on insert (also after an OOB score swap). On any
+       failure the route re-renders these same plain pills, so chips are never
+       lost. #}
+    <div id="gaps-block-{{ job.id }}"
+         hx-get="/jobs/gap-enhance/{{ job.id }}"
+         hx-trigger="load"
+         hx-swap="outerHTML">
+      <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-warning i-3"></i>{{ _('jobs.gaps') }}</div>
+      <div class="flex flex-wrap gap-1">
+        {% for g in ai.gaps %}<span class="chip chip-gap">{{ g }}</span>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+</div>

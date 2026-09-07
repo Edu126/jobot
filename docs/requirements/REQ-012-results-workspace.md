@@ -2,7 +2,7 @@
 
 Date: 2026-08-26
 Source: Eduardo (product architect), written as a full REQ + SA review request
-Status: Open
+Status: Shipped (Sprint 8, 2026-08-26)
 
 ## What they asked for
 

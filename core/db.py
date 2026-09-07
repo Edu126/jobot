@@ -13,6 +13,7 @@ Conventions:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from contextlib import contextmanager
@@ -25,9 +26,23 @@ from typing import Any, Iterable, Optional
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobot.db"
 
 
+def _resume_text_hash(parsed: dict) -> str:
+    """Stable content hash of a resume's extracted text — the score cache key
+    (v17). Two resume rows with identical text (e.g. a re-upload or a
+    deterministic regeneration → new `resume_id`) hash the same, so their
+    scores dedupe instead of forcing a full re-score (Mehran's unstable-
+    re-score, next-work.md). Hashes the `raw_text` scoring actually reads
+    (`resume["parsed"]["raw_text"]`), stripped; '' when there's no text —
+    scoring short-circuits on empty resumes anyway."""
+    raw = (parsed.get("raw_text") or "").strip()
+    if not raw:
+        return ""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 # ---------- schema ----------
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 23
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
@@ -42,7 +57,17 @@ SCHEMA_VERSION = 16
 # otherwise it's recomputed. Old rows keep '' and simply miss until
 # re-scored — additive columns, no rebuild needed (v15 uses ALTER TABLE
 # ADD COLUMN, unlike v13's PK-changing rebuild-and-copy).
+#
+# v17 (REQ-016 / ADR-018): the cache key is the resume's TEXT HASH, not its
+# `resume_id`. `resume_hash` joins the PK (in place of `resume_id`) so a
+# regenerated-but-equivalent resume — same text, new id — reuses the score
+# instead of re-scoring (Mehran's unstable re-score). `resume_id` stays as a
+# plain FK column for ON DELETE CASCADE + the resume-scoped index + the BI
+# pulse joins. Callers still pass `resume_id`; get/save resolve it to the
+# hash internally (via resumes.text_hash), so no call site changed. PK change
+# ⇒ rebuild-and-copy migration (like v13).
 _JOB_SCORES_BODY = """
+    resume_hash            TEXT NOT NULL DEFAULT '',
     resume_id              INTEGER NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
     job_id                 TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     lang                   TEXT NOT NULL DEFAULT '',
@@ -57,7 +82,7 @@ _JOB_SCORES_BODY = """
     scoring_version        TEXT NOT NULL DEFAULT '',
     model                  TEXT NOT NULL,
     scored_at              TEXT NOT NULL,
-    PRIMARY KEY (resume_id, job_id, lang)
+    PRIMARY KEY (resume_hash, job_id, lang)
 """
 
 # v14: `lang` joins the PK on the two remaining LLM user-text caches.
@@ -101,7 +126,8 @@ CREATE TABLE IF NOT EXISTS resumes (
     source_format TEXT,
     parsed_json  TEXT NOT NULL,
     raw_bytes    BLOB,
-    is_current   INTEGER NOT NULL DEFAULT 0
+    is_current   INTEGER NOT NULL DEFAULT 0,
+    text_hash    TEXT NOT NULL DEFAULT ''   -- v17: score-cache key (REQ-016)
 );
 CREATE INDEX IF NOT EXISTS idx_resumes_current ON resumes(is_current);
 
@@ -322,6 +348,138 @@ CREATE TABLE IF NOT EXISTS tailor_runs (
     created_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tailor_runs_job ON tailor_runs(job_id, created_at DESC);
+
+-- v18: persist Gemini per-model daily state (quota exhaustion + successful
+-- request counts) so it survives Fly `auto_stop_machines` cycling.
+-- Previously lived only in RAM (core/llm/gemini.py `_exhausted_models` /
+-- `_request_counts`), reset on every machine wake. That RAM reset caused
+-- (a) re-probing exhausted models → wasted 429s, and (b) the fallback chain
+-- landing on a DIFFERENT model across runs → inconsistent scores (Mehran's
+-- unstable re-score, next-work.md cause b). Keyed (model, day); rolls over
+-- at UTC midnight, matching the gemini_usage convention. New table only —
+-- CREATE IF NOT EXISTS covers fresh + existing DBs, no data migration.
+CREATE TABLE IF NOT EXISTS gemini_model_state (
+    model      TEXT NOT NULL,
+    day        TEXT NOT NULL,
+    exhausted  INTEGER NOT NULL DEFAULT 0,
+    count      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (model, day)
+);
+CREATE INDEX IF NOT EXISTS idx_gemini_model_state_day ON gemini_model_state(day);
+
+-- v19: cache gap-enhancement output (REQ-018 / ADR-021). We turn a job's
+-- score-time `gaps` into per-gap honest next actions (wording gap vs real
+-- gap + suggestion). Derived from the résumé × job × language, so keyed the
+-- SAME way as job_scores: on the résumé TEXT hash (v17 convention) so a
+-- re-uploaded identical résumé reuses it, plus lang, plus prompt_version for
+-- logical invalidation (bump the version → old rows are misses, never
+-- deleted). One row per (job, résumé-text, lang, prompt_version); the
+-- enhancements themselves live as a JSON blob. Generated lazily on detail
+-- open, never at score time (ADR-021), so many scored-but-unopened jobs cost
+-- nothing. New table only — CREATE IF NOT EXISTS covers fresh + existing DBs.
+CREATE TABLE IF NOT EXISTS gap_enhancements (
+    job_id            TEXT NOT NULL,
+    resume_hash       TEXT NOT NULL,
+    lang              TEXT NOT NULL,
+    prompt_version    TEXT NOT NULL,
+    enhancements_json TEXT NOT NULL,
+    model             TEXT,
+    created_at        TEXT NOT NULL,
+    PRIMARY KEY (job_id, resume_hash, lang, prompt_version)
+);
+
+-- v20: per-distinct-gap classification for the aggregated GAP MAP (REQ-019 /
+-- ADR-022). The map counts each gap's frequency across the résumé's scored
+-- jobs (pure SQL over job_scores.gaps_json — no table needed), then classifies
+-- each DISTINCT gap JD-free (résumé × gap → wording|real + suggestion/defense
+-- hook). This caches that classification keyed on the résumé TEXT hash (v17
+-- convention) + lang + gap + prompt_version, so repeat renders are ~free and
+-- only newly-seen gaps cost an LLM call. Distinct from gap_enhancements, which
+-- is JD-specific (ADR-021); this one is candidate-level.
+CREATE TABLE IF NOT EXISTS gap_classification (
+    resume_hash     TEXT NOT NULL,
+    lang            TEXT NOT NULL,
+    gap             TEXT NOT NULL,
+    prompt_version  TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    suggestion      TEXT NOT NULL DEFAULT '',
+    category        TEXT NOT NULL DEFAULT 'domain',
+    canonical       TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL,
+    PRIMARY KEY (resume_hash, lang, gap, prompt_version)
+);
+
+-- REQ-020 / ADR-024: user dismissals of gap CLUSTERS from the map (the ✕ =
+-- "this is a false positive"). Keyed on the résumé TEXT hash (v17 convention) +
+-- lang + the cluster's canonical label. build_gap_map filters these out. No LLM,
+-- no PII — a manual override on top of the AI classification (ADR-023).
+CREATE TABLE IF NOT EXISTS gap_dismissals (
+    resume_hash  TEXT NOT NULL,
+    lang         TEXT NOT NULL,
+    canonical    TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    PRIMARY KEY (resume_hash, lang, canonical)
+);
+
+-- v21: the Prep / "land it" kit (REQ-023). Three new tables, all
+-- CREATE IF NOT EXISTS (fresh + existing DBs, no data migration).
+--
+-- prep_sessions (ADR-026): a per-VACANCY prep workspace, created at the
+-- callback moment (which lands months after apply). SELF-CONTAINED — carries
+-- the vacancy's own fields so it survives even if the job row / live posting
+-- disappears; `job_id` is an OPTIONAL binding set only when matching succeeds
+-- (ON DELETE SET NULL, not CASCADE, so wiping a job doesn't drop the session).
+-- `resume_hash` is the candidate key (v17 convention). Creating a session IS
+-- the callback signal (no separate event). `status` is a light lifecycle
+-- (mockup "Interview Scheduled").
+CREATE TABLE IF NOT EXISTS prep_sessions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    resume_hash    TEXT NOT NULL,
+    job_id         TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+    company        TEXT NOT NULL,
+    role_title     TEXT NOT NULL DEFAULT '',
+    jd_text        TEXT NOT NULL DEFAULT '',
+    lang           TEXT NOT NULL DEFAULT '',
+    source         TEXT NOT NULL,                  -- from_job | pasted_link | pasted_text
+    status         TEXT NOT NULL DEFAULT 'scheduled',
+    match_score    INTEGER,                        -- one-shot fit for imported/pasted JD (ADR-030); bound sessions derive from job_scores
+    match_brief    TEXT,                           -- JSON fit brief {reasoning, matched[], gaps[]} for the prep-stage context bar (REQ-025); bound sessions derive from job_scores
+    created_at     TEXT NOT NULL,
+    last_opened_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_prep_sessions_resume ON prep_sessions(resume_hash);
+
+-- company_outlook (ADR-027): structured, cached company briefing, SHARED by
+-- the Tailor opt-in and Prep. Built two-hop (GoogleSearch grounded text →
+-- JSON structuring). Keyed on every varying dimension (ADR-008 rule 3):
+-- normalized company × role × lang × prompt_version. `outlook_json` holds
+-- {culture_tone, strategic_focus, recent_news:[{headline,date,url}]};
+-- `verified_at` drives freshness (the sanctioned "Refresh news intel").
+CREATE TABLE IF NOT EXISTS company_outlook (
+    company_norm   TEXT NOT NULL,
+    role_title     TEXT NOT NULL DEFAULT '',
+    lang           TEXT NOT NULL DEFAULT '',
+    prompt_version TEXT NOT NULL DEFAULT '',
+    outlook_json   TEXT NOT NULL,
+    sources_json   TEXT NOT NULL DEFAULT '[]',
+    model          TEXT,
+    verified_at    TEXT NOT NULL,
+    PRIMARY KEY (company_norm, role_title, lang, prompt_version)
+);
+
+-- prep_kits (ADR-028): the read-only cached kit blob per session — STAR Q&A
+-- bank (incl. defense-hook reuse) + reverse-interview questions. One blob,
+-- keyed (session, lang, prompt_version); no user-edit layer (copy-first).
+-- CASCADE on the session: deleting the session drops its kit.
+CREATE TABLE IF NOT EXISTS prep_kits (
+    prep_session_id INTEGER NOT NULL REFERENCES prep_sessions(id) ON DELETE CASCADE,
+    lang            TEXT NOT NULL DEFAULT '',
+    prompt_version  TEXT NOT NULL DEFAULT '',
+    kit_json        TEXT NOT NULL,
+    model           TEXT,
+    created_at      TEXT NOT NULL,
+    PRIMARY KEY (prep_session_id, lang, prompt_version)
+);
 """
 
 _SCHEMA_SQL = (
@@ -445,11 +603,76 @@ def init_db(path: Path = DB_PATH) -> None:
                 ALTER TABLE job_scores ADD COLUMN scoring_version TEXT NOT NULL DEFAULT '';
             """)
 
+        # v22 (REQ-025 / ADR-030): Prep entry can import/paste a JD not in our
+        # DB; its one-shot fit is stored on the session itself (self-contained,
+        # no jobs-board pollution). Additive nullable column — old rows read
+        # back NULL and fall through to the bound-job score subquery as before.
+        ps_cols = {r["name"] for r in conn.execute("PRAGMA table_info(prep_sessions)").fetchall()}
+        if ps_cols and "match_score" not in ps_cols:
+            conn.execute("ALTER TABLE prep_sessions ADD COLUMN match_score INTEGER")
+        # v23 (REQ-025): the prep-stage fit brief (narrative + strengths + gaps),
+        # shown up top instead of a bare %. Additive nullable JSON column.
+        if ps_cols and "match_brief" not in ps_cols:
+            conn.execute("ALTER TABLE prep_sessions ADD COLUMN match_brief TEXT")
+
         ras_cols = {r["name"] for r in conn.execute("PRAGMA table_info(resume_ai_summary)").fetchall()}
         if ras_cols and "domain" not in ras_cols:
             conn.executescript("""
                 ALTER TABLE resume_ai_summary ADD COLUMN domain TEXT NOT NULL DEFAULT '';
                 ALTER TABLE resume_ai_summary ADD COLUMN seniority TEXT NOT NULL DEFAULT '';
+            """)
+
+        # REQ-020 / ADR-023: the gap map's classify call now also returns a
+        # theme `category` and a `canonical` cluster label. Additive columns —
+        # PROMPT_VERSION bumps so old rows (default 'domain'/'') never match the
+        # current prompt and get reclassified; no data lost.
+        gc_cols = {r["name"] for r in conn.execute("PRAGMA table_info(gap_classification)").fetchall()}
+        if gc_cols and "canonical" not in gc_cols:
+            conn.executescript("""
+                ALTER TABLE gap_classification ADD COLUMN category TEXT NOT NULL DEFAULT 'domain';
+                ALTER TABLE gap_classification ADD COLUMN canonical TEXT NOT NULL DEFAULT '';
+            """)
+
+        # v17 migration (REQ-016 / ADR-018): re-key the score cache on the
+        # resume TEXT HASH so a regenerated-but-equivalent resume reuses its
+        # scores instead of re-scoring (Mehran's unstable re-score,
+        # next-work.md). Two ordered steps: (1) populate resumes.text_hash,
+        # then (2) rebuild job_scores with resume_hash in the PK, backfilled
+        # from resumes.text_hash. Non-destructive, mirrors v13's rebuild-and-
+        # copy; rows whose resume is gone coalesce to '' and simply stop
+        # hitting cache (re-scored on next view).
+        resumes_cols = {r["name"] for r in conn.execute("PRAGMA table_info(resumes)").fetchall()}
+        if "text_hash" not in resumes_cols:
+            conn.execute("ALTER TABLE resumes ADD COLUMN text_hash TEXT NOT NULL DEFAULT ''")
+        for r in conn.execute("SELECT id, parsed_json FROM resumes WHERE text_hash = ''").fetchall():
+            try:
+                parsed = json.loads(r["parsed_json"])
+            except (TypeError, ValueError):
+                parsed = {}
+            h = _resume_text_hash(parsed)
+            if h:
+                conn.execute("UPDATE resumes SET text_hash = ? WHERE id = ?", (h, r["id"]))
+
+        scores_cols = {r["name"] for r in conn.execute("PRAGMA table_info(job_scores)").fetchall()}
+        if scores_cols and "resume_hash" not in scores_cols:
+            # OR IGNORE: two old rows for different resume_ids that share text
+            # (same hash) + same (job_id, lang) collide on the new PK — keep
+            # the first; they're duplicates by construction (identical text →
+            # identical score).
+            conn.executescript(f"""
+                CREATE TABLE job_scores_new ({_JOB_SCORES_BODY});
+                INSERT OR IGNORE INTO job_scores_new
+                    (resume_hash, resume_id, job_id, lang, score, verdict, reasoning,
+                     matched_json, gaps_json, sections_json, hard_requirements_json,
+                     prompt_version, scoring_version, model, scored_at)
+                SELECT COALESCE((SELECT text_hash FROM resumes WHERE id = js.resume_id), ''),
+                       js.resume_id, js.job_id, js.lang, js.score, js.verdict, js.reasoning,
+                       js.matched_json, js.gaps_json, js.sections_json, js.hard_requirements_json,
+                       js.prompt_version, js.scoring_version, js.model, js.scored_at
+                FROM job_scores js;
+                DROP TABLE job_scores;
+                ALTER TABLE job_scores_new RENAME TO job_scores;
+                CREATE INDEX IF NOT EXISTS idx_job_scores_resume ON job_scores(resume_id);
             """)
 
         conn.execute(
@@ -519,14 +742,15 @@ def save_resume(
     with tx(path) as conn:
         cur = conn.execute(
             """INSERT INTO resumes
-               (filename, uploaded_at, source_format, parsed_json, raw_bytes, is_current)
-               VALUES (?, ?, ?, ?, ?, 0)""",
+               (filename, uploaded_at, source_format, parsed_json, raw_bytes, is_current, text_hash)
+               VALUES (?, ?, ?, ?, ?, 0, ?)""",
             (
                 filename,
                 _now(),
                 parsed.get("source_format", ""),
                 json.dumps(parsed, ensure_ascii=False),
                 raw_bytes,
+                _resume_text_hash(parsed),
             ),
         )
         new_id = int(cur.lastrowid)
@@ -598,11 +822,15 @@ def update_resume_contact(resume_id: int, contact: dict, path: Path = DB_PATH) -
 
 def update_resume_parsed(resume_id: int, parsed: dict, path: Path = DB_PATH) -> None:
     """Replace the full parsed_json for a resume. Used by the LLM regeneration
-    pass — caller has already produced a validated, complete parsed dict."""
+    pass — caller has already produced a validated, complete parsed dict.
+
+    Recomputes text_hash so the score cache tracks the regenerated text: an
+    edit that changes the resume re-scores; a regeneration that reproduces
+    the same text keeps hitting cache (v17, REQ-016)."""
     with tx(path) as conn:
         conn.execute(
-            "UPDATE resumes SET parsed_json = ? WHERE id = ?",
-            (json.dumps(parsed, ensure_ascii=False), resume_id),
+            "UPDATE resumes SET parsed_json = ?, text_hash = ? WHERE id = ?",
+            (json.dumps(parsed, ensure_ascii=False), _resume_text_hash(parsed), resume_id),
         )
 
 
@@ -817,6 +1045,33 @@ def get_tailor_run(job_id: str, run_index: int = -1, path: Path = DB_PATH) -> di
         return runs[run_index]["tailored"]
     except IndexError:
         return None
+
+
+def prep_match_candidates(resume_hash: str, path: Path = DB_PATH) -> list[dict]:
+    """The Prep matching search space (REQ-023 / ADR-026): every TAILORED job
+    (the strongest 'I applied here' signal, and where our reuse is richest) plus
+    THIS résumé's SCORED jobs. Deduped by job_id; `tailored` flags rows that
+    came from a tailor run so they can rank first on ties. Each row:
+    {job_id, title, company, job_url, job_url_direct, description, tailored}."""
+    if not resume_hash:
+        # No candidate identity → only the (résumé-agnostic) tailored set is safe.
+        resume_hash = "\x00never"
+    with connect(path) as conn:
+        rows = conn.execute(
+            """
+            SELECT j.id AS job_id, j.title AS title, j.company AS company,
+                   j.job_url AS job_url, j.job_url_direct AS job_url_direct,
+                   j.description AS description,
+                   MAX(CASE WHEN t.job_id IS NOT NULL THEN 1 ELSE 0 END) AS tailored
+            FROM jobs j
+            LEFT JOIN tailor_runs t ON t.job_id = j.id
+            LEFT JOIN job_scores js ON js.job_id = j.id AND js.resume_hash = ?
+            WHERE t.job_id IS NOT NULL OR js.job_id IS NOT NULL
+            GROUP BY j.id
+            """,
+            (resume_hash,),
+        ).fetchall()
+    return [{**dict(r), "tailored": bool(r["tailored"])} for r in rows]
 
 
 def get_dismissed_ids(job_ids: Iterable[str], path: Path = DB_PATH) -> set[str]:
@@ -1334,6 +1589,14 @@ def save_resume_ai_summary(
 
 # ---------- job scores (semantic matching cache) ----------
 
+def _text_hash_for(conn: sqlite3.Connection, resume_id: int) -> str:
+    """Resolve a resume_id to its text_hash (the v17 score-cache key). Callers
+    still pass resume_id; this is the one place that maps it to the hash so no
+    route or scoring call site had to change. '' when the resume is gone."""
+    row = conn.execute("SELECT text_hash FROM resumes WHERE id = ?", (resume_id,)).fetchone()
+    return (row["text_hash"] or "") if row else ""
+
+
 def get_cached_scores(
     resume_id: int,
     job_ids: Iterable[str],
@@ -1343,24 +1606,28 @@ def get_cached_scores(
     path: Path = DB_PATH,
 ) -> dict[str, dict]:
     """Return {job_id: score_row_dict} for any job in job_ids that already
-    has a score for this resume AT THIS UI LANGUAGE, under the CURRENT
-    prompt/scoring version. Missing jobs are simply omitted; rows scored
-    under a different `lang`, `prompt_version`, or `scoring_version` are
-    treated as misses so callers regenerate (ADR-006's logical
-    invalidation — old rows aren't deleted, just no longer served)."""
+    has a score for this resume's TEXT AT THIS UI LANGUAGE, under the CURRENT
+    prompt/scoring version. Keyed on the resume's text hash (v17), so a
+    re-uploaded / regenerated-but-identical resume hits its existing scores.
+    Missing jobs are simply omitted; rows scored under a different `lang`,
+    `prompt_version`, or `scoring_version` are treated as misses so callers
+    regenerate (ADR-006's logical invalidation — old rows aren't deleted,
+    just no longer served)."""
     job_ids = list(job_ids)
     if not job_ids:
         return {}
     with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return {}
         placeholders = ",".join("?" * len(job_ids))
         rows = conn.execute(
             f"""SELECT job_id, score, verdict, reasoning,
-                       matched_json, gaps_json, sections_json, hard_requirements_json,
-                       model, scored_at
+                       matched_json, gaps_json, model, scored_at
                 FROM job_scores
-                WHERE resume_id = ? AND lang = ? AND prompt_version = ? AND scoring_version = ?
+                WHERE resume_hash = ? AND lang = ? AND prompt_version = ? AND scoring_version = ?
                       AND job_id IN ({placeholders})""",
-            (resume_id, lang, prompt_version, scoring_version, *job_ids),
+            (resume_hash, lang, prompt_version, scoring_version, *job_ids),
         ).fetchall()
         return {r["job_id"]: dict(r) for r in rows}
 
@@ -1375,7 +1642,9 @@ def save_scores(
 ) -> int:
     """Upsert a batch of scores for one resume + language. Each score dict
     must have: job_id, score, verdict, reasoning, matched (list),
-    gaps (list), sections (dict), hard_requirements (list), model.
+    gaps (list), model. `sections`/`hard_requirements` are legacy columns
+    (defaulted to empty when absent) — single-value scoring no longer emits
+    them (ADR-015).
 
     `lang` is the UI language the reasoning/matched/gaps were generated in
     (see get_reasoning_language). It joins the PK so a Spanish score and
@@ -1386,19 +1655,28 @@ def save_scores(
     time (ADR-006) — stamped on every row so a later prompt or weight
     change can tell stale rows apart without deleting them.
 
-    Returns count written. Jobs referenced by job_id must already exist in
-    the jobs table (FK enforced)."""
+    The cache row is keyed on the resume's text hash (v17), resolved here
+    from `resume_id`; `resume_id` is also stored (updated on conflict) as the
+    live FK for CASCADE + BI joins. Returns count written. Jobs referenced by
+    job_id must already exist in the jobs table (FK enforced)."""
     now = _now()
     n = 0
     with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            # No text hash ⇒ the resume is text-less (can't be meaningfully
+            # scored) or gone. Skip the write: get_cached_scores short-circuits
+            # on the same condition, so these rows could never be read back.
+            return 0
         for s in scores:
             conn.execute(
                 """INSERT INTO job_scores (
-                    resume_id, job_id, lang, score, verdict, reasoning,
+                    resume_hash, resume_id, job_id, lang, score, verdict, reasoning,
                     matched_json, gaps_json, sections_json, hard_requirements_json,
                     prompt_version, scoring_version, model, scored_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(resume_id, job_id, lang) DO UPDATE SET
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(resume_hash, job_id, lang) DO UPDATE SET
+                    resume_id = excluded.resume_id,
                     score = excluded.score,
                     verdict = excluded.verdict,
                     reasoning = excluded.reasoning,
@@ -1411,6 +1689,7 @@ def save_scores(
                     model = excluded.model,
                     scored_at = excluded.scored_at""",
                 (
+                    resume_hash,
                     resume_id,
                     s["job_id"],
                     lang,
@@ -1429,6 +1708,549 @@ def save_scores(
             )
             n += 1
     return n
+
+
+def get_cached_gap_enhancement(
+    job_id: str,
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    path: Path = DB_PATH,
+) -> Optional[list[dict]]:
+    """Return the cached per-gap enhancement list for this (job, résumé-text,
+    lang) under the current prompt version, or None on a miss (REQ-018 /
+    ADR-021). Keyed on the résumé TEXT hash like get_cached_scores, so an
+    identical re-upload reuses it; rows under a different lang/prompt_version
+    are misses so callers regenerate. Returns the decoded JSON list."""
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return None
+        row = conn.execute(
+            """SELECT enhancements_json FROM gap_enhancements
+               WHERE job_id = ? AND resume_hash = ? AND lang = ? AND prompt_version = ?""",
+            (job_id, resume_hash, lang, prompt_version),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        parsed = json.loads(row["enhancements_json"])
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, list) else None
+
+
+def save_gap_enhancement(
+    job_id: str,
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    enhancements: list[dict],
+    model: str = "",
+    path: Path = DB_PATH,
+) -> bool:
+    """Upsert the per-gap enhancement list for one (job, résumé-text, lang).
+    Keyed on the résumé text hash (resolved from resume_id here, like
+    save_scores). No-ops when the résumé is text-less/gone (get_cached_*
+    short-circuits on the same condition). Returns True on write."""
+    now = _now()
+    with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return False
+        conn.execute(
+            """INSERT INTO gap_enhancements (
+                job_id, resume_hash, lang, prompt_version,
+                enhancements_json, model, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(job_id, resume_hash, lang, prompt_version) DO UPDATE SET
+                enhancements_json = excluded.enhancements_json,
+                model = excluded.model,
+                created_at = excluded.created_at""",
+            (
+                job_id, resume_hash, lang, prompt_version,
+                json.dumps(enhancements, ensure_ascii=False),
+                model, now,
+            ),
+        )
+    return True
+
+
+def get_company_outlook(
+    company_norm: str,
+    role_title: str,
+    lang: str,
+    prompt_version: str,
+    path: Path = DB_PATH,
+) -> Optional[dict]:
+    """Cached structured company briefing (REQ-023 / ADR-027), or None on a
+    miss. Keyed on normalized company × role × lang × prompt_version — every
+    varying dimension (ADR-008 rule 3). Shared by the Tailor opt-in and Prep.
+    Returns {outlook: {...}, sources: [...], model, verified_at}."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT outlook_json, sources_json, model, verified_at
+               FROM company_outlook
+               WHERE company_norm = ? AND role_title = ? AND lang = ? AND prompt_version = ?""",
+            (company_norm, role_title, lang, prompt_version),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        outlook = json.loads(row["outlook_json"])
+        sources = json.loads(row["sources_json"])
+    except (TypeError, ValueError):
+        return None
+    return {
+        "outlook": outlook if isinstance(outlook, dict) else {},
+        "sources": sources if isinstance(sources, list) else [],
+        "model": row["model"] or "",
+        "verified_at": row["verified_at"],
+    }
+
+
+def save_company_outlook(
+    company_norm: str,
+    role_title: str,
+    lang: str,
+    prompt_version: str,
+    outlook: dict,
+    sources: list[str],
+    model: str = "",
+    path: Path = DB_PATH,
+) -> bool:
+    """Upsert one structured briefing. `verified_at` (write time) drives the
+    freshness the 'Refresh news intel' affordance overwrites (ADR-027)."""
+    now = _now()
+    with tx(path) as conn:
+        conn.execute(
+            """INSERT INTO company_outlook (
+                company_norm, role_title, lang, prompt_version,
+                outlook_json, sources_json, model, verified_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(company_norm, role_title, lang, prompt_version) DO UPDATE SET
+                outlook_json = excluded.outlook_json,
+                sources_json = excluded.sources_json,
+                model = excluded.model,
+                verified_at = excluded.verified_at""",
+            (
+                company_norm, role_title, lang, prompt_version,
+                json.dumps(outlook, ensure_ascii=False),
+                json.dumps(sources, ensure_ascii=False),
+                model, now,
+            ),
+        )
+    return True
+
+
+def get_prep_kit(
+    prep_session_id: int,
+    lang: str,
+    prompt_version: str,
+    path: Path = DB_PATH,
+) -> Optional[dict]:
+    """Cached kit blob for a prep session (REQ-023 / ADR-028), or None on a
+    miss. Read-only cache keyed (session, lang, prompt_version) — no user-edit
+    layer (copy-first). Returns {kit: {...}, model, created_at}."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT kit_json, model, created_at FROM prep_kits
+               WHERE prep_session_id = ? AND lang = ? AND prompt_version = ?""",
+            (prep_session_id, lang, prompt_version),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        kit = json.loads(row["kit_json"])
+    except (TypeError, ValueError):
+        return None
+    return {
+        "kit": kit if isinstance(kit, dict) else {},
+        "model": row["model"] or "",
+        "created_at": row["created_at"],
+    }
+
+
+def save_prep_kit(
+    prep_session_id: int,
+    lang: str,
+    prompt_version: str,
+    kit: dict,
+    model: str = "",
+    path: Path = DB_PATH,
+) -> bool:
+    """Upsert one kit blob for a session/lang under the current prompt version."""
+    now = _now()
+    with tx(path) as conn:
+        conn.execute(
+            """INSERT INTO prep_kits (
+                prep_session_id, lang, prompt_version, kit_json, model, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(prep_session_id, lang, prompt_version) DO UPDATE SET
+                kit_json = excluded.kit_json,
+                model = excluded.model,
+                created_at = excluded.created_at""",
+            (prep_session_id, lang, prompt_version,
+             json.dumps(kit, ensure_ascii=False), model, now),
+        )
+    return True
+
+
+def create_prep_session(
+    resume_hash: str,
+    company: str,
+    role_title: str,
+    jd_text: str,
+    lang: str,
+    source: str,
+    job_id: Optional[str] = None,
+    match_score: Optional[int] = None,
+    match_brief: Optional[str] = None,
+    path: Path = DB_PATH,
+) -> int:
+    """Create a per-vacancy prep session (REQ-023 / ADR-026). Returns its id.
+    `source` ∈ from_job | pasted_link | pasted_text; `job_id` is the optional
+    binding set when matching succeeded. `match_score` + `match_brief` (JSON
+    {reasoning, matched, gaps}) are the one-shot fit for an imported/pasted JD
+    (ADR-030 / REQ-025) — bound sessions leave them NULL and derive from
+    job_scores instead."""
+    now = _now()
+    with tx(path) as conn:
+        cur = conn.execute(
+            """INSERT INTO prep_sessions
+               (resume_hash, job_id, company, role_title, jd_text, lang, source,
+                status, match_score, match_brief, created_at, last_opened_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?)""",
+            (resume_hash, job_id, company, role_title, jd_text, lang, source,
+             match_score, match_brief, now, now),
+        )
+    return int(cur.lastrowid)
+
+
+def get_prep_session(session_id: int, path: Path = DB_PATH) -> Optional[dict]:
+    """One prep session by id, or None."""
+    with connect(path) as conn:
+        row = conn.execute(
+            "SELECT * FROM prep_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_prep_session_for_job(
+    resume_hash: str, job_id: str, path: Path = DB_PATH
+) -> Optional[dict]:
+    """Existing session for this (candidate, job) — so 'Prep from here' reuses
+    one session per interview instead of spawning duplicates. Newest first."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT * FROM prep_sessions
+               WHERE resume_hash = ? AND job_id = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (resume_hash, job_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_prep_sessions(resume_hash: str, path: Path = DB_PATH) -> list[dict]:
+    """This candidate's prep sessions, newest first, each with the bound job's
+    best fit `score` when available (context-bar match %). Powers the Prep tab
+    list — a small, high-signal set (one per interview the user prepped for)."""
+    with connect(path) as conn:
+        # A distinct alias for the bound-job score (NOT `match_score`, which is
+        # already in ps.* — a duplicate name would shadow the computed one). We
+        # COALESCE in Python: the session's own stored score (imported/pasted,
+        # ADR-030) wins; else fall back to the bound job's best score.
+        rows = conn.execute(
+            """SELECT ps.*,
+                      (SELECT MAX(js.score) FROM job_scores js
+                       WHERE js.job_id = ps.job_id AND js.resume_hash = ps.resume_hash)
+                          AS bound_score
+               FROM prep_sessions ps
+               WHERE ps.resume_hash = ?
+               ORDER BY ps.created_at DESC""",
+            (resume_hash,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        # `is None` is load-bearing — a stored match_score of 0 is a valid
+        # ("stretch") score and must NOT fall through to the bound-job score.
+        if d.get("match_score") is None:
+            d["match_score"] = d.get("bound_score")
+        d.pop("bound_score", None)
+        out.append(d)
+    return out
+
+
+def _safe_json_list(raw) -> list:
+    """Parse a JSON array column to a Python list, degrading to [] on any
+    malformed/missing value (never raises)."""
+    try:
+        v = json.loads(raw) if raw else []
+        return v if isinstance(v, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
+def get_bound_fit(resume_hash: str, job_id: str, path: Path = DB_PATH) -> Optional[dict]:
+    """Best cached score row for a (candidate, bound job) as a fit brief dict
+    {score, reasoning, matched, gaps} — powers the prep context bar for bound
+    sessions (REQ-025). None if the job was never scored."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT score, reasoning, matched_json, gaps_json
+               FROM job_scores
+               WHERE job_id = ? AND resume_hash = ?
+               ORDER BY score DESC LIMIT 1""",
+            (job_id, resume_hash),
+        ).fetchone()
+    if not row:
+        return None
+    return {"score": row["score"], "reasoning": row["reasoning"] or "",
+            "matched": _safe_json_list(row["matched_json"]),
+            "gaps": _safe_json_list(row["gaps_json"])}
+
+
+def touch_prep_session(session_id: int, path: Path = DB_PATH) -> None:
+    """Bump last_opened_at (recency for the list)."""
+    with tx(path) as conn:
+        conn.execute(
+            "UPDATE prep_sessions SET last_opened_at = ? WHERE id = ?",
+            (_now(), session_id),
+        )
+
+
+def delete_prep_session(session_id: int, path: Path = DB_PATH) -> None:
+    """Delete a session; its prep_kits rows CASCADE away."""
+    with tx(path) as conn:
+        conn.execute("DELETE FROM prep_sessions WHERE id = ?", (session_id,))
+
+
+def recent_companies_and_titles(limit: int = 60, path: Path = DB_PATH) -> dict:
+    """Distinct companies + job titles the user has seen, most-recent first —
+    fed to the Prep entry form for CLIENT-SIDE autocomplete (one cheap query on
+    page load; no per-keystroke backend calls). Returns {companies, titles}."""
+    with connect(path) as conn:
+        companies = [r[0] for r in conn.execute(
+            "SELECT company FROM jobs WHERE company != '' "
+            "GROUP BY company ORDER BY MAX(last_seen) DESC LIMIT ?", (limit,)).fetchall()]
+        titles = [r[0] for r in conn.execute(
+            "SELECT title FROM jobs WHERE title != '' "
+            "GROUP BY title ORDER BY MAX(last_seen) DESC LIMIT ?", (limit,)).fetchall()]
+    return {"companies": companies, "titles": titles}
+
+
+def scored_jobs_for_resume(
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    scoring_version: str,
+    path: Path = DB_PATH,
+) -> list[dict]:
+    """This résumé's scored jobs ranked by fit score desc (REQ-020 Phase 2 /
+    ADR-025). Each: {job_id, title, company, score}. Powers the Top-3 lens
+    (first 3 job_ids) and the Job-specific dropdown. Empty on a text-less
+    résumé."""
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return []
+        rows = conn.execute(
+            """SELECT js.job_id AS job_id, j.title AS title, j.company AS company,
+                      js.score AS score
+               FROM job_scores js JOIN jobs j ON j.id = js.job_id
+               WHERE js.resume_hash = ? AND js.lang = ?
+                     AND js.prompt_version = ? AND js.scoring_version = ?
+               ORDER BY js.score DESC, js.job_id ASC""",
+            (resume_hash, lang, prompt_version, scoring_version),
+        ).fetchall()
+    return [
+        {"job_id": r["job_id"], "title": r["title"], "company": r["company"], "score": r["score"]}
+        for r in rows
+    ]
+
+
+def gap_counts_for_resume(
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    scoring_version: str,
+    path: Path = DB_PATH,
+    *,
+    job_ids: set[str] | None = None,
+) -> dict[str, int]:
+    """Aggregate every gap across THIS résumé's scored jobs → {gap: count}
+    (REQ-019 / ADR-022). Pure SQL over `job_scores.gaps_json` for the current
+    résumé text + lang + scoring version — no LLM. Count = how many of the
+    user's roles flag that gap (its rank in the map). Case-insensitive dedupe,
+    keeping the first-seen surface form as the display label. When `job_ids` is
+    given, only those jobs feed the count (REQ-020 Phase 2 lenses / ADR-025);
+    None = all scored jobs. An empty set yields no counts."""
+    if job_ids is not None and not job_ids:
+        return {}
+    counts: dict[str, int] = {}
+    canonical: dict[str, str] = {}
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return {}
+        rows = conn.execute(
+            """SELECT job_id, gaps_json FROM job_scores
+               WHERE resume_hash = ? AND lang = ?
+                     AND prompt_version = ? AND scoring_version = ?""",
+            (resume_hash, lang, prompt_version, scoring_version),
+        ).fetchall()
+    for r in rows:
+        if job_ids is not None and r["job_id"] not in job_ids:
+            continue
+        try:
+            gaps = json.loads(r["gaps_json"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(gaps, list):
+            continue
+        for g in gaps:
+            if not isinstance(g, str) or not g.strip():
+                continue
+            g = g.strip()
+            key = g.lower()
+            canonical.setdefault(key, g)
+            counts[key] = counts.get(key, 0) + 1
+    return {canonical[k]: n for k, n in counts.items()}
+
+
+def get_gap_classifications(
+    resume_id: int,
+    gaps: Iterable[str],
+    lang: str,
+    prompt_version: str,
+    path: Path = DB_PATH,
+) -> dict[str, dict]:
+    """Cached JD-free classifications for the given gaps (REQ-019 / ADR-022,
+    extended REQ-020 / ADR-023), keyed on the résumé text hash + lang + gap +
+    prompt_version. Returns {gap: {"kind","suggestion","category","canonical"}}
+    for hits only; misses are omitted so the caller classifies just the new
+    ones."""
+    gaps = list(gaps)
+    if not gaps:
+        return {}
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return {}
+        placeholders = ",".join("?" * len(gaps))
+        rows = conn.execute(
+            f"""SELECT gap, kind, suggestion, category, canonical FROM gap_classification
+                WHERE resume_hash = ? AND lang = ? AND prompt_version = ?
+                      AND gap IN ({placeholders})""",
+            (resume_hash, lang, prompt_version, *gaps),
+        ).fetchall()
+    return {
+        r["gap"]: {
+            "kind": r["kind"], "suggestion": r["suggestion"],
+            "category": r["category"], "canonical": r["canonical"],
+        }
+        for r in rows
+    }
+
+
+def save_gap_classifications(
+    resume_id: int,
+    lang: str,
+    prompt_version: str,
+    items: Iterable[dict],
+    path: Path = DB_PATH,
+) -> int:
+    """Upsert JD-free gap classifications. Each item: {gap, kind, suggestion,
+    category, canonical} (last two per ADR-023). Keyed on the résumé text hash
+    (resolved here). No-ops on a text-less résumé. Returns count written."""
+    now = _now()
+    n = 0
+    with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return 0
+        for it in items:
+            conn.execute(
+                """INSERT INTO gap_classification (
+                    resume_hash, lang, gap, prompt_version, kind, suggestion,
+                    category, canonical, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(resume_hash, lang, gap, prompt_version) DO UPDATE SET
+                    kind = excluded.kind,
+                    suggestion = excluded.suggestion,
+                    category = excluded.category,
+                    canonical = excluded.canonical,
+                    created_at = excluded.created_at""",
+                (
+                    resume_hash, lang, str(it["gap"]), prompt_version,
+                    str(it.get("kind", "real")), str(it.get("suggestion", "")),
+                    str(it.get("category", "domain")), str(it.get("canonical", "")), now,
+                ),
+            )
+            n += 1
+    return n
+
+
+def get_gap_dismissals(
+    resume_id: int, lang: str, path: Path = DB_PATH,
+) -> set[str]:
+    """The set of dismissed cluster canonical labels for this résumé + lang
+    (REQ-020 / ADR-024). Empty on a text-less résumé."""
+    with connect(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return set()
+        rows = conn.execute(
+            "SELECT canonical FROM gap_dismissals WHERE resume_hash = ? AND lang = ?",
+            (resume_hash, lang),
+        ).fetchall()
+    return {r["canonical"] for r in rows}
+
+
+def dismiss_gap_cluster(
+    resume_id: int, lang: str, canonical: str, path: Path = DB_PATH,
+) -> bool:
+    """Mark a gap cluster (by canonical label) as a false positive so the map
+    drops it (REQ-020 / ADR-024). Stored lower-cased so a later re-cased canonical
+    still matches (build_gap_map compares on the lower-cased key). Idempotent.
+    Returns False on a text-less résumé or empty label."""
+    canonical = (canonical or "").strip().lower()
+    if not canonical:
+        return False
+    with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return False
+        conn.execute(
+            """INSERT INTO gap_dismissals (resume_hash, lang, canonical, created_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(resume_hash, lang, canonical) DO NOTHING""",
+            (resume_hash, lang, canonical, _now()),
+        )
+    return True
+
+
+def undismiss_gap_cluster(
+    resume_id: int, lang: str, canonical: str, path: Path = DB_PATH,
+) -> bool:
+    """Restore a gap cluster the user dismissed by mistake (REQ-021 — the Undo
+    toast + the hidden-gaps footer). Deletes the dismissal row so build_gap_map
+    stops filtering it. Matches on the lower-cased canonical, symmetric with
+    `dismiss_gap_cluster`. Idempotent; returns False on a text-less résumé or
+    empty label."""
+    canonical = (canonical or "").strip().lower()
+    if not canonical:
+        return False
+    with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return False
+        conn.execute(
+            "DELETE FROM gap_dismissals WHERE resume_hash = ? AND lang = ? AND canonical = ?",
+            (resume_hash, lang, canonical),
+        )
+    return True
 
 
 # ---------- admin pulse reports (BI agent) ----------

@@ -1,0 +1,9 @@
+{# Detail-pane score ring. Rendered inside job_detail.html on selection AND
+   OOB-swapped by /score-batch when the currently-open job gets scored, so
+   the ring fills in WITHOUT re-fetching the whole pane (which would light
+   the save/applied htmx-indicator spinners — they are DB data, not AI).
+   Scoped id so the OOB only lands on the open pane. #}
+{% from "macros/ring.html" import score_ring %}
+<div id="detail-ring-{{ job.id }}"{% if oob %} hx-swap-oob="true"{% endif %} class="shrink-0">
+  {{ score_ring(ai.verdict if ai else 'none', score=ai.score if ai else none) }}
+</div>

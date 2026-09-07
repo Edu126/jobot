@@ -2,7 +2,7 @@
 
 Date: 2026-08-25
 Source: Eduardo (product architect) + Claude (SA peer) — Sprint 8 scoping conversation
-Status: Building
+Status: Shipped (Sprint 8, 2026-08-26)
 
 ## What they asked for
 

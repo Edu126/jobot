@@ -128,14 +128,6 @@
             this._viewedTimer = null;
           }, 3000);
         },
-        refresh() {
-          if (!this.id || !window.htmx) return;
-          const isMobile = window.matchMedia('(max-width: 1023.98px)').matches;
-          htmx.ajax('GET', `/jobs/detail/${this.id}`, {
-            target: isMobile ? '#mobile-detail-body' : '#job-detail-pane',
-            swap: 'innerHTML',
-          });
-        },
         closeMobile() {
           this.mobileOpen = false;
           // Cancel any pending viewed timer — user dismissed before
@@ -211,6 +203,21 @@
           try { if (t.action && typeof t.action.onClick === 'function') t.action.onClick(); }
           finally { this.dismiss(t.id); }
         },
+      });
+
+      // Gap-map ✕ dismiss → Undo toast (REQ-021). The dismiss POST re-renders
+      // #gap-map and fires an `HX-Trigger: gap-dismissed` carrying the labels +
+      // the lens; Undo POSTs /restore back into #gap-map so the pill reappears.
+      document.body.addEventListener('gap-dismissed', (e) => {
+        const d = e.detail || {};
+        Alpine.store('toast').show(d.msg, 'success', {
+          label: d.undo,
+          onClick: () => htmx.ajax('POST', '/profile/gap-map/restore', {
+            target: '#gap-map',
+            swap: 'innerHTML',
+            values: { canonical: d.canonical, context: d.context, job_id: d.job_id },
+          }),
+        });
       });
 
       // Swipe-to-save / swipe-to-dismiss on `article.job-swipeable` cards.
@@ -741,6 +748,7 @@
       <nav class="hidden sm:flex items-center gap-8">
         <a id="tour-nav-jobs" href="/jobs" class="nav-tab {% if active_tab == 'jobs' %}active{% endif %}">{{ _('nav.jobs') }}</a>
         <a id="tour-nav-journey" href="/journey" class="nav-tab {% if active_tab == 'journey' %}active{% endif %}">{{ _('nav.journey') }}</a>
+        <a href="/prep" class="nav-tab {% if active_tab == 'prep' %}active{% endif %}">{{ _('nav.prep') }}</a>
         <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">{{ _('nav.profile') }}</a>
       </nav>
 
@@ -798,6 +806,7 @@
         {% for label_key, href, key in [
           ('nav.jobs', '/jobs', 'jobs'),
           ('nav.journey', '/journey', 'journey'),
+          ('nav.prep', '/prep', 'prep'),
           ('nav.profile', '/profile', 'profile'),
         ] %}
         <a href="{{ href }}"

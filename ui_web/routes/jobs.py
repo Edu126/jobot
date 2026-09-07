@@ -58,6 +58,7 @@ from core.llm.gemini import (
 from core.llm.prompts import Level
 from core.llm.rewrite import rewrite_resume, tailored_to_text
 from core.matching.affinity import compute_affinity, resume_hints
+from core.matching import gap_enhance as ge
 from core.matching import semantic_score as ss
 from core.matching.semantic_score import (
     DEFAULT_BATCH_SIZE as _SCORE_BATCH_SIZE,
@@ -1089,9 +1090,9 @@ async def jobs_score_batch(request: Request, cache_key: str):
       - an empty terminal element when nothing left / no permission /
         quota exhausted (chain stops).
 
-    Per-job scored badges + gaps are emitted as `hx-swap-oob="true"`
-    fragments targeted at `#score-slot-{job_id}` and `#gaps-slot-{job_id}`
-    already present in each rendered card.
+    Per-job scored badges are emitted as `hx-swap-oob="true"`
+    fragments targeted at `#score-slot-{job_id}` already present in
+    each rendered card. Gaps are rendered in the detail pane only.
     """
     if feature_flags.is_llm_disabled():
         # Kill switch — silently stop the chain. Header note already
@@ -1118,6 +1119,12 @@ async def jobs_score_batch(request: Request, cache_key: str):
     # to cache order (which mirrors scraped order — no re-sort of the
     # DOM happens as scores arrive, so visual cascade order is set by
     # this pick, not the eventual score value).
+    #
+    # NB (ADR-020): `lite_score.rank` was briefly wired here as the A-layer
+    # but rolled back — the chain scores every job anyway, so it only
+    # reordered (no LLM-call saving) at higher CPU, and being a local string
+    # matcher it's as cross-language-blind as affinity. lite_score.rank stays
+    # in the repo, unwired, until a real top-N cost cap is on the table.
     pending = [j.to_dict() for j in cached.jobs if j.id not in already_scored_ids]
     if not pending:
         return HTMLResponse("")
@@ -1179,6 +1186,11 @@ async def jobs_score_batch(request: Request, cache_key: str):
     # jobs_meta still says score=0 for it.
     fragments: list[str] = []
     scored_ids: list[tuple[str, int]] = []
+    # Hoist the three template lookups out of the loop — same fragments per
+    # scored job, no need to re-resolve them per iteration.
+    badge_tmpl = templates.env.get_template("partials/score_badge.html")
+    ring_tmpl = templates.env.get_template("partials/detail_ring.html")
+    analysis_tmpl = templates.env.get_template("partials/detail_analysis.html")
     for j in batch:
         r = results.get(j["id"])
         if not r:
@@ -1189,10 +1201,16 @@ async def jobs_score_batch(request: Request, cache_key: str):
         j["_matched"] = r.matched
         j["_gaps"] = r.gaps
         j["_pending_score"] = False
-        fragments.append(templates.env.get_template("partials/score_badge.html")
-                         .render(job=j, oob=True))
-        fragments.append(templates.env.get_template("partials/job_gaps.html")
-                         .render(job=j, oob=True))
+        fragments.append(badge_tmpl.render(job=j, oob=True))
+        # OOB-update the open detail pane in place (ring + analysis) if this
+        # job happens to be the one being viewed. These target scoped ids and
+        # no-op when the pane isn't open, so it costs a few bytes per batch and
+        # avoids a whole-pane refetch that would flash the save/applied
+        # spinners (which are DB data, unrelated to the AI score).
+        ai = {"score": r.score, "verdict": r.verdict, "reasoning": r.reasoning,
+              "matched": r.matched, "gaps": r.gaps}
+        fragments.append(ring_tmpl.render(job=j, ai=ai, oob=True))
+        fragments.append(analysis_tmpl.render(job=j, ai=ai, oob=True))
         scored_ids.append((j["id"], int(r.score)))
     if scored_ids:
         pushes = "".join(
@@ -1204,7 +1222,15 @@ async def jobs_score_batch(request: Request, cache_key: str):
     # Chain continuation: are there more pending after this batch?
     # `remaining_after` was hoisted above so the score_batch_done event
     # payload matches the chain decision below.
-    if remaining_after > 0:
+    #
+    # Only chain if this batch actually scored something. A batch that
+    # returns zero results made no progress — the same jobs stay pending
+    # (nothing was cached), so re-polling would re-score the identical
+    # batch forever. That infinite loop is exactly how the Sprint-7
+    # grounding regression manifested (page "still loading" indefinitely).
+    # No progress ⇒ stop; the unscored cards keep their pending badge but
+    # the browser stops hammering the endpoint.
+    if remaining_after > 0 and results:
         fragments.append(
             f'<div hx-get="/jobs/results/{cache_key}/score-batch"'
             f' hx-trigger="load delay:200ms"'
@@ -1957,6 +1983,69 @@ async def jobs_detail(request: Request, job_id: str):
         request,
         "partials/job_detail.html",
         {"job": job, "ai": ai},
+    )
+
+
+@router.get("/jobs/gap-enhance/{job_id}")
+@limiter.limit("120/hour")
+async def jobs_gap_enhance(request: Request, job_id: str):
+    """Lazy gap-enhancement fragment for the detail pane (REQ-018 / ADR-021).
+
+    Loaded by HTMX *after* the analysis renders and only when the job has
+    gaps, so scored-but-unopened jobs — and gap-free jobs — never pay for it.
+    Reuses the score-time `gaps` (no second analysis); one Gemini call,
+    cached per (job, résumé-text, lang).
+
+    Once we know the job has gaps we ALWAYS re-render the gaps block (it
+    replaces itself via outerHTML): with hover tooltips when the enhancement
+    loaded, or the plain pills as a graceful fallback when it didn't (no key,
+    quota out, failure) — so the swap never drops the chips (standing
+    feedback: missing data must not demand user action)."""
+    job = db.get_job(job_id)
+    resume = db.get_current_resume()
+    if not job or not resume:
+        return HTMLResponse("")
+
+    lang = get_reasoning_language()
+    resume_id = int(resume["id"])
+    row = ss.get_cached_scores(resume_id, [job_id], lang).get(job_id)
+    if not row:
+        return HTMLResponse("")   # not scored yet → nothing to enhance
+
+    import json as _json
+    gaps = _json.loads(row["gaps_json"])
+    if not gaps:
+        return HTMLResponse("")   # gap-free → render nothing, gracefully
+
+    # From here the job has gaps, so the block always renders. enhancements
+    # stays [] on any unavailability and the template falls back to plain pills.
+    enhancements: list = []
+    api_key = resolve_api_key()
+    if api_key:
+        try:
+            client = GeminiClient(api_key=api_key)
+            # to_thread: enhance_gaps_cached does a synchronous, blocking Gemini
+            # call on a cache miss — same event-loop reasoning as /score-batch.
+            enhancements = await asyncio.to_thread(
+                ge.enhance_gaps_cached,
+                resume_id=resume_id,
+                resume_text=resume["parsed"].get("raw_text", ""),
+                job=job,
+                gaps=gaps,
+                client=client,
+                lang=lang,
+            )
+        except GeminiError:
+            enhancements = []
+
+    return templates.TemplateResponse(
+        request,
+        "partials/gap_enhance.html",
+        {
+            "job": job,
+            "gaps": gaps,
+            "enhancements": [e.to_dict() for e in enhancements],
+        },
     )
 
 

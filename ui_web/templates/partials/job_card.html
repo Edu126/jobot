@@ -13,7 +13,7 @@
    contain interactive descendants, and this one holds the save button
    and the mobile action row. Proper fix is to make the title the single
    focusable control; deferred rather than pretended away. #}
-<article class="card-quiet cursor-pointer transition-shadow job-swipeable scroll-mt-20"
+<article class="card-quiet cursor-pointer transition-shadow job-swipeable scroll-mt-20 relative"
          data-job-id="{{ job.id }}"
          tabindex="0"
          role="option"
@@ -40,151 +40,135 @@
          @click="$store.selectedJob.select('{{ job.id }}')"
          x-show="$store.filters.visibleIn(jobs, '{{ job.id }}')">
 
-  <div class="flex items-start gap-4">
-
-    {# Score badge (verdict-tinted). Rendered from a partial so the
-       lazy-scoring endpoint can OOB-swap the same fragment once a
-       Gemini score comes back. #}
+  {# Score ring pinned to top-right corner.
+     pr-14 on the body keeps the title from underlapping the ring. #}
+  <div class="absolute top-4 right-4">
     {% include "partials/score_badge.html" %}
+  </div>
 
-    {# Body #}
-    <div class="flex-1 min-w-0">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <h3 class="text-lg font-semibold tracking-tight leading-tight truncate">{{ job.title }}</h3>
-          <div class="text-sm text-body-muted mt-0.5">
-            <span class="font-medium text-base-content/80">{{ job.company }}</span>
-            <span class="text-base-content/30 mx-1">·</span>{{ job.location or '?' }}
-            <span class="text-base-content/30 mx-1">·</span>{{ job.site }}
-            <span class="text-base-content/30 mx-1">·</span>{{ job.date_posted or '?' }}
-          </div>
-          {# Requirement + source pills.
+  {# Body — right-padded so title never overlaps the score ring. #}
+  <div class="pr-14">
+    <h3 class="text-base font-semibold tracking-tight leading-snug line-clamp-2">{{ job.title }}</h3>
+    <div class="text-sm text-body-muted mt-0.5">
+      <span class="font-medium text-base-content/80">{{ job.company }}</span>
+      <span class="text-base-content/30 mx-1">·</span>{{ job.location or '?' }}
+      <span class="text-base-content/30 mx-1">·</span>{{ job.site }}
+      <span class="text-base-content/30 mx-1">·</span>{% if not job.date_posted and job.site and 'linkedin' in job.site | lower %}{{ _('jobs.date_recent') }}{% else %}{{ job.date_posted or '?' }}{% endif %}
+    </div>
+    {# Requirement + source pills.
 
-             Applied WINS over New/Viewed — once you've marked a job as
-             applied, that's the badge that matters; the "48h fresh" or
-             "you already opened this" signals become noise. Per user
-             feedback 2026-08-21 ("deberia reemplazar el new/viewed"). #}
-          {% if job._is_applied or job._is_new or job._is_new_since_expand or job._is_viewed or job._is_dismissed or job._experience or job.is_remote or job.min_salary or job._source_label %}
-          <div class="flex flex-wrap gap-1.5 mt-2">
-            {% if job._is_applied %}
-            {# Green + filled check = "you tracked this one." Replaces
-               New/Viewed since those are irrelevant once you've applied. #}
-            <span class="chip inline-flex items-center gap-1"
-                  style="background: oklch(var(--su) / 0.14); border-color: oklch(var(--su) / 0.42); color: oklch(var(--su));">
-              <i class="ph-fill ph-paper-plane-tilt i-3"></i>{{ _('action.applied') }}
-            </span>
-            {% else %}
-              {% if job._is_new_since_expand %}
-              {# Different from the 48h "New" chip: this one flags jobs that
-                 came from the user's most recent Expand pass — persists only
-                 until the next expand. #}
-              <span class="chip inline-flex items-center gap-1"
-                    style="background: hsl(140 40% 96%); border-color: hsl(140 30% 82%); color: hsl(140 50% 25%);"
-                    title="Added by your last Expand search">
-                <i class="ph-thin ph-arrows-out i-3"></i>{{ _('chip.fresh') }}
-              </span>
-              {% endif %}
-              {% if job._is_new %}
-              <span class="chip chip-accent inline-flex items-center gap-1" title="First seen in the last 48 hours">
-                <i class="ph-fill ph-sparkle i-3"></i>{{ _('chip.new') }}
-              </span>
-              {% endif %}
-              {% if job._is_viewed %}
-              <span class="chip inline-flex items-center gap-1 text-base-content/50"
-                    style="background: hsl(0 0% 96%); border-color: hsl(0 0% 88%);"
-                    title="You spent time reading this before">
-                <i class="ph-thin ph-eye i-3"></i>{{ _('chip.viewed') }}
-              </span>
-              {% endif %}
-            {% endif %}
-            {% if job._is_dismissed %}
-            <span class="chip inline-flex items-center gap-1"
-                  style="background: hsl(0 40% 96%); border-color: hsl(0 30% 88%); color: hsl(0 50% 45%);"
-                  title="You dismissed this — swipe again or toggle 'Show dismissed' to restore">
-              <i class="ph-thin ph-x-circle i-3"></i>{{ _('chip.dismissed') }}
-            </span>
-            {% endif %}
-            {% if job._source_label %}
-            <span class="chip chip-neutral inline-flex items-center gap-1" title="From this search">
-              <i class="ph-thin ph-magnifying-glass i-3"></i>{{ job._source_label }}
-            </span>
-            {% endif %}
-            {% if job._experience %}
-            <span class="chip chip-neutral inline-flex items-center gap-1">
-              <i class="ph-thin ph-calendar-blank i-3"></i>{{ job._experience }}
-            </span>
-            {% endif %}
-            {% if job.is_remote %}
-            <span class="chip chip-neutral inline-flex items-center gap-1">
-              <i class="ph-thin ph-house i-3"></i>{{ _('chip.remote') }}
-            </span>
-            {% endif %}
-            {% if job.min_salary or job.max_salary %}
-            <span class="chip chip-neutral inline-flex items-center gap-1">
-              <i class="ph-thin ph-currency-dollar i-3"></i>{{ (job.min_salary or 0) | int }}{% if job.max_salary and job.max_salary != job.min_salary %}–{{ (job.max_salary) | int }}{% endif %}
-            </span>
-            {% endif %}
-          </div>
-          {% endif %}
-        </div>
-
-        {# Save action on the right — swapped in place after HTMX POST #}
-        <div id="save-action-{{ job.id }}" class="shrink-0">
-          {% include "partials/save_action.html" with context %}
-        </div>
-      </div>
-
-      {# Gaps only in the summary card. Reasoning + matched skills belong in
-         the expanded detail pane on the right — showing them here on every
-         card was noise on a scannable list. Gaps stay because they're the
-         single most decision-worthy signal ("can I honestly cover this?").
-         Rendered from a partial so the lazy-scoring endpoint can OOB-swap. #}
-      {% include "partials/job_gaps.html" %}
-
-      {# Actions row — visible only BELOW lg breakpoint. On desktop the detail
-         pane covers Open posting / Tailor / full JD, so a per-card action row
-         would be redundant clutter. On mobile it stays for direct access. #}
-      <div class="lg:hidden flex items-center gap-2 mt-4 pt-3 border-t border-base-300/70"
-           @click.stop>
-        {% if job.job_url_direct and job.job_url_direct != job.job_url %}
-        <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
-           class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
-           title="Direct link to the company's career page">
-          {{ _('action.apply_on', company=job.company) }} <i class="ph-thin ph-arrow-square-out i-4"></i>
-        </a>
+       Applied WINS over New/Viewed — once you've marked a job as
+       applied, that's the badge that matters; the "48h fresh" or
+       "you already opened this" signals become noise. Per user
+       feedback 2026-08-21 ("deberia reemplazar el new/viewed"). #}
+    {% if job._is_applied or job._is_new or job._is_new_since_expand or job._is_viewed or job._is_dismissed or job._experience or job.is_remote or job.min_salary or job._source_label %}
+    <div class="flex flex-wrap gap-1.5 mt-2">
+      {% if job._is_applied %}
+      {# Green + filled check = "you tracked this one." Replaces
+         New/Viewed since those are irrelevant once you've applied. #}
+      <span class="chip inline-flex items-center gap-1"
+            style="background: oklch(var(--su) / 0.14); border-color: oklch(var(--su) / 0.42); color: oklch(var(--su));">
+        <i class="ph-fill ph-paper-plane-tilt i-3"></i>{{ _('action.applied') }}
+      </span>
+      {% else %}
+        {% if job._is_new_since_expand %}
+        {# Different from the 48h "New" chip: this one flags jobs that
+           came from the user's most recent Expand pass — persists only
+           until the next expand. #}
+        <span class="chip inline-flex items-center gap-1"
+              style="background: hsl(140 40% 96%); border-color: hsl(140 30% 82%); color: hsl(140 50% 25%);"
+              title="Added by your last Expand search">
+          <i class="ph-thin ph-arrows-out i-3"></i>{{ _('chip.fresh') }}
+        </span>
         {% endif %}
-        {% if job.job_url %}
-        <a href="{{ job.job_url }}" target="_blank" rel="noopener"
-           class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
-          {% if job.job_url_direct and job.job_url_direct != job.job_url %}{{ _('action.view_on', site=(job.site or 'board')) }}
-          {% else %}{{ _('action.open_posting') }}{% endif %}
-          <i class="ph-thin ph-arrow-square-out i-4"></i>
-        </a>
+        {# New and Viewed are mutually exclusive: once you've opened a job it
+           isn't "new" to you anymore, so Viewed wins and we suppress New. #}
+        {% if job._is_new and not job._is_viewed %}
+        <span class="chip chip-accent inline-flex items-center gap-1" title="First seen in the last 48 hours">
+          <i class="ph-fill ph-sparkle i-3"></i>{{ _('chip.new') }}
+        </span>
         {% endif %}
-        <button class="btn btn-sm btn-primary cursor-pointer"
-                hx-get="/jobs/tailor/{{ job.id }}"
-                hx-target="#tailor-drawer-body"
-                hx-swap="innerHTML"
-                @click="$store.tailor.openFor('{{ job.id }}')">
-          {{ _('action.tailor') }}
-        </button>
-        {% if job.description %}
-        {# Lazy-load the description via HTMX rather than rendering it inline.
-           Anti-scraping (only revealed after a click, hits the rate-limited
-           /jobs/detail endpoint) AND a page-size win (skip 5-50KB per card
-           on results HTML). Uses hx-select to pull just the JD block out
-           of the shared job_detail partial. First click loads + hides
-           the button. Desktop path unchanged — sidebar detail pane owns it. #}
-        <button class="text-xs text-base-content/50 hover:text-base-content ml-auto cursor-pointer inline-flex items-center px-3"
-                style="min-height: 44px;"
-                hx-get="/jobs/detail/{{ job.id }}"
-                hx-select=".jd-body"
-                hx-target="closest article"
-                hx-swap="beforeend"
-                hx-trigger="click once"
-                onclick="this.style.display='none'">{{ _('action.show_description') }}</button>
+        {% if job._is_viewed %}
+        <span class="chip inline-flex items-center gap-1 text-base-content/50"
+              style="background: hsl(0 0% 96%); border-color: hsl(0 0% 88%);"
+              title="You spent time reading this before">
+          <i class="ph-thin ph-eye i-3"></i>{{ _('chip.viewed') }}
+        </span>
         {% endif %}
-      </div>
+      {% endif %}
+      {% if job._is_dismissed %}
+      <span class="chip inline-flex items-center gap-1"
+            style="background: hsl(0 40% 96%); border-color: hsl(0 30% 88%); color: hsl(0 50% 45%);"
+            title="You dismissed this — swipe again or toggle 'Show dismissed' to restore">
+        <i class="ph-thin ph-x-circle i-3"></i>{{ _('chip.dismissed') }}
+      </span>
+      {% endif %}
+      {% if job._source_label %}
+      <span class="chip chip-neutral inline-flex items-center gap-1" title="From this search">
+        <i class="ph-thin ph-magnifying-glass i-3"></i>{{ job._source_label }}
+      </span>
+      {% endif %}
+      {% if job._experience %}
+      <span class="chip chip-neutral inline-flex items-center gap-1">
+        <i class="ph-thin ph-calendar-blank i-3"></i>{{ job._experience }}
+      </span>
+      {% endif %}
+      {% if job.is_remote %}
+      <span class="chip chip-neutral inline-flex items-center gap-1">
+        <i class="ph-thin ph-house i-3"></i>{{ _('chip.remote') }}
+      </span>
+      {% endif %}
+      {% if job.min_salary or job.max_salary %}
+      <span class="chip chip-neutral inline-flex items-center gap-1">
+        <i class="ph-thin ph-currency-dollar i-3"></i>{{ (job.min_salary or 0) | int }}{% if job.max_salary and job.max_salary != job.min_salary %}–{{ (job.max_salary) | int }}{% endif %}
+      </span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# Actions row — visible only BELOW lg breakpoint. On desktop the detail
+       pane covers Open posting / Tailor / full JD, so a per-card action row
+       would be redundant clutter. On mobile it stays for direct access. #}
+    <div class="lg:hidden flex items-center gap-2 mt-4 pt-3 border-t border-base-300/70"
+         @click.stop>
+      {% if job.job_url_direct and job.job_url_direct != job.job_url %}
+      <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
+         class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
+         title="Direct link to the company's career page">
+        {{ _('action.apply_on', company=job.company) }} <i class="ph-thin ph-arrow-square-out i-4"></i>
+      </a>
+      {% endif %}
+      {% if job.job_url %}
+      <a href="{{ job.job_url }}" target="_blank" rel="noopener"
+         class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
+        {% if job.job_url_direct and job.job_url_direct != job.job_url %}{{ _('action.view_on', site=(job.site or 'board')) }}
+        {% else %}{{ _('action.open_posting') }}{% endif %}
+        <i class="ph-thin ph-arrow-square-out i-4"></i>
+      </a>
+      {% endif %}
+      <button class="btn btn-sm btn-primary cursor-pointer"
+              hx-get="/jobs/tailor/{{ job.id }}"
+              hx-target="#tailor-drawer-body"
+              hx-swap="innerHTML"
+              @click="$store.tailor.openFor('{{ job.id }}')">
+        {{ _('action.tailor') }}
+      </button>
+      {% if job.description %}
+      {# Lazy-load the description via HTMX rather than rendering it inline.
+         Anti-scraping (only revealed after a click, hits the rate-limited
+         /jobs/detail endpoint) AND a page-size win (skip 5-50KB per card
+         on results HTML). Uses hx-select to pull just the JD block out
+         of the shared job_detail partial. First click loads + hides
+         the button. Desktop path unchanged — sidebar detail pane owns it. #}
+      <button class="text-xs text-base-content/50 hover:text-base-content ml-auto cursor-pointer inline-flex items-center px-3"
+              style="min-height: 44px;"
+              hx-get="/jobs/detail/{{ job.id }}"
+              hx-select=".jd-body"
+              hx-target="closest article"
+              hx-swap="beforeend"
+              hx-trigger="click once"
+              onclick="this.style.display='none'">{{ _('action.show_description') }}</button>
+      {% endif %}
     </div>
   </div>
 </article>

@@ -1,20 +1,12 @@
 {# Right-pane detail view for the split-viewport results page. Rendered by
    GET /jobs/detail/{id} whenever the user clicks a card on the left. #}
+{% from "macros/ring.html" import score_ring %}
 
 <div class="space-y-5">
 
   {# ── Header: score + title + meta + save ── #}
   <div class="flex items-start gap-3">
-    {% if ai %}
-    <div class="score-badge score-badge-{{ ai.verdict }}">
-      <span class="score-num">{{ ai.score }}</span>
-      <span class="score-max">/100</span>
-    </div>
-    {% else %}
-    <div class="score-badge score-badge-none">
-      <span class="score-num text-lg">—</span>
-    </div>
-    {% endif %}
+    {% include "partials/detail_ring.html" %}
     <div class="min-w-0 flex-1">
       <h3 class="text-lg font-semibold tracking-tight leading-tight">{{ job.title }}</h3>
       <div class="text-sm text-body-muted mt-0.5">
@@ -38,75 +30,58 @@
     </div>
   </div>
 
-  {# ── Reasoning ── #}
-  {% if ai and ai.reasoning %}
-  <p class="text-sm italic text-base-content/85 leading-relaxed quoted">{{ ai.reasoning }}</p>
-  {% endif %}
-
-  {# ── Matched + Gaps ── #}
-  {% if ai and (ai.matched or ai.gaps) %}
-  <div class="grid grid-cols-1 gap-3 text-sm">
-    {% if ai.matched %}
-    <div>
-      <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-check i-3"></i>{{ _('jobs.matched') }}</div>
-      <div class="flex flex-wrap gap-1">
-        {% for m in ai.matched %}<span class="chip chip-matched">{{ m }}</span>{% endfor %}
-      </div>
-    </div>
-    {% endif %}
-    {% if ai.gaps %}
-    <div>
-      <div class="text-label mb-1.5 inline-flex items-center gap-1"><i class="ph-thin ph-warning i-3"></i>{{ _('jobs.gaps') }}</div>
-      <div class="flex flex-wrap gap-1">
-        {% for g in ai.gaps %}<span class="chip chip-gap">{{ g }}</span>{% endfor %}
-      </div>
-    </div>
-    {% endif %}
-  </div>
-  {% endif %}
+  {# ── Reasoning + Matched + Gaps ── score-dependent; OOB-updated in place
+     when the open job is scored, so the DB-backed save/applied actions
+     never flash their htmx-indicator spinners. ── #}
+  {% include "partials/detail_analysis.html" %}
 
   {# ── Actions ──
-     Layout (2026-08-21): Open / Apply-on-company / Tailor grouped on
-     the LEFT (external-navigation + tailoring cluster); Mark-as-applied
-     pushed to the far RIGHT via ml-auto (tracking cluster). Prevents
-     the "sandwich" of Tailor's solid green primary between two ghost
-     buttons that was throwing the visual weight off. When the row
-     wraps on narrow viewports, ml-auto still keeps mark-applied on
-     the right edge of its wrap line — deliberate.
-     #}
-  <div class="flex items-center gap-2 flex-wrap pt-3 border-t border-base-300">
-    {% if job.job_url_direct and job.job_url_direct != job.job_url %}
-    <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
-       class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
-       title="Direct link to the company's career page">
-      Apply on {{ job.company }} <i class="ph-thin ph-arrow-square-out i-4"></i>
-    </a>
-    {% endif %}
-    {% if job.job_url %}
-    <a href="{{ job.job_url }}" target="_blank" rel="noopener"
-       class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
-      {% if job.job_url_direct and job.job_url_direct != job.job_url %}View on {{ job.site or 'board' }}
-      {% else %}{{ _('action.open_posting') }}{% endif %}
-      <i class="ph-thin ph-arrow-square-out i-4"></i>
-    </a>
-    {% endif %}
-    <button class="btn btn-sm {% if job.job_url_direct and job.job_url_direct != job.job_url %}bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium{% else %}btn-primary{% endif %} cursor-pointer"
-            hx-get="/jobs/tailor/{{ job.id }}"
-            hx-target="#tailor-drawer-body"
-            hx-swap="innerHTML"
-            @click="$store.tailor.openFor('{{ job.id }}')">
-      {{ _('action.tailor') }}
-    </button>
+     Layout (2026-09-02): everything LEFT-aligned. Row 1 = the
+     navigation + tailoring cluster (Apply directly / View / Open /
+     Tailor); row 2 = Mark-as-applied on its own line, also left-aligned
+     (Eduardo: keep it on a second row but drop the ml-auto right-push,
+     which read as misaligned). The direct-apply button uses a FIXED
+     "Apply directly" label — embedding the company name made the button
+     width uncontrollable and threw the row off. #}
+  <div class="pt-3 border-t border-base-300 space-y-2">
+    <div class="flex items-center gap-2 flex-wrap">
+      {% if job.job_url_direct and job.job_url_direct != job.job_url %}
+      <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
+         class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
+         title="Direct link to the company's career page">
+        {{ _('action.apply_directly') }} <i class="ph-thin ph-arrow-square-out i-4"></i>
+      </a>
+      {% endif %}
+      {% if job.job_url %}
+      <a href="{{ job.job_url }}" target="_blank" rel="noopener"
+         class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
+        {% if job.job_url_direct and job.job_url_direct != job.job_url %}View on {{ job.site or 'board' }}
+        {% else %}{{ _('action.open_posting') }}{% endif %}
+        <i class="ph-thin ph-arrow-square-out i-4"></i>
+      </a>
+      {% endif %}
+      <button class="btn btn-sm {% if job.job_url_direct and job.job_url_direct != job.job_url %}bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium{% else %}btn-primary{% endif %} cursor-pointer"
+              hx-get="/jobs/tailor/{{ job.id }}"
+              hx-target="#tailor-drawer-body"
+              hx-swap="innerHTML"
+              @click="$store.tailor.openFor('{{ job.id }}')">
+        {{ _('action.tailor') }}
+      </button>
+      {# Prep from here → get-or-create a bound prep session, jump into the kit. #}
+      <button class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5"
+              hx-post="/prep/from-job/{{ job.id }}" hx-swap="none">
+        <i class="ph-thin ph-target"></i>{{ _('action.prep') }}
+      </button>
+    </div>
 
-    {# Mark-as-applied — toggle. Pushed right via ml-auto on the
-       wrapper span. Non-destructive: click once to mark, click the
-       resulting "Applied" state to unmark (only if status is exactly
-       'applied' — interviewing/offer are preserved server-side). #}
-    <span class="ml-auto">
+    {# Mark-as-applied — toggle on its own row, left-aligned. Non-destructive:
+       click once to mark, click the resulting "Applied" state to unmark (only
+       if status is exactly 'applied' — interviewing/offer preserved server). #}
+    <div class="flex">
       {% with job_id=job.id, is_applied=job._is_applied %}
         {% include "partials/applied_action.html" %}
       {% endwith %}
-    </span>
+    </div>
   </div>
 
   {# ── Full JD (rendered with structure — headers, lists, bold) ── #}
@@ -117,3 +92,19 @@
   </div>
   {% endif %}
 </div>
+
+{# Self-heal the left-list card ring. Scoring (/score-batch) and discovery
+   (/growth) run concurrently, so a job can be scored + cached — and its
+   score-slot OOB emitted — a moment before its card exists in the DOM, in
+   which case that OOB is dropped and the card stays on the pending spinner
+   forever while this pane (which reads the cache directly) shows the real
+   score. Whenever a card is opened, reconcile its ring by re-emitting the
+   OOB from cached truth. The score-batch already counted this job down when
+   it scored it, so we pass countDown=false — this only reconciles the ring
+   and j.score, never the pending counter. #}
+{% if ai %}
+<div id="score-slot-{{ job.id }}" hx-swap-oob="true" class="shrink-0">
+  {{ score_ring(ai.verdict, score=ai.score) }}
+</div>
+<script>window.__jobotUpdateScore && window.__jobotUpdateScore("{{ job.id }}", {{ ai.score }}, false);</script>
+{% endif %}
