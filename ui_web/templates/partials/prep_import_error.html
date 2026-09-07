@@ -1,0 +1,8 @@
+{# Import failed (ADR-030 / GOV-005): a scrape/extract that couldn't produce a
+   posting degrades honestly — we say so and point to the paste fallback, never
+   fabricate a job. Swaps into #prep-entry-result. #}
+<div class="mt-3 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-base-content/80"
+     data-testid="prep-import-error">
+  <i class="ph-thin ph-warning-circle text-warning"></i>
+  {{ message or _('prep.import.failed') }}
+</div>

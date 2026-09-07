@@ -1,11 +1,12 @@
-"""Company outlook for Prep (REQ-023 / ADR-027) — the structured, cached,
-Tailor-shared briefing behind the mockup's 3-facet + news panel.
+"""Company outlook for Prep (REQ-023 / ADR-027, search hop per ADR-029) — the
+structured, cached, Tailor-shared briefing behind the mockup's 3-facet + news
+panel.
 
-Built **two-hop** because the GoogleSearch grounding tool can't emit JSON:
-  hop 1 — `company_research.fetch_company_context`: a grounded plain-text
-          briefing + citation URLs (spends Google Search grounding quota; the
-          only call that does — llm-surface). `language_instruction` applied.
-  hop 2 — one JSON-mode `GeminiClient` call that splits hop 1's text into
+Built **two-hop**:
+  hop 1 — `tavily.search_company`: public snippets about the company + source
+          URLs (ADR-029 — replaced Gemini grounding, which was quota-fragile;
+          Tavily is $0 and decoupled from the grounding quota. GOV-007).
+  hop 2 — one JSON-mode `GeminiClient` call that structures the snippets into
           {culture_tone, strategic_focus, recent_news:[{headline,date,url}]}.
 
 Cached in `company_outlook` keyed company_norm × role × lang × prompt_version
@@ -13,9 +14,9 @@ Cached in `company_outlook` keyed company_norm × role × lang × prompt_version
 the sanctioned "Refresh news intel" path (ADR-027 — live data ages, the one
 regenerate that isn't an escape hatch).
 
-Honesty (GOV-005): hop 1 is instructed not to invent; hop 2 only reshapes what
-hop 1 returned — it must not add facts. Any failure returns None and the caller
-renders nothing (grounded-or-none, ADR-005), never a fabricated card.
+Honesty (GOV-005): hop 2 only reshapes what Tavily returned — it must not add
+facts. Any failure (no key, no results, quota) returns None and the caller
+renders the honest fallback (grounded-or-none, ADR-005), never a fabricated card.
 """
 from __future__ import annotations
 
@@ -23,13 +24,17 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
 from core import db
-from core.llm import company_research
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
+from core.prep import tavily
 from core.prep.matching import normalize_company
 from core.settings import get_output_language, language_instruction
 
 # Bump when either hop's prompt changes — a version mismatch on read is a miss
 # (regenerate), never a delete (same convention as gap_enhance.PROMPT_VERSION).
+# NOT bumped for the 2026-09-05 reading-aid (**bold** key phrases): that would
+# invalidate every cached row and re-run Tavily (a shared, metered pool — ADR-031
+# cost). Bold is cosmetic; existing rows stay plain, new companies get it. The
+# `md_bold` render filter is a no-op on plain text, so old rows render fine.
 PROMPT_VERSION = "2026-09-03-3facet-news"
 
 MAX_BRIEFING_CHARS = 6000
@@ -93,7 +98,6 @@ def get_or_generate(
     company: str,
     role_title: str,
     client: GeminiClient,
-    api_key: str,
     *,
     lang: Optional[str] = None,
     use_cache: bool = True,
@@ -117,18 +121,14 @@ def get_or_generate(
     if client.all_models_exhausted():
         return None
 
-    # hop 1 — grounded briefing (spends grounding quota; may raise on quota/kill).
-    try:
-        research = company_research.fetch_company_context(
-            api_key, company, role_title, lang=lang
-        )
-    except (QuotaExhaustedError, GeminiError):
-        return None
-    if not research.summary.strip():
+    # hop 1 — Tavily search (ADR-029), decoupled from the fragile grounding
+    # quota. None when there's no key / no results → honest fallback.
+    research = tavily.search_company(company, role_title)
+    if research is None or not research.briefing.strip():
         return None
 
-    # hop 2 — structure into facets (normal JSON call on the fallback chain).
-    facets = _structure(research.summary, client, lang=lang)
+    # hop 2 — structure the snippets into facets (normal Gemini JSON call).
+    facets = _structure(research.briefing, client, lang=lang)
     if facets is None:
         return None
 
@@ -173,8 +173,8 @@ def _build_structuring_prompt(briefing: str, *, lang: str) -> str:
 Use ONLY what the briefing below states. Do NOT add companies facts, news, or details that are not in the briefing. If a field isn't covered, return an empty string (or an empty list for news). Never invent.
 
 Produce three things:
-- "culture_tone": 1–2 sentences on the company's culture and communication tone (formal vs casual, risk-averse vs fast-moving, mission vs commercial), as evidenced in the briefing.
-- "strategic_focus": 1–2 sentences on what the company is focused on / investing in (products, markets, growth, technology).
+- "culture_tone": 1–2 sentences (max ~45 words) on the company's culture and communication tone (formal vs casual, risk-averse vs fast-moving, mission vs commercial), as evidenced in the briefing. Wrap the 2–3 MOST important scannable phrases in **double asterisks** as a reading aid — bold the signal, not whole sentences.
+- "strategic_focus": 1–2 sentences (max ~45 words) on what the company is focused on / investing in (products, markets, growth, technology). Same reading aid: **bold** the 2–3 key phrases.
 - "recent_news": up to {MAX_NEWS} concrete recent items the briefing mentions. Each item: a short "headline", an optional "date" (as written in the briefing, else ""), and an optional "url" ONLY if the briefing gives one (else ""). Empty list if the briefing cites no specific news.
 
 BRIEFING:

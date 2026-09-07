@@ -44,7 +44,11 @@ def test_tables_exist_and_version() -> None:
             _assert(t in tables, f"{t} missing after init_db")
         ver = con.execute(
             "SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        _assert(ver == str(db.SCHEMA_VERSION) == "21", f"schema_version={ver}, want 21")
+        _assert(ver == str(db.SCHEMA_VERSION) == "23", f"schema_version={ver}, want 23")
+        # v22/v23: imported/pasted sessions carry a self-contained score + brief.
+        ps_cols = {r[1] for r in con.execute("PRAGMA table_info(prep_sessions)")}
+        _assert("match_score" in ps_cols, "prep_sessions.match_score missing (v22)")
+        _assert("match_brief" in ps_cols, "prep_sessions.match_brief missing (v23)")
     finally:
         con.close()
     print("PASS test_tables_exist_and_version")

@@ -141,6 +141,27 @@ staring at a blank page. Success = a user opens Prep for a specific interview
 and leaves with at least one concrete thing they'll say — reads the outlook,
 or drafts/edits one grounded answer — not a number on a dashboard.
 
+## Phase B — retro iteration (Eduardo, 2026-09-03, after -edu verify)
+
+Testing the shipped MVP on -edu, Eduardo asked for five changes (all built same day):
+
+1. **Width** — Prep was `max-w-4xl`/`5xl`, out of step with the rest of the app
+   (`max-w-7xl`: jobs, profile, journey). Aligned to `max-w-7xl`.
+2. **Entry = 3 fields with client-side autocomplete.** Company · Role · job
+   **link**. Company/Role get native `<datalist>` autocomplete seeded from the
+   user's own recent companies/titles (`db.recent_companies_and_titles`, one
+   cheap query on page load — **no per-keystroke backend calls**, no JS).
+3. **Result columns → TABS** (Profile pattern): `STAR Q&A` | `Questions to ask`.
+4. **STAR as a one-at-a-time CAROUSEL** (prev/next + counter) with **👍/👎 per
+   card**. Reverse questions stay a compact copyable list. Thumbs → the
+   **`events` BI stream** (no new table; shows in /admin/pulse) so we learn
+   which AI questions land vs. are "bizarre" — vision non-negotiable #5. New
+   endpoint `POST /prep/{id}/qa-feedback`.
+5. **Honest "no company found" fallback.** When the grounded outlook is empty,
+   say so plainly and **reframe the kit as general prep** ("based on your
+   profile and the role") instead of silently showing generic questions —
+   GOV-005 (never invent company facts), non-negotiable #1.
+
 ## Related
 
 REQ-017 (land-it stage umbrella; this is its first Cluster B slice),

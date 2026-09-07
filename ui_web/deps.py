@@ -286,3 +286,28 @@ def jd_html(text: str) -> "Markup":
 
 
 templates.env.filters["jd_html"] = jd_html
+
+
+def md_bold(text: str) -> "Markup":
+    """Escape a plain string, then honor ONLY inline **bold** markers — a
+    reading aid for the company-outlook facets (REQ-025). No lists/paragraphs;
+    content is HTML-escaped before markers are applied, so it's injection-safe.
+    Plain text (no markers) renders unchanged."""
+    if not text:
+        return Markup("")
+    return Markup(_inline_bold(_html.escape(str(text).strip())))
+
+
+templates.env.filters["md_bold"] = md_bold
+
+
+def safe_url(url: str) -> str:
+    """Return the URL only if it's an http(s) link, else empty string. Guards
+    against `javascript:`/`data:` schemes in LLM-structured outlook URLs — Jinja
+    autoescape escapes HTML chars but does NOT neutralise a scheme in href
+    context, so a hallucinated `javascript:…` would execute on click."""
+    u = (url or "").strip()
+    return u if u.lower().startswith(("http://", "https://")) else ""
+
+
+templates.env.filters["safe_url"] = safe_url

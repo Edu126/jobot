@@ -42,7 +42,7 @@ def _resume_text_hash(parsed: dict) -> str:
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 23
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
@@ -442,6 +442,8 @@ CREATE TABLE IF NOT EXISTS prep_sessions (
     lang           TEXT NOT NULL DEFAULT '',
     source         TEXT NOT NULL,                  -- from_job | pasted_link | pasted_text
     status         TEXT NOT NULL DEFAULT 'scheduled',
+    match_score    INTEGER,                        -- one-shot fit for imported/pasted JD (ADR-030); bound sessions derive from job_scores
+    match_brief    TEXT,                           -- JSON fit brief {reasoning, matched[], gaps[]} for the prep-stage context bar (REQ-025); bound sessions derive from job_scores
     created_at     TEXT NOT NULL,
     last_opened_at TEXT
 );
@@ -600,6 +602,18 @@ def init_db(path: Path = DB_PATH) -> None:
                 ALTER TABLE job_scores ADD COLUMN prompt_version TEXT NOT NULL DEFAULT '';
                 ALTER TABLE job_scores ADD COLUMN scoring_version TEXT NOT NULL DEFAULT '';
             """)
+
+        # v22 (REQ-025 / ADR-030): Prep entry can import/paste a JD not in our
+        # DB; its one-shot fit is stored on the session itself (self-contained,
+        # no jobs-board pollution). Additive nullable column — old rows read
+        # back NULL and fall through to the bound-job score subquery as before.
+        ps_cols = {r["name"] for r in conn.execute("PRAGMA table_info(prep_sessions)").fetchall()}
+        if ps_cols and "match_score" not in ps_cols:
+            conn.execute("ALTER TABLE prep_sessions ADD COLUMN match_score INTEGER")
+        # v23 (REQ-025): the prep-stage fit brief (narrative + strengths + gaps),
+        # shown up top instead of a bare %. Additive nullable JSON column.
+        if ps_cols and "match_brief" not in ps_cols:
+            conn.execute("ALTER TABLE prep_sessions ADD COLUMN match_brief TEXT")
 
         ras_cols = {r["name"] for r in conn.execute("PRAGMA table_info(resume_ai_summary)").fetchall()}
         if ras_cols and "domain" not in ras_cols:
@@ -1880,6 +1894,150 @@ def save_prep_kit(
              json.dumps(kit, ensure_ascii=False), model, now),
         )
     return True
+
+
+def create_prep_session(
+    resume_hash: str,
+    company: str,
+    role_title: str,
+    jd_text: str,
+    lang: str,
+    source: str,
+    job_id: Optional[str] = None,
+    match_score: Optional[int] = None,
+    match_brief: Optional[str] = None,
+    path: Path = DB_PATH,
+) -> int:
+    """Create a per-vacancy prep session (REQ-023 / ADR-026). Returns its id.
+    `source` ∈ from_job | pasted_link | pasted_text; `job_id` is the optional
+    binding set when matching succeeded. `match_score` + `match_brief` (JSON
+    {reasoning, matched, gaps}) are the one-shot fit for an imported/pasted JD
+    (ADR-030 / REQ-025) — bound sessions leave them NULL and derive from
+    job_scores instead."""
+    now = _now()
+    with tx(path) as conn:
+        cur = conn.execute(
+            """INSERT INTO prep_sessions
+               (resume_hash, job_id, company, role_title, jd_text, lang, source,
+                status, match_score, match_brief, created_at, last_opened_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?)""",
+            (resume_hash, job_id, company, role_title, jd_text, lang, source,
+             match_score, match_brief, now, now),
+        )
+    return int(cur.lastrowid)
+
+
+def get_prep_session(session_id: int, path: Path = DB_PATH) -> Optional[dict]:
+    """One prep session by id, or None."""
+    with connect(path) as conn:
+        row = conn.execute(
+            "SELECT * FROM prep_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_prep_session_for_job(
+    resume_hash: str, job_id: str, path: Path = DB_PATH
+) -> Optional[dict]:
+    """Existing session for this (candidate, job) — so 'Prep from here' reuses
+    one session per interview instead of spawning duplicates. Newest first."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT * FROM prep_sessions
+               WHERE resume_hash = ? AND job_id = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (resume_hash, job_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_prep_sessions(resume_hash: str, path: Path = DB_PATH) -> list[dict]:
+    """This candidate's prep sessions, newest first, each with the bound job's
+    best fit `score` when available (context-bar match %). Powers the Prep tab
+    list — a small, high-signal set (one per interview the user prepped for)."""
+    with connect(path) as conn:
+        # A distinct alias for the bound-job score (NOT `match_score`, which is
+        # already in ps.* — a duplicate name would shadow the computed one). We
+        # COALESCE in Python: the session's own stored score (imported/pasted,
+        # ADR-030) wins; else fall back to the bound job's best score.
+        rows = conn.execute(
+            """SELECT ps.*,
+                      (SELECT MAX(js.score) FROM job_scores js
+                       WHERE js.job_id = ps.job_id AND js.resume_hash = ps.resume_hash)
+                          AS bound_score
+               FROM prep_sessions ps
+               WHERE ps.resume_hash = ?
+               ORDER BY ps.created_at DESC""",
+            (resume_hash,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        # `is None` is load-bearing — a stored match_score of 0 is a valid
+        # ("stretch") score and must NOT fall through to the bound-job score.
+        if d.get("match_score") is None:
+            d["match_score"] = d.get("bound_score")
+        d.pop("bound_score", None)
+        out.append(d)
+    return out
+
+
+def _safe_json_list(raw) -> list:
+    """Parse a JSON array column to a Python list, degrading to [] on any
+    malformed/missing value (never raises)."""
+    try:
+        v = json.loads(raw) if raw else []
+        return v if isinstance(v, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
+def get_bound_fit(resume_hash: str, job_id: str, path: Path = DB_PATH) -> Optional[dict]:
+    """Best cached score row for a (candidate, bound job) as a fit brief dict
+    {score, reasoning, matched, gaps} — powers the prep context bar for bound
+    sessions (REQ-025). None if the job was never scored."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT score, reasoning, matched_json, gaps_json
+               FROM job_scores
+               WHERE job_id = ? AND resume_hash = ?
+               ORDER BY score DESC LIMIT 1""",
+            (job_id, resume_hash),
+        ).fetchone()
+    if not row:
+        return None
+    return {"score": row["score"], "reasoning": row["reasoning"] or "",
+            "matched": _safe_json_list(row["matched_json"]),
+            "gaps": _safe_json_list(row["gaps_json"])}
+
+
+def touch_prep_session(session_id: int, path: Path = DB_PATH) -> None:
+    """Bump last_opened_at (recency for the list)."""
+    with tx(path) as conn:
+        conn.execute(
+            "UPDATE prep_sessions SET last_opened_at = ? WHERE id = ?",
+            (_now(), session_id),
+        )
+
+
+def delete_prep_session(session_id: int, path: Path = DB_PATH) -> None:
+    """Delete a session; its prep_kits rows CASCADE away."""
+    with tx(path) as conn:
+        conn.execute("DELETE FROM prep_sessions WHERE id = ?", (session_id,))
+
+
+def recent_companies_and_titles(limit: int = 60, path: Path = DB_PATH) -> dict:
+    """Distinct companies + job titles the user has seen, most-recent first —
+    fed to the Prep entry form for CLIENT-SIDE autocomplete (one cheap query on
+    page load; no per-keystroke backend calls). Returns {companies, titles}."""
+    with connect(path) as conn:
+        companies = [r[0] for r in conn.execute(
+            "SELECT company FROM jobs WHERE company != '' "
+            "GROUP BY company ORDER BY MAX(last_seen) DESC LIMIT ?", (limit,)).fetchall()]
+        titles = [r[0] for r in conn.execute(
+            "SELECT title FROM jobs WHERE title != '' "
+            "GROUP BY title ORDER BY MAX(last_seen) DESC LIMIT ?", (limit,)).fetchall()]
+    return {"companies": companies, "titles": titles}
 
 
 def scored_jobs_for_resume(

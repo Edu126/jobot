@@ -1,7 +1,12 @@
 # ADR-027: Company outlook — persist it once, share it between Tailor and Prep
 
 Date: 2026-09-03
-Status: Accepted
+Status: Accepted — **hop-1 (the Gemini grounded search) superseded by
+[ADR-029](ADR-029-tavily-search-for-company-intel.md)** (Tavily); the
+**user-facing "Refresh news intel" affordance superseded by
+[ADR-031](ADR-031-refresh-news-gated-not-user-facing.md)** (gated to the
+fallback, cost). The structured shape, cache, and grounded-or-none rules here
+still stand.
 Relates to: REQ-023 (Prep slice 1 — company outlook), ADR-008 (prompt/cache
 conventions), GOV-005 (candidate-side employer risk allowed), REQ-017
 (land-it stage)

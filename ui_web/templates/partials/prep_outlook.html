@@ -1,0 +1,65 @@
+{# Company & news intel — the 3-facet + news panel (ADR-027, refresh gated by
+   ADR-031). Structured, grounded, cached. The manual "Refresh news" is NO LONGER
+   an always-on affordance — each click spends a Tavily search, and the intel is
+   already cached/fresh-enough, so it only appears as a FALLBACK when we have
+   nothing yet. Empty facets render as "nothing found", never invented. #}
+<div class="rounded-xl border border-base-300 bg-base-100 p-4">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="font-medium">{{ _('prep.intel.heading') }}</h2>
+  </div>
+
+  {% if not outlook or outlook.is_empty() %}
+    {# Honest fallback (GOV-005: never invent company facts). Tell the user we
+       couldn't find it and reframe the kit below as general prep. Here — and
+       ONLY here — offer a one-off fetch, since we have nothing cached. #}
+    <div class="rounded-lg bg-base-200/40 p-3 text-sm text-base-content/70 flex items-center gap-3">
+      <span>
+        <i class="ph-thin ph-info"></i>
+        {{ _('prep.intel.not_found_pre') }}{% if company %} <span class="font-medium">{{ company }}</span>{% endif %}. {{ _('prep.intel.general') }}
+      </span>
+      <button hx-get="/prep/{{ session_id }}/outlook?refresh=1"
+              hx-target="#prep-outlook" hx-swap="innerHTML"
+              class="ml-auto shrink-0 text-xs text-base-content/60 hover:text-base-content inline-flex items-center gap-1"
+              data-testid="outlook-fetch">
+        <i class="ph-thin ph-arrows-clockwise"></i>{{ _('prep.intel.fetch') }}
+      </button>
+    </div>
+  {% else %}
+    <div class="grid md:grid-cols-3 gap-3">
+      <div class="rounded-lg bg-base-200/40 p-3">
+        <div class="text-xs font-semibold text-base-content/50 mb-1">{{ _('prep.intel.culture') }}</div>
+        <p class="text-sm line-clamp-6">{{ outlook.culture_tone | md_bold if outlook.culture_tone else '—' }}</p>
+      </div>
+      <div class="rounded-lg bg-base-200/40 p-3">
+        <div class="text-xs font-semibold text-base-content/50 mb-1">{{ _('prep.intel.strategy') }}</div>
+        <p class="text-sm line-clamp-6">{{ outlook.strategic_focus | md_bold if outlook.strategic_focus else '—' }}</p>
+      </div>
+      <div class="rounded-lg bg-base-200/40 p-3">
+        <div class="text-xs font-semibold text-base-content/50 mb-1">{{ _('prep.intel.news') }}</div>
+        {% if outlook.recent_news %}
+          <ul class="text-sm space-y-1">
+            {% for n in outlook.recent_news[:3] %}
+            <li>
+              {% set nu = n.url | safe_url %}
+              {% if nu %}<a href="{{ nu }}" target="_blank" rel="noopener" class="hover:underline">{{ n.headline }}</a>
+              {% else %}{{ n.headline }}{% endif %}
+              {% if n.date %}<span class="text-base-content/50"> · {{ n.date }}</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-sm text-base-content/50">—</p>
+        {% endif %}
+      </div>
+    </div>
+    {% if outlook.sources %}
+      <div class="mt-2 text-xs text-base-content/50">
+        {{ _('prep.intel.sources') }}:
+        {% for u in outlook.sources[:4] %}
+          {% set su = u | safe_url %}
+          {% if su %}<a href="{{ su }}" target="_blank" rel="noopener" class="hover:underline">[{{ loop.index }}]</a>{% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+</div>

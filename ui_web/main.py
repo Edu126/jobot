@@ -38,7 +38,7 @@ from core import db  # noqa: E402
 from .deps import templates  # noqa: E402
 from .middleware import configure as configure_middleware  # noqa: E402
 from .ratelimit import configure as configure_ratelimit  # noqa: E402
-from .routes import admin, applications, feedback, jobs, journey, profile  # noqa: E402
+from .routes import admin, applications, feedback, jobs, journey, prep, profile  # noqa: E402
 
 
 @asynccontextmanager
@@ -103,6 +103,7 @@ async def ping_partial(request: Request):
 app.include_router(jobs.router)
 app.include_router(applications.router)
 app.include_router(journey.router)
+app.include_router(prep.router)
 app.include_router(profile.router)
 app.include_router(feedback.router)
 app.include_router(admin.router)

@@ -67,6 +67,11 @@
               @click="$store.tailor.openFor('{{ job.id }}')">
         {{ _('action.tailor') }}
       </button>
+      {# Prep from here → get-or-create a bound prep session, jump into the kit. #}
+      <button class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5"
+              hx-post="/prep/from-job/{{ job.id }}" hx-swap="none">
+        <i class="ph-thin ph-target"></i>{{ _('action.prep') }}
+      </button>
     </div>
 
     {# Mark-as-applied — toggle on its own row, left-aligned. Non-destructive:
