@@ -66,6 +66,9 @@ def _seed(path: Path) -> None:
         _app(conn, "j1", "interviewing", NOW - timedelta(days=1))        # this week, positive
         _app(conn, "j3", "rejected",     NOW - timedelta(days=2))        # this week, heard back
         _app(conn, "j2", "applied",      NOW - timedelta(days=9))        # last week
+        # a status transition event so the time-series heard_back has timing
+        _e(conn, NOW - timedelta(days=1), ev.APP_STATUS_CHANGED,
+           to_status="interviewing", job_id="j1")
 
 
 def _approx(a, b, tol=0.05) -> bool:
@@ -116,6 +119,25 @@ def main() -> int:
     check("o.heard_back", o["heard_back"] == 2, o)
     check("o.positive", o["positive"] == 1, o)
     check("o.response_rate", _approx(o["response_rate"], 0.667, 0.01), o)
+
+    # Time-series (REQ-028 / ADR-036).
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "ts.db"
+        _seed(path)
+        wk = kpis.compute_kpi_timeseries("week", 8, now=NOW, path=path)
+        day = kpis.compute_kpi_timeseries("day", 21, now=NOW, path=path)
+
+    check("ts.week_len", len(wk) == 8, len(wk))
+    nb = wk[-1]  # newest week
+    check("ts.newest_applied", nb["applied"] == 2, nb)
+    check("ts.newest_saved", nb["saved"] == 2, nb)
+    check("ts.newest_heard", nb["heard_back"] == 1, nb)
+    check("ts.newest_tailored", nb["tailored"] == 0, nb)
+    check("ts.newest_active", nb["active_days"] >= 1, nb)
+    check("ts.sum_applied", sum(b["applied"] for b in wk) == 3, [b["applied"] for b in wk])
+    check("ts.sum_tailored", sum(b["tailored"] for b in wk) == 2, [b["tailored"] for b in wk])
+    check("ts.day_len", len(day) == 21, len(day))
+    check("ts.day_sum_applied", sum(b["applied"] for b in day) == 3, [b["applied"] for b in day])
 
     # Empty DB → honest None/0, no crash.
     with tempfile.TemporaryDirectory() as d:

@@ -60,15 +60,12 @@ def _wake(app: str) -> None:
         pass
 
 
-def fetch_kpis(app: str) -> dict | None:
-    """Run the KPI CLI on the app over SSH; parse the JSON line from stdout."""
-    _wake(app)
+def _ssh_json(app: str, cmd: str) -> dict | None:
+    """Run `cmd` on the app over SSH; parse the JSON line from stdout."""
     try:
-        r = subprocess.run(
-            ["fly", "ssh", "console", "-a", app, "-C", "python -m core.bi.kpis"],
-            capture_output=True, text=True, timeout=120)
+        r = subprocess.run(["fly", "ssh", "console", "-a", app, "-C", cmd],
+                           capture_output=True, text=True, timeout=120)
     except subprocess.TimeoutExpired:
-        print(f"  {app}: TIMEOUT")
         return None
     for line in reversed(r.stdout.splitlines()):
         line = line.strip()
@@ -77,8 +74,23 @@ def fetch_kpis(app: str) -> dict | None:
                 return json.loads(line)
             except json.JSONDecodeError:
                 continue
-    print(f"  {app}: no KPI JSON (stderr: {r.stderr.strip()[:120]})")
     return None
+
+
+def fetch(app: str) -> dict:
+    """Snapshot + time-series for one app. Tries `--series` (REQ-028); falls
+    back to snapshot-only for apps whose code predates it."""
+    _wake(app)
+    obj = _ssh_json(app, "python -m core.bi.kpis --series")
+    if obj is None:
+        obj = _ssh_json(app, "python -m core.bi.kpis")   # old-code fallback
+    if obj is None:
+        print(f"  {app}: unreachable / no KPI JSON")
+        return {"app": app, "kpis": None, "series_week": None, "series_day": None}
+    if "kpis" in obj:   # --series shape
+        return {"app": app, "kpis": obj["kpis"],
+                "series_week": obj.get("series_week"), "series_day": obj.get("series_day")}
+    return {"app": app, "kpis": obj, "series_week": None, "series_day": None}
 
 
 # ---------- rendering ----------
@@ -106,6 +118,35 @@ def _sparkline(weekly: list[dict]) -> str:
         for i, v in enumerate(vals))
     return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
             f'<polyline fill="none" stroke="#0a7" stroke-width="1.5" points="{pts}"/></svg>')
+
+
+def _matrix(series: list[dict] | None) -> str:
+    """Funnel-evolution matrix: rows = weeks, cols = funnel steps (REQ-028)."""
+    if not series:
+        return '<span class="muted">no time-series (redeploy this app for drill-down)</span>'
+    head = "".join(f"<th>{c}</th>" for c in
+                   ("week", "viewed", "saved", "applied", "tailored", "heard"))
+    body = "".join(
+        f'<tr><td class="mono">{b["label"]}</td><td>{b["viewed"]}</td>'
+        f'<td>{b["saved"]}</td><td>{b["applied"]}</td><td>{b["tailored"]}</td>'
+        f'<td>{b["heard_back"]}</td></tr>' for b in series)
+    return f'<table class="mtx"><tr>{head}</tr>{body}</table>'
+
+
+def _detail(r: dict) -> str:
+    """Per-user drill-down: funnel matrix + weekly/daily sparklines."""
+    app, sw, sd = r["app"], r.get("series_week"), r.get("series_day")
+    label = LABELS.get(app, "—")
+    applied_spark = _sparkline([{"active_days": b["applied"]} for b in sw]) if sw else "—"
+    daily_spark = _sparkline([{"active_days": b["active_days"]} for b in sd]) if sd else "—"
+    return (
+        f'<details class="udetail" data-user="{html.escape((label + " " + app).lower())}">'
+        f'<summary><b>{html.escape(label)}</b> · <span class="mono">{html.escape(app)}</span></summary>'
+        f'<div class="drill">'
+        f'<div><div class="lbl">Funnel by week</div>{_matrix(sw)}</div>'
+        f'<div class="sparks"><div class="lbl">Applied / week</div>{applied_spark}'
+        f'<div class="lbl" style="margin-top:.6rem">Activity / day (21d)</div>{daily_spark}</div>'
+        f'</div></details>')
 
 
 def render(rows: list[dict], history: list[dict]) -> str:
@@ -177,6 +218,11 @@ def render(rows: list[dict], history: list[dict]) -> str:
  .mono{{font-family:ui-monospace,monospace;font-size:12px;color:#666}}
  .yes{{color:#0a7;font-weight:600}} .no{{color:#c33;font-weight:600}} .muted{{color:#aaa}}
  .trend{{margin:1.5rem 0}}
+ .drill{{display:grid;grid-template-columns:1fr 130px;gap:1.5rem;padding:.75rem 0 1rem;align-items:start}}
+ .mtx{{width:auto}} .mtx td,.mtx th{{padding:.25rem .6rem;text-align:right;border-bottom:1px solid #f0f0f0}}
+ .mtx td:first-child,.mtx th:first-child{{text-align:left}}
+ details.udetail{{border-bottom:1px solid #eee}} details.udetail summary{{padding:.6rem .2rem;cursor:pointer}}
+ .sparks .lbl{{margin-bottom:.2rem}} #flt{{padding:.4rem .7rem;border:1px solid #ddd;border-radius:8px;width:260px;margin:.5rem 0 1rem}}
 </style>
 <h1>Jobot · fleet pulse</h1>
 <div class="sub">{n} reachable of {len(rows)} apps · pulled {now} · deterministic KPIs (ADR-034/035), not LLM</div>
@@ -187,7 +233,16 @@ def render(rows: list[dict], history: list[dict]) -> str:
      <th>Activated</th><th>Accept</th><th>Avg score</th><th>Response</th><th>Activity</th></tr>
  {''.join(tr)}
 </table>
-<p class="sub">Labels are hand-maintained and may be wrong — verify before naming a user.</p>
+
+<h2 style="font-size:1.1rem;margin:2rem 0 .3rem">Per-user drill-down</h2>
+<input id="flt" placeholder="filter users…" oninput="
+  var q=this.value.toLowerCase();
+  document.querySelectorAll('.udetail').forEach(function(d){{
+    d.style.display = d.dataset.user.indexOf(q)>=0 ? '' : 'none';
+  }});">
+{''.join(_detail(r) for r in rows)}
+
+<p class="sub" style="margin-top:1.5rem">Labels are hand-maintained and may be wrong — verify before naming a user.</p>
 """
 
 
@@ -197,7 +252,7 @@ def main() -> int:
     rows = []
     for app in apps:
         print(f"  {app}…")
-        rows.append({"app": app, "kpis": fetch_kpis(app)})
+        rows.append(fetch(app))
 
     # Append this run's rollup to history for trend lines.
     ok = [r["kpis"] for r in rows if r["kpis"]]

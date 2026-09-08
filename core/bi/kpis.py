@@ -227,14 +227,87 @@ def _round(v) -> Optional[float]:
     return round(v, 1) if v is not None else None
 
 
+# ---------- time-series (REQ-028 / ADR-036) ----------
+
+# The funnel columns of the per-user evolution matrix, in order.
+FUNNEL_STEPS = ("viewed", "saved", "applied", "tailored", "heard_back")
+
+
+def compute_kpi_timeseries(
+    granularity: str = "week",
+    n: int = 8,
+    now: Optional[datetime] = None,
+    path: Path = db.DB_PATH,
+) -> list[dict]:
+    """Per-bucket funnel counts, oldest bucket first (REQ-028). `granularity`
+    is 'week' (7-day buckets) or 'day'. Each bucket:
+      {start, label, active_days, viewed, saved, applied, tailored, heard_back}
+    Computed on demand from raw tables (ADR-036) — exact and retroactive."""
+    now = now or datetime.utcnow()
+    span = timedelta(days=1 if granularity == "day" else 7)
+    with db.connect(path) as conn:
+        series = []
+        for i in range(n):
+            b_end = now - span * i
+            b_start = b_end - span
+            series.append(_bucket(conn, b_start, b_end, granularity))
+    series.reverse()   # oldest first
+    return series
+
+
+def _bucket(conn: sqlite3.Connection, a: datetime, b: datetime, gran: str) -> dict:
+    ai, bi = _iso(a), _iso(b)
+
+    def one(sql: str, *params) -> int:
+        return conn.execute(sql, params).fetchone()["n"]
+
+    label = a.strftime("%m-%d") if gran == "day" else f"wk {a.strftime('%m-%d')}"
+    return {
+        "start": a.strftime("%Y-%m-%d"),
+        "label": label,
+        "active_days": one(
+            "SELECT COUNT(DISTINCT substr(ts_utc,1,10)) n FROM events "
+            "WHERE ts_utc>=? AND ts_utc<?", ai, bi),
+        "viewed": one(
+            "SELECT COUNT(*) n FROM viewed_jobs WHERE viewed_at>=? AND viewed_at<?", ai, bi),
+        "saved": one(
+            "SELECT COUNT(*) n FROM applications WHERE created_at>=? AND created_at<?", ai, bi),
+        "applied": one(
+            "SELECT COUNT(*) n FROM applications "
+            "WHERE applied_at IS NOT NULL AND applied_at>=? AND applied_at<?", ai, bi),
+        "tailored": one(
+            "SELECT COUNT(DISTINCT json_extract(payload_json,'$.job_id')) n FROM events "
+            "WHERE type=? AND ts_utc>=? AND ts_utc<?", ev.TAILOR_GENERATED, ai, bi),
+        "heard_back": one(
+            "SELECT COUNT(*) n FROM events WHERE type=? AND ts_utc>=? AND ts_utc<? "
+            "AND json_extract(payload_json,'$.to_status') IN ('interviewing','offer','rejected')",
+            ev.APP_STATUS_CHANGED, ai, bi),
+    }
+
+
 # ---------- CLI ----------
 
 def main(argv: Optional[list[str]] = None) -> int:
-    """Print the Phase 0 KPI block as one JSON line. The `fleet-pulse` skill
-    runs this over `fly ssh` on each app to build the aggregated dashboard
-    (ADR-035). One line so SSH stdout parses cleanly."""
+    """Print the Phase 0 KPIs as one JSON line — the `fleet-pulse` skill runs
+    this over `fly ssh` per app (ADR-035). With `--series`, emit
+    {kpis, series_week, series_day} so the fleet view gets snapshot + trends in
+    one round-trip (ADR-036). One line so SSH stdout parses cleanly."""
+    import argparse
     import json
-    print(json.dumps(compute_phase0_kpis(), ensure_ascii=False, default=str))
+    ap = argparse.ArgumentParser(prog="python -m core.bi.kpis")
+    ap.add_argument("--series", action="store_true",
+                    help="Also emit weekly + daily time-series (REQ-028).")
+    args = ap.parse_args(argv)
+
+    if args.series:
+        out = {
+            "kpis": compute_phase0_kpis(),
+            "series_week": compute_kpi_timeseries("week", 8),
+            "series_day": compute_kpi_timeseries("day", 21),
+        }
+    else:
+        out = compute_phase0_kpis()
+    print(json.dumps(out, ensure_ascii=False, default=str))
     return 0
 
 

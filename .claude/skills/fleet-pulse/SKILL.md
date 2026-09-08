@@ -32,6 +32,11 @@ python3 .claude/skills/fleet-pulse/fleet_pulse.py
 - **Table (row per user):** active · W1 · W4 · apps/wk (Δ) · activated · accept% ·
   avg applied score · response% · activity sparkline (from `g1.weekly_active`).
 - **Trend:** users-active-this-week across historical runs.
+- **Per-user drill-down (REQ-028):** a filterable list of `<details>`, each with a
+  **funnel-evolution matrix** (rows = weeks, cols = viewed → saved → applied →
+  tailored → heard) + **weekly-applied** and **daily-activity** sparklines. Pulled
+  via `python -m core.bi.kpis --series` (ADR-036); apps whose code predates
+  `--series` still show the table row but no drill-down (redeploy them).
 
 ## Guardrails
 
