@@ -59,3 +59,6 @@ htmlcov/
 # local test seed — real resumes, PII, DO NOT COMMIT
 data/bakeoff_fixtures/
 data/bakeoff_cache/
+
+# local backup of pre-crop welcome screenshots (originals live in git history)
+ui_web/static/welcome/_originals/

@@ -2,7 +2,10 @@
 
 Date: 2026-09-07
 Source: Eduardo (strategy session — "landing one pager para esos strangers")
-Status: Open
+Status: Superseded by REQ-029 (2026-09-08) — the present/manual/hand-off *intent*
+holds, but the timeline-explainer *execution* was too much for a 10-user beta.
+See REQ-029 for the shipped minimal welcome; REQ-030 for where the explainer
+content is parked.
 
 ## What they asked for
 "Estamos construyendo el landing one-pager para esos strangers… ahí va a estar
