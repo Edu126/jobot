@@ -2,7 +2,7 @@
 
 Date: 2026-08-27
 Source: Eduardo (product architect)
-Status: Backlog — not started
+Status: Delivered 2026-08-31 — coverage-anchored score ([ADR-018](../decisions/ADR-018-bucketed-scoring-engine-rank-then-judge.md)) + cache stability ([ADR-019](../decisions/ADR-019-gemini-scoring-nondeterministic-stability-via-cache.md)). Live in `semantic_score.py` (`PROMPT_VERSION = 2026-08-31-coverage-crosslang`).
 
 ## What they asked for
 

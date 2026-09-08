@@ -19,10 +19,7 @@ keep the numeric coverage score in a verdict-tinted ring. The A-layer
    project-wide review.
 2. **Cross-language prompt go/no-go** (Eduardo's call). `data/ab_scoring_2026-08-31.md`
    awaits his marks on the coverage-crosslang prompt.
-3. **Doc-status drift.** REQ-015 + REQ-016 still read `Status: Backlog — not
-   started` but are delivered (REQ-015 in full; REQ-016's B-layer live, A-layer
-   deferred per ADR-020). Update their Status lines.
-4. **Minor deferred** (2026-08-26 close-out): real anonymized résumé fixtures;
+3. **Minor deferred** (2026-08-26 close-out): real anonymized résumé fixtures;
    a DB-path-injection param for `ai_summary` so the stale-cache fix gets a test.
 
 ---

@@ -2,7 +2,7 @@
 
 Date: 2026-08-27
 Source: Eduardo (product architect) + RESEARCH-market-thesis (iteration 2)
-Status: Backlog — not started
+Status: Partially delivered 2026-08-31 — B-layer (LLM judge, coverage→bucket, cross-language) live per [ADR-018](../decisions/ADR-018-bucketed-scoring-engine-rank-then-judge.md); A-layer (local ranking) deferred per [ADR-020](../decisions/ADR-020-defer-lite-score-a-layer.md). Display: numeric coverage score in a verdict-tinted ring ([ADR-038](../decisions/ADR-038-keep-numeric-coverage-score-verdict-tinted.md) supersedes ADR-016's bucket-only).
 
 ## What they asked for
 
