@@ -1795,6 +1795,14 @@ async def jobs_refresh(cache_key: str):
 # Import a specific job from a URL (or manual paste)
 # ─────────────────────────────────────────────────────────────
 
+def _is_single_url(text: str) -> bool:
+    """True only if the *whole* input is one URL token — not merely "contains
+    a link". A pasted JD with an "Apply at https://…" line has whitespace /
+    newlines, so it fails this and is treated as text, never fetched."""
+    # split(None, 1) stops after the first gap → caps allocation at 2 items
+    # even for a multi-KB JD paste, vs. tokenizing the whole thing.
+    return len(text.split(None, 1)) == 1 and text.lower().startswith(("http://", "https://"))
+
 @router.post("/jobs/from-url")
 @limiter.limit("20/hour")
 async def jobs_from_url(
@@ -1813,6 +1821,12 @@ async def jobs_from_url(
     """
     job_url = (job_url or "").strip()
     manual_text = (manual_text or "").strip()
+
+    # The primary form ships a single field (job_url) that may hold EITHER a
+    # URL or a pasted description. If it isn't one clean URL token, treat it as
+    # pasted text — so an embedded link inside a JD never triggers a fetch.
+    if job_url and not manual_text and not _is_single_url(job_url):
+        job_url, manual_text = "", job_url
 
     if not job_url and not manual_text:
         return HTMLResponse(

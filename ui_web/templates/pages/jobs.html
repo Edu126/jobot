@@ -328,24 +328,24 @@
             hx-swap="innerHTML"
             @htmx:before-request="start(); document.getElementById('from-url-feedback').innerHTML = ''"
             @htmx:after-request="stop($event)">
-        {# Stack URL input + Analyze button on mobile so the button doesn't
-           overflow / crush the input to nothing on narrow screens.
-           Side-by-side from md up where there's room. #}
-        <div class="flex flex-col md:flex-row gap-2 md:items-stretch">
-          <input type="url" name="job_url"
-                 placeholder="https://… (LinkedIn, Indeed, Workday, company career page, anything)"
-                 required
-                 :disabled="running"
-                 class="input input-bordered w-full md:flex-1"
-                 autocomplete="off">
+        {# One field takes EITHER a link (we fetch it) or the pasted job
+           description (from a LinkedIn post, a DM, anywhere). The handler
+           disambiguates: a lone URL token → fetch; anything else → text. #}
+        <textarea name="job_url" rows="3"
+                  placeholder="Paste a job link — or the whole job description (from a LinkedIn post, a message, anywhere)"
+                  required
+                  :disabled="running"
+                  class="textarea textarea-bordered w-full leading-relaxed"
+                  autocomplete="off"></textarea>
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mt-3">
+          <div class="text-xs text-body-muted md:flex-1">
+            A link we'll fetch, or paste the full text if there's no clean URL. We extract the job, score it against your resume, and open it ready to tailor.
+          </div>
           <button type="submit"
                   :disabled="running"
-                  class="btn btn-primary cursor-pointer w-full md:w-auto md:min-w-[8rem]">
+                  class="btn btn-primary cursor-pointer w-full md:w-auto md:min-w-[8rem] shrink-0">
             {{ _('action.analyze') }}
           </button>
-        </div>
-        <div class="text-xs text-body-muted mt-2">
-          We fetch the page, extract the job, score it against your resume, and open it ready to tailor.
         </div>
       </form>
 

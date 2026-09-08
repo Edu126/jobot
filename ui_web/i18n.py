@@ -337,7 +337,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.expand_search.tooltip": "Deeper scrape on this same query. Opens in a new tab with only fresh / unviewed jobs by default.",
         # Jobs page — mode descriptions + quick-fill
         "jobs.mode.broad_desc": "Cast a wide net — up to 3 titles at once",
-        "jobs.mode.targeted_desc": "Paste a specific job link — deep-analyze one",
+        "jobs.mode.targeted_desc": "Paste a link or the job description — deep-analyze one",
         "jobs.quick_fill.label": "Quick fill:",
         "jobs.quick_fill.shuffle": "Shuffle",
         "jobs.quick_fill.no_suggestions": "No suggestions yet — upload a resume to unlock these.",
@@ -798,7 +798,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.expand_search.tooltip": "Búsqueda más profunda de esta misma consulta. Abre en una pestaña nueva con solo empleos nuevos / no vistos.",
         # Modo de búsqueda + quick fill
         "jobs.mode.broad_desc": "Amplio — hasta 3 puestos a la vez",
-        "jobs.mode.targeted_desc": "Pega un link específico — analízalo a fondo",
+        "jobs.mode.targeted_desc": "Pega un link o la descripción — analízalo a fondo",
         "jobs.quick_fill.label": "Autollenar:",
         "jobs.quick_fill.shuffle": "Barajar",
         "jobs.quick_fill.no_suggestions": "Sin sugerencias todavía — sube tu currículum para desbloquearlas.",
