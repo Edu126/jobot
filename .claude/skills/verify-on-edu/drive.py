@@ -37,7 +37,8 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 with sync_playwright() as p:
     browser = p.chromium.launch()
-    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    # Web-first (ADR-033): capture at a wide desktop workspace.
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
     page.goto(f"{BASE}/profile", wait_until="networkidle", timeout=30000)
 
     # ── DEFAULT TAB — My Profile & Skills ────────────────────────────────
@@ -145,6 +146,23 @@ with sync_playwright() as p:
         restored = page.locator("#gap-map .group").count()
         check("restore_brings_pill_back", restored == before, f"{after} → {restored}")
         page.screenshot(path=str(OUT / "06_after_restore.png"), full_page=True)
+
+    # ── PREP surface (REQ-023/025) — for the REQ-027 stranger page ────────
+    # Non-fatal: a hiccup here must not lose the gap-map shots above.
+    try:
+        page.goto(f"{BASE}/prep", wait_until="networkidle", timeout=30000)
+        page.locator("a[href^='/prep/']").first.click()
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(1500)   # fit context bar + lazy kit fragment
+        # Fit context bar (score + reasoning + matched/gaps) at the top.
+        page.screenshot(path=str(OUT / "07_prep_fit.png"), full_page=True)
+        # Confirm the cached kit actually rendered (a STAR question is present).
+        star = page.get_by_text("regulated program", exact=False)
+        check("prep_kit_renders", star.count() >= 1, "STAR question from cached kit")
+        page.wait_for_timeout(800)
+        page.screenshot(path=str(OUT / "08_prep_kit.png"), full_page=True)
+    except Exception as e:  # noqa: BLE001
+        check("prep_surface", False, f"prep capture failed: {e}")
 
     browser.close()
 

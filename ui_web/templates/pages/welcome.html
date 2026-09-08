@@ -1,0 +1,200 @@
+{# Standalone landing (REQ-027). NOT the app shell — public, pre-app.
+   Voice: user is hero, jobot is guide (ADR-032). Web-first (ADR-033).
+   Bilingual via `lang` (detected from Accept-Language; ?lang overrides).
+   Spine = Jobot's REAL flow as a timeline (REQ-027 correction 2026-09-08).
+   Copy source: docs/product/stranger-page-copy.md #}
+{% set es = (lang == 'es') %}
+{% set steps = [
+  ('01-upload.png',
+   'Subes tu hoja de vida', 'La leemos de verdad: estructura, secciones, todo — no un parser tonto.',
+   'Upload your résumé', 'We actually read it — structure, sections, all of it. No dumb parser.'),
+  ('02-feedback.png',
+   'Feedback honesto al instante', 'Qué tan fuerte está tu CV para los sistemas de hoy, y dónde flojea. Sin adornos.',
+   'Honest feedback, right away', 'How strong your résumé is for today’s systems, and where it’s weak. No sugar-coating.'),
+  ('03-search.png',
+   'Buscas trabajo — o traes tu vacante', 'Rastreamos vacantes reales por ti; o pegas el link de una que te interese.',
+   'Find jobs — or bring your own', 'We hunt real openings for you; or paste a link to one you like.'),
+  ('04-score.png',
+   'Recibes tu encaje honesto', 'Un score con el porqué: qué encaja y qué te falta. No un número vacío.',
+   'Get your honest fit', 'A score with the why: what fits and what’s missing. Not a hollow number.'),
+  ('05-tailor.png',
+   'Ajustamos tu HV y tu carta', 'Con tus palabras reales, para que te vean y te ranqueen alto — nunca mintiendo.',
+   'We tailor your résumé & cover letter', 'In your real words, so you get seen and ranked high — never lying.'),
+  ('06-prep.png',
+   'Te preparamos para la entrevista', 'Respuestas STAR con tus vivencias, preguntas para hacerles, e intel de la empresa.',
+   'We prep you for the interview', 'STAR answers from your real experience, questions to ask them, and company intel.')
+] %}
+<!DOCTYPE html>
+<html lang="{{ lang }}" data-theme="jobot">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ 'Jobot — tu equipo de soporte' if es else 'Jobot — your support team' }}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/thin/style.css">
+  <link rel="stylesheet" href="{{ static_url('app.css') }}">
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .wrap { max-width: 1040px; }
+    .shot { border: 1px solid oklch(var(--b3)); border-radius: var(--rounded-box); box-shadow: 0 4px 16px oklch(var(--p) / 0.06); }
+    .stepnum { width: 2.25rem; height: 2.25rem; display: grid; place-items: center;
+               border-radius: 999px; background: oklch(var(--a) / 0.15); color: oklch(var(--af));
+               font-weight: 700; flex: none; }
+  </style>
+</head>
+<body class="text-base-content">
+
+  <div class="wrap mx-auto px-6 pt-4 flex justify-between items-center text-sm">
+    <span class="font-bold tracking-tight">Jobot</span>
+    <a class="pill" href="/welcome?lang={{ 'en' if es else 'es' }}">{{ 'English' if es else 'Español' }}</a>
+  </div>
+
+  {# ── HERO ── #}
+  <header class="wrap mx-auto px-6 pt-12 pb-14 md:grid md:grid-cols-2 md:gap-12 md:items-center">
+    <div>
+      <h1 class="text-display leading-tight" style="font-size:clamp(2.5rem,5vw,3.5rem)">
+        {{ 'La estrella eres tú.' if es else 'You’re the star.' }}
+      </h1>
+      <h2 class="text-title text-body-muted mt-2">
+        {{ 'Nosotros, tu equipo de soporte.' if es else 'We’re your support team.' }}
+      </h2>
+      <p class="text-lg mt-5 max-w-xl">
+        {% if es %}
+          Te quitamos el peso de encima en cada paso — desde que subes tu hoja de vida
+          hasta que entras a la entrevista — para que tú brilles.
+        {% else %}
+          We take the weight off you at every step — from the moment you upload your
+          résumé to the day you walk into the interview — so you can shine.
+        {% endif %}
+      </p>
+      <a href="/" class="btn btn-accent btn-lg mt-7">
+        {{ 'Empezar con tu hoja de vida' if es else 'Start with your résumé' }} →
+      </a>
+      <p class="text-sm text-body-muted mt-3 italic">
+        {{ 'Sin inventar nada. Sin adornos. Solo tú, mejor presentado.'
+           if es else 'Nothing invented. No fluff. Just you, presented better.' }}
+      </p>
+    </div>
+    <div class="mt-10 md:mt-0">
+      <img class="shot w-full" src="/static/welcome/04-score.png"
+           alt="{{ 'Lectura honesta de tu encaje' if es else 'Your honest fit read' }}">
+    </div>
+  </header>
+
+  {# ── THE REAL FLOW · timeline ── #}
+  <section class="wrap mx-auto px-6 py-10">
+    <h2 class="text-display mb-2">{{ 'Tu recorrido con Jobot' if es else 'Your journey with Jobot' }}</h2>
+    <p class="text-body-muted mb-12">
+      {{ 'Paso a paso, contigo — desde el CV hasta la oferta.'
+         if es else 'Step by step, with you — from résumé to offer.' }}
+    </p>
+
+    <div class="space-y-16">
+      {% for img, es_t, es_d, en_t, en_d in steps %}
+        <div class="md:grid md:grid-cols-2 md:gap-10 md:items-center">
+          <div class="{% if loop.index0 % 2 == 1 %}md:order-last{% endif %}">
+            <div class="flex items-center gap-3">
+              <div class="stepnum">{{ loop.index }}</div>
+              <h3 class="text-title">{{ es_t if es else en_t }}</h3>
+            </div>
+            <p class="mt-3 text-body-muted text-lg">{{ es_d if es else en_d }}</p>
+          </div>
+          <img class="shot w-full mt-4 md:mt-0" src="/static/welcome/{{ img }}"
+               alt="{{ es_t if es else en_t }}">
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ── CONTINUOUS step (episodic → continuous hook) ── #}
+  <section class="wrap mx-auto px-6 pb-16">
+    <div class="card-quiet p-6 md:p-8 md:grid md:grid-cols-2 md:gap-10 md:items-center"
+         style="border-color: oklch(var(--a) / 0.35)">
+      <div>
+        <div class="text-label" style="color: oklch(var(--af))">
+          {{ 'Y no termina cuando te contratan' if es else 'And it doesn’t stop when you’re hired' }}
+        </div>
+        <h3 class="text-title mt-1">{{ 'Mientras tanto: tu mapa de brechas' if es else 'Meanwhile: your gap map' }}</h3>
+        <p class="mt-3 text-body-muted text-lg">
+          {{ 'Qué cerrar para el trabajo que quieres — hoy, y a lo largo de tu carrera.'
+             if es else 'What to close for the job you want — today, and across your career.' }}
+        </p>
+      </div>
+      <img class="shot w-full mt-4 md:mt-0" src="/static/welcome/07-gapmap.png"
+           alt="{{ 'Tu mapa de brechas' if es else 'Your gap map' }}">
+    </div>
+  </section>
+
+  {# ── WHAT JOBOT REFUSES TO DO ── #}
+  <section class="bg-base-200">
+    <div class="wrap mx-auto px-6 py-14">
+      <h2 class="text-display">{{ 'Lo que jobot NO hace' if es else 'What jobot refuses to do' }}</h2>
+      {% set refuses = [
+        ('No miente por ti ni inventa experiencia. Presentamos tu potencial real.',
+         'No lying, no invented experience. We present your real potential.'),
+        ('No te dice lo que quieres oír. Si tu CV está sólido, te lo decimos; si algo está flojo, también.',
+         'No telling you what you want to hear. Strong résumé? We say so. Weak spot? That too.'),
+        ('No trabajamos para reclutadores ni empresas. Estamos de tu lado. Siempre.',
+         'We don’t work for recruiters or employers. We’re on your side. Always.')
+      ] %}
+      <ul class="mt-6 space-y-3 text-lg max-w-2xl">
+        {% for es_t, en_t in refuses %}<li>· {{ es_t if es else en_t }}</li>{% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  {# ── MANUAL (accordions) ── #}
+  <section class="wrap mx-auto px-6 py-16">
+    <h2 class="text-display mb-6">{{ '¿Cómo se usa?' if es else 'How to use it' }}</h2>
+    <div class="space-y-2 max-w-3xl">
+      {% set manual = [
+        ('¿Qué es jobot?', 'Tu equipo de soporte para la búsqueda de trabajo. Tú postulas; nosotros te quitamos la carga y te ayudamos a brillar.',
+         'What is jobot?', 'Your job-search support team. You apply; we take the load off and help you shine.'),
+        ('Pega una vacante → tu encaje honesto', 'Copia el texto o el link de la vacante. Te decimos qué tan bien encajas y qué te falta, con el porqué.',
+         'Paste a job → your honest fit', 'Paste the text or the link. We tell you how well you fit and what’s missing, with the why.'),
+        ('Ajustar sin mentir', 'Tomamos tu experiencia real y la presentamos con las palabras que el sistema premia. Ser visto · ser ranqueado · seguir siendo real.',
+         'Tailor without lying', 'We take your real experience and present it with the language the system rewards. Be seen · be ranked · stay real.'),
+        ('¿Por qué no hay botón de “Regenerar”?', 'Si algo no pasa nuestro control de calidad, no se muestra. No te hacemos adivinar ni reintentar. Confías en lo que ves.',
+         'Why no “Regenerate” button?', 'If something fails our quality check, it doesn’t render. No guessing, no retry spam. You trust what you see.')
+      ] %}
+      {% for es_q, es_a, en_q, en_a in manual %}
+        <details class="card-quiet px-4 py-3">
+          <summary class="cursor-pointer font-medium">{{ es_q if es else en_q }}</summary>
+          <p class="mt-2 text-body-muted">{{ es_a if es else en_a }}</p>
+        </details>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ── CTA + founder note ── #}
+  <section class="bg-base-200">
+    <div class="wrap mx-auto px-6 py-16 text-center">
+      <h2 class="text-display">
+        {{ 'Empieza por tu hoja de vida.' if es else 'Start with your résumé.' }}
+      </h2>
+      <a href="/" class="btn btn-accent btn-lg mt-6">
+        {{ 'Empezar ahora' if es else 'Start now' }} →
+      </a>
+      <blockquote class="mt-10 max-w-xl mx-auto text-body-muted italic border-l-2 pl-4 text-left"
+                  style="border-color: oklch(var(--a) / 0.4)">
+        {% if es %}
+          <p class="text-xs uppercase tracking-wide not-italic mb-1">De Eduardo, quien construye jobot</p>
+          “Lo he construido con 4 personas. Tú eres de las primeras 10 en probarlo de verdad.
+          No busco que me digas que te gusta — busco que me digas dónde se rompe. Escríbeme.”
+        {% else %}
+          <p class="text-xs uppercase tracking-wide not-italic mb-1">From Eduardo, who’s building jobot</p>
+          “I’ve built it with 4 people. You’re one of the first 10 to really try it.
+          I don’t want you to tell me you like it — I want you to tell me where it breaks. Write to me.”
+        {% endif %}
+      </blockquote>
+    </div>
+  </section>
+
+  <footer class="wrap mx-auto px-6 py-8 text-xs text-body-muted">Jobot · 2026</footer>
+</body>
+</html>

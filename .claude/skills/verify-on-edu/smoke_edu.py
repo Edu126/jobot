@@ -22,6 +22,7 @@ Contract:
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ sys.path.insert(0, "/app")   # the deployed app root on the Fly machine
 from core import db  # noqa: E402
 from core.matching import gap_map as gm  # noqa: E402
 from core.matching import semantic_score as ss  # noqa: E402
+from core.prep import kit as prep_kit  # noqa: E402
 
 SMOKE_FILENAME = "__SMOKE_gapmap__.docx"
 SMOKE_JOB_IDS = [f"__smoke_j{i}__" for i in range(1, 6)]
@@ -89,6 +91,59 @@ CLASSIFICATIONS = [
      "suggestion": "Cite your two-team scrum-of-scrums coordination."},
 ]
 
+# ── Prep fixture (REQ-023/025) — a bound session + a CACHED kit blob so the prep
+# detail page (fit context bar + STAR/reverse kit) renders with NO LLM call. ──
+PREP_JD = (
+    "Platform PM at SmokeCo — own delivery of a regulated payments platform; "
+    "coordinate two agile teams; partner with infra on CI/CD and containerized "
+    "deploys. Nice-to-have: Kubernetes, PMP."
+)
+PREP_BRIEF = {
+    "reasoning": ("Strong fit: 6 years of regulated-fintech delivery maps directly "
+                  "to this platform PM role; the main stretch is Kubernetes depth."),
+    "matched": ["Regulated fintech delivery", "CI/CD + Docker",
+                "Scrum-of-scrums across teams"],
+    "gaps": ["Kubernetes", "PMP certification"],
+}
+PREP_KIT = {
+    "star_qa": [
+        {"kind": "behavioral",
+         "question": "Tell me about a time you delivered a regulated program under a hard deadline.",
+         "star": {"situation": "A fintech payments release faced a compliance deadline.",
+                  "task": "Own end-to-end delivery across two teams.",
+                  "action": "Ran scrum-of-scrums, cut scope to the compliant core, automated the CI/CD gate.",
+                  "result": "Shipped on time with zero post-release compliance findings."}},
+        {"kind": "situational",
+         "question": "How would you coordinate two agile teams with conflicting priorities?",
+         "star": {"situation": "Two teams share a platform backlog.",
+                  "task": "Keep both unblocked without stalling delivery.",
+                  "action": "Establish one ranked backlog, a weekly scrum-of-scrums, and explicit interface contracts.",
+                  "result": "Predictable throughput and fewer cross-team blockers."}},
+        {"kind": "why_you",
+         "question": "Why are you a strong fit for this Platform PM role?",
+         "talking_points": ["6 years owning regulated fintech delivery",
+                            "Hands-on with Docker + CI/CD — I speak the infra team's language",
+                            "Proven scrum-of-scrums coordination across teams"]},
+        {"kind": "defensive_gap",
+         "question": "You haven't run Kubernetes in production — how do you close that gap?",
+         "talking_points": ["I use Docker + CI/CD daily, so the container model is familiar",
+                            "I'd pair with the infra team early and ramp on K8s specifics",
+                            "I frame it honestly as a ramp, not a claim"]},
+    ],
+    "reverse_qs": [
+        {"category": "Role", "question": "What does success look like in the first 90 days?"},
+        {"category": "Team", "question": "How are the two platform teams structured, and who owns the shared backlog?"},
+        {"category": "Delivery", "question": "What's the current CI/CD maturity, and where does it hurt most today?"},
+        {"category": "Growth", "question": "How does the company support PMs moving toward staff/principal?"},
+    ],
+}
+
+
+def _resume_hash(rid: int) -> str:
+    with db.connect(db.DB_PATH) as conn:
+        row = conn.execute("SELECT text_hash FROM resumes WHERE id = ?", (rid,)).fetchone()
+    return row["text_hash"] if row else ""
+
 
 def _resume_id_by_filename(name: str) -> int | None:
     for r in db.list_resumes():
@@ -108,6 +163,12 @@ def _purge_smoke_rows() -> None:
             if h:
                 conn.execute("DELETE FROM gap_classification WHERE resume_hash = ?", (h,))
                 conn.execute("DELETE FROM gap_dismissals WHERE resume_hash = ?", (h,))
+                # prep sessions (+ their kits) are keyed on resume_hash → no FK
+                # cascade from resumes; wipe them explicitly (delete-all gotcha).
+                conn.execute(
+                    "DELETE FROM prep_kits WHERE prep_session_id IN "
+                    "(SELECT id FROM prep_sessions WHERE resume_hash = ?)", (h,))
+                conn.execute("DELETE FROM prep_sessions WHERE resume_hash = ?", (h,))
         conn.executemany("DELETE FROM jobs WHERE id = ?", [(j,) for j in SMOKE_JOB_IDS])
 
 
@@ -129,7 +190,16 @@ def seed() -> None:
     ], LANG, ss.PROMPT_VERSION, ss.SCORING_VERSION)
     db.save_gap_classifications(rid, LANG, gm.PROMPT_VERSION, CLASSIFICATIONS)
 
+    # Prep: a bound session + a cached kit blob (no LLM — renders from cache).
+    h = _resume_hash(rid)
+    sid = db.create_prep_session(
+        resume_hash=h, company="SmokeCo", role_title="Platform PM",
+        jd_text=PREP_JD, lang=LANG, source="from_job", job_id=SMOKE_JOB_IDS[0],
+        match_score=92, match_brief=json.dumps(PREP_BRIEF))
+    db.save_prep_kit(sid, LANG, prep_kit.PROMPT_VERSION, PREP_KIT, model="seed")
+
     print(f"SEEDED résumé_id={rid}, prev_current={MARKER.read_text() or 'none'}")
+    print(f"  prep_session_id={sid} (kit cached under {prep_kit.PROMPT_VERSION})")
     _print_pillars(rid)
 
 

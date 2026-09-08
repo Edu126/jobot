@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from markdown_it import MarkdownIt
 
 from core import db
+from core.bi import kpis
 
 from ..deps import templates
 from ..ratelimit import limiter
@@ -69,5 +70,8 @@ def _render(request: Request, *, current: dict | None, others: list[dict]):
             "current": current,
             "others": others,
             "report_html": report_html,
+            # Phase 0 KPIs (REQ-026 / ADR-034): deterministic, live at view time,
+            # never LLM-narrated. Shown even when no pulse report exists yet.
+            "kpis": kpis.compute_phase0_kpis(),
         },
     )
