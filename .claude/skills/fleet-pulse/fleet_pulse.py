@@ -29,6 +29,7 @@ LABELS = {
     "jobbotv2-hermana": "Mehran (verify)",
     "jobbotv2-andrea": "Andrea (verify)",
     "jobbotv2-melissa": "Sara (verify)",
+    "jobbotv2-carlos": "Carlos (friend)",
     "jobbotv2-edu": "Eduardo (owner)",
 }
 

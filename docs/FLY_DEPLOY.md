@@ -2,7 +2,7 @@
 
 A short walkthrough for putting Jobot v0.5-dev on the public internet via Fly.io's free tier. Uses **one-app-per-user** as poor-man's multi-tenancy while proper auth (Notion doc "Jobot — Multi-user Architecture") is on the roadmap. Each user gets their own isolated app + volume + URL.
 
-> **TL;DR — auto-deploy on push**: after the one-time setup in [Auto-deploy](#auto-deploy-on-push-to-main), every `git push origin main` deploys all 3 per-user apps in parallel via GitHub Actions.
+> **TL;DR — auto-deploy on push**: after the one-time setup in [Auto-deploy](#auto-deploy-on-push-to-main), every `git push origin main` deploys all per-user apps in parallel via GitHub Actions. Current fleet: `jobbotv2` (Melissa), `jobbotv2-melissa` (Sara), `jobbotv2-hermana` (Mehran), `jobbotv2-andrea` (Andrea), `jobbotv2-carlos` (Carlos). App names DO NOT match user names — verify before trusting. `jobbotv2-edu` (Eduardo's staging) deploys separately via the verify-on-edu skill, not this matrix.
 
 ---
 
@@ -151,7 +151,7 @@ Or via the browser: <https://github.com/Edu126/jobot/settings/secrets/actions> �
 
 ### 3. Push to main → auto-deploy
 
-Every subsequent push runs `fly deploy` for all 3 apps in parallel. Watch it live at <https://github.com/Edu126/jobot/actions>.
+Every subsequent push runs `fly deploy` for all per-user apps in parallel. Watch it live at <https://github.com/Edu126/jobot/actions>.
 
 To trigger manually (e.g. after adding a new secret):
 
@@ -170,7 +170,9 @@ matrix:
     - jobbotv2
     - jobbotv2-melissa
     - jobbotv2-hermana
-    - jobbotv2-alicia   # <-- add here
+    - jobbotv2-andrea
+    - jobbotv2-carlos
+    - jobbotv2-alicia   # <-- add the new one here
 ```
 
 Commit + push. Next deploy includes the new app.
