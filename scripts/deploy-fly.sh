@@ -71,6 +71,15 @@ else
   ok "Found GOOGLE_API_KEY in .env (${#GOOGLE_API_KEY} chars)"
 fi
 
+# TAVILY_API_KEY (Prep company outlook) — OPTIONAL. Prep degrades to an honest
+# fallback without it, so a missing key warns but never fails the deploy.
+TAVILY_API_KEY="$(grep -E '^TAVILY_API_KEY=' .env | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')"
+if [ -z "$TAVILY_API_KEY" ]; then
+  warn "No TAVILY_API_KEY in .env — Prep company outlook will use the honest fallback. Add it to .env to enable live intel on this app."
+else
+  ok "Found TAVILY_API_KEY in .env (${#TAVILY_API_KEY} chars)"
+fi
+
 # ── 2. Resolve app name ─────────────────────────────────────────────────────
 # Priority: APP env var → CLI arg → fly.toml. When CLI arg is a short suffix
 # (e.g. "melissa"), the base app name from fly.toml gets suffixed:
@@ -120,6 +129,12 @@ fi
 info "Setting GOOGLE_API_KEY secret…"
 fly secrets set "GOOGLE_API_KEY=${GOOGLE_API_KEY}" --app "$APP_NAME" --stage
 ok "Secret staged (will apply on next deploy)."
+
+if [ -n "$TAVILY_API_KEY" ]; then
+  info "Setting TAVILY_API_KEY secret…"
+  fly secrets set "TAVILY_API_KEY=${TAVILY_API_KEY}" --app "$APP_NAME" --stage
+  ok "TAVILY secret staged."
+fi
 
 # ── 6. Deploy ───────────────────────────────────────────────────────────────
 echo ""

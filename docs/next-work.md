@@ -17,10 +17,12 @@ keep the numeric coverage score in a verdict-tinted ring. The A-layer
    `/code-review low` on the REQ-016 commits (`e630742` B-layer, `d01a305`
    validation harness + A-layer rollback) — to be folded into a larger
    project-wide review.
-2. **Cross-language prompt go/no-go** (Eduardo's call). `data/ab_scoring_2026-08-31.md`
-   awaits his marks on the coverage-crosslang prompt.
-3. **Minor deferred** (2026-08-26 close-out): real anonymized résumé fixtures;
+2. **Minor deferred** (2026-08-26 close-out): real anonymized résumé fixtures;
    a DB-path-injection param for `ai_summary` so the stale-cache fix gets a test.
+
+_Closed 2026-09-01: the cross-language prompt go/no-go (`data/ab_scoring_2026-08-31.md`).
+Eduardo decided not to run the HITL validation — REQ-016 ships as-is on trust.
+That sheet + the HITL method stays on file if scoring quality is ever doubted._
 
 ---
 
