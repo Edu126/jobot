@@ -106,15 +106,18 @@ def _pct(v) -> str:
 
 
 def _sparkline(weekly: list[dict]) -> str:
-    """Inline SVG polyline of active-days-per-week (0..7). No JS, no deps."""
+    """Inline SVG polyline of a per-bucket series. Normalized to the series'
+    own max so it works for any metric (active-days, applied, active-users),
+    not just 0..7. No JS, no deps."""
     if not weekly:
         return '<span class="muted">—</span>'
     vals = [w.get("active_days", 0) for w in weekly]
+    hi = max(vals) or 1   # avoid div-by-zero on an all-zero series
     w, h, pad = 90, 22, 2
     n = max(len(vals), 2)
     step = (w - 2 * pad) / (n - 1)
     pts = " ".join(
-        f"{pad + i * step:.1f},{h - pad - (v / 7) * (h - 2 * pad):.1f}"
+        f"{pad + i * step:.1f},{h - pad - (v / hi) * (h - 2 * pad):.1f}"
         for i, v in enumerate(vals))
     return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
             f'<polyline fill="none" stroke="#0a7" stroke-width="1.5" points="{pts}"/></svg>')
