@@ -225,3 +225,19 @@ def _parse(s: str) -> datetime:
 
 def _round(v) -> Optional[float]:
     return round(v, 1) if v is not None else None
+
+
+# ---------- CLI ----------
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """Print the Phase 0 KPI block as one JSON line. The `fleet-pulse` skill
+    runs this over `fly ssh` on each app to build the aggregated dashboard
+    (ADR-035). One line so SSH stdout parses cleanly."""
+    import json
+    print(json.dumps(compute_phase0_kpis(), ensure_ascii=False, default=str))
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())
