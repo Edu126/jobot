@@ -19,15 +19,15 @@
   <style>
     body { font-family: 'Inter', system-ui, sans-serif; }
     .wrap { max-width: 1040px; }        /* web-first: wide desktop workspace */
-    .shot { border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.08); }
+    .shot { border: 1px solid oklch(var(--b3)); border-radius: var(--rounded-box); box-shadow: 0 4px 16px oklch(var(--p) / 0.06); }
   </style>
 </head>
-<body class="bg-base-100 text-base-content">
+<body class="text-base-content">
 
   {# lang toggle — top-right #}
   <div class="wrap mx-auto px-6 pt-4 flex justify-between items-center text-sm">
     <span class="font-bold tracking-tight">Jobot</span>
-    <a class="link link-hover text-body-muted" href="/welcome?lang={{ 'en' if es else 'es' }}">
+    <a class="pill" href="/welcome?lang={{ 'en' if es else 'es' }}">
       {{ 'English' if es else 'Español' }}
     </a>
   </div>
@@ -35,10 +35,10 @@
   {# ── 1 · HERO ── #}
   <header class="wrap mx-auto px-6 pt-12 pb-16 md:grid md:grid-cols-2 md:gap-12 md:items-center">
     <div>
-      <h1 class="text-4xl md:text-5xl font-extrabold leading-tight">
+      <h1 class="text-display leading-tight" style="font-size:clamp(2.5rem,5vw,3.5rem)">
         {{ 'La estrella eres tú.' if es else 'You’re the star.' }}
       </h1>
-      <h2 class="text-2xl md:text-3xl font-semibold text-body-muted mt-2">
+      <h2 class="text-title text-body-muted mt-2">
         {{ 'Nosotros somos tu equipo de soporte.' if es else 'We’re your support team.' }}
       </h2>
       <p class="text-lg mt-5 max-w-xl">
@@ -52,7 +52,7 @@
           for you — we lighten the load so you can show your real potential.
         {% endif %}
       </p>
-      <a href="/" class="btn btn-primary btn-lg mt-7">
+      <a href="/" class="btn btn-accent btn-lg mt-7">
         {{ 'Probar con una vacante real' if es else 'Try it on a real job' }} →
       </a>
       <p class="text-sm text-body-muted mt-3 italic">
@@ -69,7 +69,7 @@
   {# ── 2 · PROBLEM ── #}
   <section class="bg-base-200">
     <div class="wrap mx-auto px-6 py-14">
-      <h2 class="text-2xl md:text-3xl font-bold">
+      <h2 class="text-display">
         {{ 'No es que no seas suficiente. Es que el sistema no te deja verte.'
            if es else 'It’s not that you’re not enough. It’s that the system won’t let you be seen.' }}
       </h2>
@@ -89,7 +89,7 @@
 
   {# ── 3 · HOW IT WORKS (3 steps) ── #}
   <section class="wrap mx-auto px-6 py-16">
-    <h2 class="text-2xl md:text-3xl font-bold mb-10">
+    <h2 class="text-display mb-10">
       {{ 'Cómo funciona' if es else 'How it works' }}
     </h2>
     <div class="space-y-14">
@@ -120,7 +120,7 @@
         </div>
       </div>
 
-      <div>
+      <div class="card-quiet p-6">
         <div class="text-label">{{ 'Paso 3' if es else 'Step 3' }}</div>
         <h3 class="text-xl font-semibold mt-1">{{ 'Prepárate' if es else 'Prep' }}</h3>
         <p class="mt-2 text-body-muted max-w-2xl">
@@ -135,7 +135,7 @@
   {# ── 4 · WHAT JOBOT REFUSES TO DO ── #}
   <section class="bg-base-200">
     <div class="wrap mx-auto px-6 py-14">
-      <h2 class="text-2xl md:text-3xl font-bold">
+      <h2 class="text-display">
         {{ 'Lo que jobot NO hace' if es else 'What jobot refuses to do' }}
       </h2>
       <ul class="mt-6 space-y-3 text-lg max-w-2xl">
@@ -154,7 +154,7 @@
 
   {# ── 5 · MANUAL (accordions) ── #}
   <section class="wrap mx-auto px-6 py-16">
-    <h2 class="text-2xl md:text-3xl font-bold mb-6">
+    <h2 class="text-display mb-6">
       {{ '¿Cómo se usa?' if es else 'How to use it' }}
     </h2>
     <div class="space-y-2 max-w-3xl">
@@ -182,14 +182,14 @@
   {# ── 6 · CTA + founder note ── #}
   <section class="bg-base-200">
     <div class="wrap mx-auto px-6 py-16 text-center">
-      <h2 class="text-2xl md:text-3xl font-bold">
+      <h2 class="text-display">
         {{ 'Pruébalo con una vacante que de verdad te interese.'
            if es else 'Try it on a job you actually want.' }}
       </h2>
-      <a href="/" class="btn btn-primary btn-lg mt-6">
+      <a href="/" class="btn btn-accent btn-lg mt-6">
         {{ 'Empezar ahora' if es else 'Start now' }} →
       </a>
-      <blockquote class="mt-10 max-w-xl mx-auto text-body-muted italic border-l-2 border-base-300 pl-4 text-left">
+      <blockquote class="mt-10 max-w-xl mx-auto text-body-muted italic border-l-2 pl-4 text-left" style="border-color: oklch(var(--a) / 0.4)">
         {% if es %}
           <p class="text-xs uppercase tracking-wide not-italic mb-1">De Eduardo, quien construye jobot</p>
           “Lo he construido con 4 personas. Tú eres de las primeras 10 en probarlo de verdad.
