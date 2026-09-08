@@ -38,6 +38,15 @@ app — how their funnel moved week over week (e.g. "viewed 40 → saved 8 → a
 3 last week, heard back on 1") plus a daily activity line, and can filter the view
 to just that user. A cooling-off user is visible as a falling line, not inferred.
 
+## Clarification (2026-09-08)
+This is an **admin/owner-only** aggregated view — never shown to end users. Eduardo
+is open to any delivery vehicle: (a) inside his own `-edu` app behind an admin
+route, (b) a new admin page, or (c) a **locally-built artifact / skill that
+extracts the data** — the last being the confirmed direction, i.e. the existing
+`fleet-pulse` skill (ADR-035) is the right home. So REQ-028 = **extend fleet-pulse**
+with per-user drill-down + daily/weekly time-series + the funnel-evolution matrix,
+not a user-facing feature.
+
 ## Related
 - Extends REQ-026 / ADR-034 (deterministic KPIs) + ADR-035 (fleet pull).
 - Needs a new ADR when built: **time-series computed on demand from raw tables**
