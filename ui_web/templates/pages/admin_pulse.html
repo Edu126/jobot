@@ -10,6 +10,96 @@
   </p>
 </div>
 
+{# ─── Phase 0 · North-star KPIs (REQ-026 / ADR-034) — deterministic, live,
+   never LLM-narrated. These are the numbers that decide the company. ─── #}
+{% macro yn(v) %}{% if v is none %}<span class="text-body-muted">pending</span>{% elif v %}<span class="text-success font-semibold">Yes</span>{% else %}<span class="text-error font-semibold">No</span>{% endif %}{% endmacro %}
+{% macro pct(v) %}{% if v is none %}—{% else %}{{ (v * 100) | round | int }}%{% endif %}{% endmacro %}
+
+<section aria-label="Phase 0 KPIs" class="mb-10">
+  <div class="flex items-baseline gap-3 mb-3">
+    <h2 class="text-title">Phase 0 · North-star KPIs</h2>
+    <span class="text-xs text-body-muted">live · computed {{ kpis.computed_at[:16] }}Z · not LLM-generated</span>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+
+    {# G1 — weekly returning / retention #}
+    {% set g1 = kpis.g1_retention %}
+    <div class="card-quiet p-4">
+      <div class="text-label">G1 · Weekly returning</div>
+      {% if g1.anchor_date %}
+        <div class="text-2xl font-semibold mt-1">W4 retained: {{ yn(g1.w4_retained) }}</div>
+        <div class="text-sm text-body-muted mt-1">
+          W1: {{ yn(g1.w1_retained) }} · this week active: {{ yn(g1.current_week_active) }}
+        </div>
+        <div class="text-xs text-body-muted mt-1">
+          since {{ g1.anchor_date }} · week {{ g1.weeks_since_anchor }}
+        </div>
+      {% else %}
+        <div class="text-body-muted mt-2">No activity yet.</div>
+      {% endif %}
+    </div>
+
+    {# G2 — applications completed / week #}
+    {% set g2 = kpis.g2_applications %}
+    <div class="card-quiet p-4">
+      <div class="text-label">G2 · Applications / week</div>
+      <div class="text-2xl font-semibold mt-1">{{ g2.this_week }}</div>
+      <div class="text-sm text-body-muted mt-1">
+        last week {{ g2.last_week }} ·
+        {% if g2.delta > 0 %}<span class="text-success">+{{ g2.delta }}</span>
+        {% elif g2.delta < 0 %}<span class="text-error">{{ g2.delta }}</span>
+        {% else %}±0{% endif %}
+      </div>
+    </div>
+
+    {# Outcome — moat seed #}
+    {% set o = kpis.outcome %}
+    <div class="card-quiet p-4">
+      <div class="text-label">Outcome · Response rate</div>
+      <div class="text-2xl font-semibold mt-1">{{ pct(o.response_rate) }}</div>
+      <div class="text-sm text-body-muted mt-1">
+        {{ o.heard_back }} heard back / {{ o.applied }} applied · {{ o.positive }} positive
+      </div>
+    </div>
+
+    {# S1 — activation #}
+    {% set s1 = kpis.s1_activation %}
+    <div class="card-quiet p-4">
+      <div class="text-label">S1 · Activation</div>
+      <div class="text-2xl font-semibold mt-1">Reached tailor: {{ yn(s1.activated) }}</div>
+      <div class="text-sm text-body-muted mt-1">
+        {% if s1.hours_to_activate is not none %}{{ s1.hours_to_activate }}h to first tailor · {% endif %}
+        session 1: {{ yn(s1.activated_first_session) }}
+      </div>
+    </div>
+
+    {# S2 — artifact acceptance #}
+    {% set s2 = kpis.s2_acceptance %}
+    <div class="card-quiet p-4">
+      <div class="text-label">S2 · Artifact acceptance</div>
+      <div class="text-2xl font-semibold mt-1">{{ pct(s2.acceptance_rate) }}</div>
+      <div class="text-sm text-body-muted mt-1">
+        {{ s2.downloaded }} used / {{ s2.generated }} tailored <span class="opacity-70">(download = proxy)</span>
+      </div>
+    </div>
+
+    {# S3 — score trust #}
+    {% set s3 = kpis.s3_score_trust %}
+    <div class="card-quiet p-4">
+      <div class="text-label">S3 · Score trust</div>
+      {% if s3.mean_applied_score is not none %}
+        <div class="text-2xl font-semibold mt-1">{{ s3.mean_applied_score }} avg</div>
+        <div class="text-sm text-body-muted mt-1">
+          applied vs {{ s3.mean_all_scored }} all · {{ pct(s3.pct_applied_high) }} high-fit
+        </div>
+      {% else %}
+        <div class="text-body-muted mt-2">No scored applications yet.</div>
+      {% endif %}
+    </div>
+
+  </div>
+</section>
+
 {% if not current %}
   <div class="card-quiet text-center py-16 max-w-2xl mx-auto">
     <div class="inline-flex items-center gap-2 text-title mb-3">
