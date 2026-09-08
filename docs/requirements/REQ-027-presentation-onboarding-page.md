@@ -47,3 +47,20 @@ without a hand-hold. Where they silently stall = the onboarding bug list, for fr
 - Feeds REQ-026 S1 activation (top-of-funnel); does not block REQ-026 metrics.
 - Screenshots via the verify-on-edu skill (real product, not mockups).
 - Design rules: CRAP + skeleton loaders (standing UI conventions).
+
+## Correction (2026-09-08) — v1 copy too generic + smoke data
+Eduardo's review of the shipped v1: the copy felt "vacío" — a generic StoryBrand
+3-step pitch that does NOT tell Jobot's real flow, and the screenshots used the
+smoke fixture. Corrected direction (supersedes the "carnita 3-step" content note):
+- **Spine = the REAL product journey as a timeline**, in our own framing:
+  1. Subes tu hoja de vida → 2. Feedback honesto inicial (ATS + first read) →
+  3. Buscas trabajo / traes una vacante → 4. Recibes tu score de encaje honesto →
+  5. Ajustamos tu HV + carta → 6. Te preparamos para la entrevista →
+  · en continuo / "mientras tanto": tu **mapa de brechas / market fit** (the
+  episodic→continuous hook).
+- Each stage carries a **real screenshot from Eduardo's OWN -edu data** (approved
+  — real experience beats smoke; can even be better).
+- Voice stays hero/guide (ADR-032) but warmer and concrete, not template-empty.
+- **Language default:** cold strangers currently always get ES; decide browser-
+  detect (Accept-Language) vs ES-default vs EN-default (open — see below).
+- **Think the message before building** ([[feedback_think_before_shipping_copy]]).

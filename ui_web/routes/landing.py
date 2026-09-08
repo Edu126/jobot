@@ -18,9 +18,18 @@ from ..deps import templates
 router = APIRouter(tags=["landing"])
 
 
+def _resolve_lang(request: Request, lang_param: str | None) -> str:
+    """Explicit ?lang wins (the toggle); otherwise detect from Accept-Language —
+    Spanish speakers get ES, everyone else EN (REQ-027 correction 2026-09-08)."""
+    if lang_param in ("es", "en"):
+        return lang_param
+    first = request.headers.get("accept-language", "").split(",")[0].strip().lower()
+    return "es" if first.startswith("es") else "en"
+
+
 @router.get("/welcome")
-async def welcome(request: Request, lang: str = "es"):
-    lang = "en" if lang == "en" else "es"   # ES default; only ES/EN supported
+async def welcome(request: Request, lang: str | None = None):
+    lang = _resolve_lang(request, lang)
     # Top-of-funnel signal (feeds S1 activation, REQ-026). Never breaks the page.
     events.track("landing.view", lang=lang)
     return templates.TemplateResponse(
