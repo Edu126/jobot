@@ -1,7 +1,7 @@
 # ADR-016: Show fit as a bucket + reasons, not a raw %
 
 Date: 2026-08-27
-Status: Accepted
+Status: Superseded by [ADR-038](ADR-038-keep-numeric-coverage-score-verdict-tinted.md)
 Relates: ADR-015 (single-value scoring), REQ-016, RESEARCH-market-thesis
 
 ## Context
