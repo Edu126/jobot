@@ -153,7 +153,7 @@ def _s2_acceptance(conn: sqlite3.Connection) -> dict:
 
 
 def _distinct_jobs(conn: sqlite3.Connection, types: tuple[str, ...]) -> set[str]:
-    placeholders = ",".join("?" * len(types))
+    placeholders = _qmarks(types)
     rows = conn.execute(
         f"SELECT DISTINCT json_extract(payload_json,'$.job_id') AS job_id "
         f"FROM events WHERE type IN ({placeholders}) "
@@ -206,7 +206,7 @@ def _outcome(conn: sqlite3.Connection) -> dict:
 
 
 def _count_status(conn: sqlite3.Connection, statuses: tuple[str, ...]) -> int:
-    placeholders = ",".join("?" * len(statuses))
+    placeholders = _qmarks(statuses)
     return conn.execute(
         f"SELECT COUNT(*) AS n FROM applications WHERE status IN ({placeholders})",
         statuses,
@@ -217,6 +217,11 @@ def _count_status(conn: sqlite3.Connection, statuses: tuple[str, ...]) -> int:
 
 def _iso(dt: datetime) -> str:
     return dt.replace(microsecond=0).isoformat() + "Z"
+
+
+def _qmarks(xs) -> str:
+    """SQL placeholder string for a WHERE ... IN (...) over `xs`."""
+    return ",".join("?" * len(xs))
 
 
 def _parse(s: str) -> datetime:
@@ -280,8 +285,8 @@ def _bucket(conn: sqlite3.Connection, a: datetime, b: datetime, gran: str) -> di
             "WHERE type=? AND ts_utc>=? AND ts_utc<?", ev.TAILOR_GENERATED, ai, bi),
         "heard_back": one(
             "SELECT COUNT(*) n FROM events WHERE type=? AND ts_utc>=? AND ts_utc<? "
-            "AND json_extract(payload_json,'$.to_status') IN ('interviewing','offer','rejected')",
-            ev.APP_STATUS_CHANGED, ai, bi),
+            f"AND json_extract(payload_json,'$.to_status') IN ({_qmarks(_HEARD_BACK)})",
+            ev.APP_STATUS_CHANGED, ai, bi, *_HEARD_BACK),
     }
 
 

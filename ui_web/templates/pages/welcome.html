@@ -134,16 +134,16 @@
   <section class="bg-base-200">
     <div class="wrap mx-auto px-6 py-14">
       <h2 class="text-display">{{ 'Lo que jobot NO hace' if es else 'What jobot refuses to do' }}</h2>
+      {% set refuses = [
+        ('No miente por ti ni inventa experiencia. Presentamos tu potencial real.',
+         'No lying, no invented experience. We present your real potential.'),
+        ('No te dice lo que quieres oír. Si tu CV está sólido, te lo decimos; si algo está flojo, también.',
+         'No telling you what you want to hear. Strong résumé? We say so. Weak spot? That too.'),
+        ('No trabajamos para reclutadores ni empresas. Estamos de tu lado. Siempre.',
+         'We don’t work for recruiters or employers. We’re on your side. Always.')
+      ] %}
       <ul class="mt-6 space-y-3 text-lg max-w-2xl">
-        {% if es %}
-          <li>· No miente por ti ni inventa experiencia. Presentamos tu potencial real.</li>
-          <li>· No te dice lo que quieres oír. Si tu CV está sólido, te lo decimos; si algo está flojo, también.</li>
-          <li>· No trabajamos para reclutadores ni empresas. Estamos de tu lado. Siempre.</li>
-        {% else %}
-          <li>· No lying, no invented experience. We present your real potential.</li>
-          <li>· No telling you what you want to hear. Strong résumé? We say so. Weak spot? That too.</li>
-          <li>· We don’t work for recruiters or employers. We’re on your side. Always.</li>
-        {% endif %}
+        {% for es_t, en_t in refuses %}<li>· {{ es_t if es else en_t }}</li>{% endfor %}
       </ul>
     </div>
   </section>

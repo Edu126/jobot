@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from core import events
+from core import settings as app_settings
 
 from ..deps import templates
 
@@ -19,12 +20,11 @@ router = APIRouter(tags=["landing"])
 
 
 def _resolve_lang(request: Request, lang_param: str | None) -> str:
-    """Explicit ?lang wins (the toggle); otherwise detect from Accept-Language —
-    Spanish speakers get ES, everyone else EN (REQ-027 correction 2026-09-08)."""
+    """Explicit ?lang wins (the toggle); otherwise detect from Accept-Language
+    via the app's shared parser (REQ-027 correction 2026-09-08)."""
     if lang_param in ("es", "en"):
         return lang_param
-    first = request.headers.get("accept-language", "").split(",")[0].strip().lower()
-    return "es" if first.startswith("es") else "en"
+    return app_settings._parse_accept_language(request.headers.get("accept-language", ""))
 
 
 @router.get("/welcome")

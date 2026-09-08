@@ -28,10 +28,6 @@ NOW = datetime.utcnow().replace(microsecond=0)
 ANCHOR = NOW - timedelta(days=30)
 
 
-def _iso(dt: datetime) -> str:
-    return dt.replace(microsecond=0).isoformat() + "Z"
-
-
 def _seed(path: Path) -> None:
     db.init_db(path)
     rid = db.save_resume("r.docx", {"raw_text": "x"}, b"x", set_current=True, path=path)
@@ -47,13 +43,13 @@ def _seed(path: Path) -> None:
 
     def _e(conn, dt, type_, **payload):
         conn.execute("INSERT INTO events (ts_utc, type, payload_json) VALUES (?,?,?)",
-                     (_iso(dt), type_, json.dumps(payload)))
+                     (kpis._iso(dt), type_, json.dumps(payload)))
 
     def _app(conn, job_id, status, applied_at):
         conn.execute(
             "INSERT INTO applications (job_id, resume_id, status, applied_at, created_at, last_updated) "
             "VALUES (?,?,?,?,?,?)",
-            (job_id, rid, status, _iso(applied_at), _iso(applied_at), _iso(applied_at)))
+            (job_id, rid, status, kpis._iso(applied_at), kpis._iso(applied_at), kpis._iso(applied_at)))
 
     with db.tx(path) as conn:
         day9 = ANCHOR.replace(hour=9, minute=0, second=0, microsecond=0)

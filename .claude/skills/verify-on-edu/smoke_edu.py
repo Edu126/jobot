@@ -165,12 +165,10 @@ def _purge_smoke_rows() -> None:
                 conn.execute("DELETE FROM gap_dismissals WHERE resume_hash = ?", (h,))
                 # prep sessions (+ their kits) are keyed on resume_hash → no FK
                 # cascade from resumes; wipe them explicitly (delete-all gotcha).
-                sids = [r["id"] for r in conn.execute(
-                    "SELECT id FROM prep_sessions WHERE resume_hash = ?", (h,)).fetchall()]
-                if sids:
-                    conn.executemany("DELETE FROM prep_kits WHERE prep_session_id = ?",
-                                     [(i,) for i in sids])
-                    conn.execute("DELETE FROM prep_sessions WHERE resume_hash = ?", (h,))
+                conn.execute(
+                    "DELETE FROM prep_kits WHERE prep_session_id IN "
+                    "(SELECT id FROM prep_sessions WHERE resume_hash = ?)", (h,))
+                conn.execute("DELETE FROM prep_sessions WHERE resume_hash = ?", (h,))
         conn.executemany("DELETE FROM jobs WHERE id = ?", [(j,) for j in SMOKE_JOB_IDS])
 
 
