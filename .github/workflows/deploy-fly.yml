@@ -44,6 +44,7 @@ jobs:
           - jobbotv2-hermana
           - jobbotv2-andrea
           - jobbotv2-carlos
+          - jobbotv2-emma
     steps:
       - uses: actions/checkout@v4
 

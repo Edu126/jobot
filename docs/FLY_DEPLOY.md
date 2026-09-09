@@ -2,7 +2,7 @@
 
 A short walkthrough for putting Jobot v0.5-dev on the public internet via Fly.io's free tier. Uses **one-app-per-user** as poor-man's multi-tenancy while proper auth (Notion doc "Jobot — Multi-user Architecture") is on the roadmap. Each user gets their own isolated app + volume + URL.
 
-> **TL;DR — auto-deploy on push**: after the one-time setup in [Auto-deploy](#auto-deploy-on-push-to-main), every `git push origin main` deploys all per-user apps in parallel via GitHub Actions. Current fleet: `jobbotv2` (Melissa), `jobbotv2-melissa` (Sara), `jobbotv2-hermana` (Mehran), `jobbotv2-andrea` (Andrea), `jobbotv2-carlos` (Carlos). App names DO NOT match user names — verify before trusting. `jobbotv2-edu` (Eduardo's staging) deploys separately via the verify-on-edu skill, not this matrix.
+> **TL;DR — auto-deploy on push**: after the one-time setup in [Auto-deploy](#auto-deploy-on-push-to-main), every `git push origin main` deploys all per-user apps in parallel via GitHub Actions. Current fleet: `jobbotv2` (Melissa), `jobbotv2-melissa` (Sara), `jobbotv2-hermana` (Mehran), `jobbotv2-andrea` (Andrea), `jobbotv2-carlos` (Carlos), `jobbotv2-emma` (Emma). App names DO NOT match user names — verify before trusting. `jobbotv2-edu` (Eduardo's staging) deploys separately via the verify-on-edu skill, not this matrix.
 
 ---
 

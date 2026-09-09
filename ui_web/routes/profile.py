@@ -342,7 +342,11 @@ async def profile_gap_map(request: Request, context: str = "all", job_id: str = 
     `context` is the lens (ADR-025): "all" (every scored job), "top3" (the 3
     highest-scored), or "job" (one job via `job_id`). The context tabs + the
     Job-specific dropdown re-fetch this fragment with the new params. Degrades to
-    cached classifications (or honest 'real') without a key or on quota."""
+    cached classifications (or honest 'real') without a key or on quota.
+
+    REQ-031: tracks profile.gap_viewed once per page-load render (not on
+    dismiss/restore, which re-render the same panel without a user navigation)."""
+    events.track(events.PROFILE_GAP_VIEWED, context=context)
     return await _render_gap_map(request, context, job_id)
 
 

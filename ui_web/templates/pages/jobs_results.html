@@ -318,6 +318,22 @@
               class="underline hover:text-base-content cursor-pointer">{{ _('action.refresh') }}</button>
     </span>
 
+    {# REQ-034: results older than 2 days may be stale. Offer a one-tap
+       re-fetch (never auto — it hits jobspy/Photon rate limits + cost).
+       hx-post follows the endpoint's HX-Redirect back to this page. #}
+    {% if is_stale %}
+    <span class="inline-flex items-center gap-2 rounded-full px-2.5 py-0.5 text-xs"
+          style="background: hsl(38 90% 95%); border: 1px solid hsl(38 70% 82%);">
+      {{ _('results.stale_nudge') }}
+      <button type="button"
+              hx-post="/jobs/refresh/{{ cache_key }}"
+              hx-indicator="#stale-refresh-spin"
+              hx-disabled-elt="this"
+              class="underline hover:text-base-content cursor-pointer font-medium">{{ _('results.stale_refresh') }}</button>
+      <span id="stale-refresh-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+    </span>
+    {% endif %}
+
     <span class="text-xs">{{ _('results.fetched') }} {{ fetched_at | humanize }}</span>
     {% if quota_exhausted %}
       <span class="text-xs" style="color: hsl(28 75% 32%);">{{ _('results.scoring_paused') }}</span>

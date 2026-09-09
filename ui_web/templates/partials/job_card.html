@@ -53,7 +53,10 @@
       <span class="font-medium text-base-content/80">{{ job.company }}</span>
       <span class="text-base-content/30 mx-1">·</span>{{ job.location or '?' }}
       <span class="text-base-content/30 mx-1">·</span>{{ job.site }}
-      <span class="text-base-content/30 mx-1">·</span>{% if not job.date_posted and job.site and 'linkedin' in job.site | lower %}{{ _('jobs.date_recent') }}{% else %}{{ job.date_posted or '?' }}{% endif %}
+      {# REQ-033: date_posted is now always set at ingest (fetch date fallback in search.py).
+         Legacy cached jobs (pre-REQ-033) may still have an empty date_posted — show '?'
+         rather than the frozen "≤24h" label that never aged. #}
+      <span class="text-base-content/30 mx-1">·</span>{{ job.date_posted or '?' }}
     </div>
     {# Requirement + source pills.
 

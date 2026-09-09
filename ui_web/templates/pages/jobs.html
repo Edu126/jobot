@@ -383,93 +383,297 @@
 </section>
 {% endif %}
 
-{# ═══ TOP MATCHES — email-style split view (list left, detail right) ═══ #}
-{% if top_matches %}
-<script id="top-matches-meta" type="application/json">[
+{# ═══ ZONE BREAK — visual separator between the input zone (search + recent)
+   and the results zone (tabs + master-detail). Heavier than a section gap:
+   a full-width hairline + extra top spacing signals "you're now in results." ═══ #}
+<div class="border-t border-base-300 mt-2 mb-8"></div>
+
+{# ═══ RESULTS ZONE — Option B: fixed master-detail with seg-tabs ═══
+   Layout:
+     [● Top matches (N)] [♥ Saved (M)]   ← seg-tabs
+     Filter row: [Last 7 days ▾] [★ New only]   "N of M · K viewed hidden [Show viewed]"
+     ┌ left rail 38% ─┐  ┌ right reading pane 62% ───────────────────┐
+     │  top 8 cards   │  │  auto-loaded detail (never empty on lg)   │
+     │  [Show all N→] │  │  #job-detail-pane                         │
+     └────────────────┘  └───────────────────────────────────────────┘
+
+   Architecture (Fact 5):
+     - Parent x-data: holds `mode` (tab), both meta arrays (topMeta / savedMeta),
+       `autoSelected` guard per tab, and the autoSelectFirst() method.
+     - Each rail is a child x-data scope: `{ jobs: topMeta }` or `{ jobs: savedMeta }`.
+       This is REQUIRED because job_card.html hardcodes the scope variable name `jobs`
+       (it binds x-show to $store.filters.visibleIn(jobs, id)).
+     - The parent passes arrays down via named JS globals (window.__jobotTopMeta /
+       window.__jobotSavedMeta) to avoid Alpine reactivity issues with cross-scope refs.
+     - One shared #job-detail-pane on the right (loaded via $store.selectedJob.select).
+     - NO new endpoint, NO htmx swap for tab toggle — pure Alpine x-show.
+
+   Freshness defaults (Fact 6, requirement 5):
+     - maxAgeDays = 7 on init (pre-select "Last 7 days" dropdown).
+     - hideViewed = true on init; quiet counter below filter row offers toggle.
+     - onlyNew = true on init IF any top-match card has is_new=1.
+     - On tab switch: reset once-guard, auto-select first card of new rail.
+#}
+
+{# Meta arrays as application/json script tags — same pattern as jobs_results.html.
+   Fact 4: "id" field is REQUIRED for visibleIn() and autoSelectFirst().
+   Fact 3: "_is_viewed" / "_is_dismissed" are only set on top_matches (server-side
+   enrichment); saved_jobs uses safe defaults (viewed=0, dismissed=0) so the saved
+   rail never triggers hideViewed/hideDismissed filters (saved = explicit, not curated). #}
+<script id="top-matches-meta-v2" type="application/json">[
 {%- for job in top_matches -%}
-  {"score": {{ job._score }}, "french": {{ 1 if (job.french_required or job.detected_language == 'fr') else 0 }}, "remote": {{ 1 if job.is_remote else 0 }}, "age_days": {{ job._age_days }}, "is_new": {{ 1 if job._is_new else 0 }}}{{ "," if not loop.last }}
+  {"id": "{{ job.id }}", "score": {{ job._score }}, "french": {{ 1 if (job.french_required or job.detected_language == 'fr') else 0 }}, "remote": {{ 1 if job.is_remote else 0 }}, "age_days": {{ job._age_days }}, "is_new": {{ 1 if job._is_new else 0 }}, "viewed": {{ 1 if job._is_viewed else 0 }}, "dismissed": {{ 1 if job._is_dismissed else 0 }}}{{ "," if not loop.last }}
 {%- endfor -%}
 ]</script>
+<script id="saved-matches-meta-v2" type="application/json">[
+{%- for job in saved_jobs -%}
+  {"id": "{{ job.id }}", "score": {{ job._score | default(0) }}, "french": {{ 1 if (job.french_required or job.detected_language == 'fr') else 0 }}, "remote": {{ 1 if job.is_remote else 0 }}, "age_days": 0, "is_new": 0, "viewed": 0, "dismissed": 0}{{ "," if not loop.last }}
+{%- endfor -%}
+]</script>
+<script>
+  window.__jobotTopMeta = JSON.parse(document.getElementById('top-matches-meta-v2').textContent);
+  window.__jobotSavedMeta = JSON.parse(document.getElementById('saved-matches-meta-v2').textContent);
+</script>
 
 <section
+  @htmx:after-swap="onSavedRailSwap($event)"
   x-data="{
-    jobs: JSON.parse(document.getElementById('top-matches-meta').textContent),
-    init() { $store.filters.maxAgeDays = null; $store.filters.onlyNew = false; }
+    mode: 'top',
+    topMeta: window.__jobotTopMeta || [],
+    savedMeta: window.__jobotSavedMeta || [],
+    autoSelected: false,
+    get activeMeta() {
+      return this.mode === 'top' ? this.topMeta : this.savedMeta;
+    },
+    // Top-only filters (curation). $store.filters is global and job_card binds
+    // x-show to it on BOTH rails, so these must be neutralised on the Saved tab
+    // — otherwise onlyNew (is_new=0 on saved metas) hides every saved card.
+    applyTopFilters() {
+      this.$store.filters.maxAgeDays = 7;
+      this.$store.filters.hideViewed = true;
+      this.$store.filters.onlyNew = this.topMeta.some(j => j.is_new === 1);
+    },
+    clearTopFilters() {
+      this.$store.filters.maxAgeDays = null;
+      this.$store.filters.hideViewed = false;
+      this.$store.filters.onlyNew = false;
+    },
+    switchTab(newMode) {
+      this.mode = newMode;
+      // Saved is an explicit list, not curated — drop the top-only filters so
+      // they can't hide saved cards; re-apply the curation when back on Top.
+      if (newMode === 'saved') this.clearTopFilters();
+      else this.applyTopFilters();
+      // Always land on the NEW rail's first card, even if a card from the
+      // other tab was selected — otherwise the pane keeps showing a top-match
+      // while you're looking at Saved (force = true).
+      this.$nextTick(() => this.autoSelectFirst(true));
+    },
+    autoSelectFirst(force = false) {
+      if (!window.matchMedia('(min-width: 1024px)').matches) return;
+      // Initial load: never override a selection the user already made.
+      // Tab switch (force): re-point at the new rail's first card.
+      if (!force && this.$store.selectedJob.id) return;
+      const first = this.activeMeta.find(j => this.$store.filters.matches(j));
+      if (!first) { this.clearDetail(); return; }
+      this.$store.selectedJob.select(first.id, { markViewed: false });
+    },
+    clearDetail() {
+      this.$store.selectedJob.id = null;
+      const pane = document.getElementById('job-detail-pane');
+      if (pane) pane.innerHTML = pane.dataset.emptyPrompt || '';
+    },
+    // The Saved rail (#saved-rail-content) re-fetches itself from the server
+    // on the `saved-changed` htmx event (fired by save/unsave). After the swap
+    // lands, rebuild savedMeta from the fresh cards so the count + empty-state
+    // + auto-select stay in sync — this is the 'hydrate right away' fix for
+    // both adding and removing a saved job (REQ-032).
+    onSavedRailSwap(e) {
+      if (!e.detail || !e.detail.target || e.detail.target.id !== 'saved-rail-content') return;
+      const cards = document.querySelectorAll('#saved-rail-content .saved-card [data-job-id]');
+      this.savedMeta = Array.prototype.map.call(cards, el => ({
+        id: el.getAttribute('data-job-id'),
+        score: 100, french: 0, remote: 0, age_days: 0, is_new: 0, viewed: 0, dismissed: 0,
+      }));
+      // If the user is looking at Saved, land the pane on a real card (or
+      // clear it if the last one was just removed).
+      if (this.mode === 'saved') this.$nextTick(() => this.autoSelectFirst(true));
+    },
+    init() {
+      this.$store.filters.minScore = 0;
+      this.$store.filters.hideDismissed = true;
+      this.applyTopFilters();
+      this.$nextTick(() => this.autoSelectFirst());
+    }
   }">
-  <div class="flex items-baseline justify-between mb-4 flex-wrap gap-3">
-    <div>
-      <div class="flex items-center gap-2">
-        <h2 class="text-title label-dot">{{ _('jobs.top_matches.title') }}</h2>
-        <span class="pill pill-accent inline-flex items-center gap-1">
-          <i class="ph-thin ph-star i-3"></i> {{ _('jobs.top_matches.curated') }}
-        </span>
-      </div>
-      <p class="text-sm text-body-muted mt-1">
-        {{ _('jobs.top_matches.subtitle', n=cache_count) }}
-      </p>
-    </div>
-    <div class="flex items-center gap-4 flex-wrap">
-      <label class="flex items-center gap-2 cursor-pointer select-none"
-             title="{{ _('filters.only_new.tooltip') }}">
-        <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
-        <span class="text-sm inline-flex items-center gap-1">
-          <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i> {{ _('filters.only_new') }}
-        </span>
-      </label>
-      <div>
-        <label class="text-label block mb-0.5">{{ _('filters.added') }}</label>
-        <select class="select select-bordered select-sm cursor-pointer"
-                x-model.number="$store.filters.maxAgeDays"
-                @change="$store.filters.maxAgeDays = $event.target.value === '' ? null : Number($event.target.value)">
-          <option value="">{{ _('filters.added.all') }}</option>
-          <option value="1">{{ _('filters.added.24h') }}</option>
-          <option value="7">{{ _('filters.added.7d') }}</option>
-          <option value="30">{{ _('filters.added.30d') }}</option>
-        </select>
-      </div>
-      <div class="text-right">
-        <div class="text-label">{{ _('filters.showing') }}</div>
-        <div class="text-metric-sm mt-1">
-          <span x-text="$store.filters.visibleCount(jobs)">{{ top_matches | length }}</span>
-          <span class="text-base-content/30 font-normal text-base"> {{ _('filters.matches') }}</span>
-        </div>
-      </div>
+
+  {# Seg-tabs: [● Top matches (N)] [♥ Saved (M)] #}
+  <div class="flex items-center gap-4 mb-4 flex-wrap">
+    <div class='seg-tabs' role='group' aria-label='{{ _("jobs.zone.results") }}'>
+      <button type='button'
+              @click='switchTab("top")'
+              :class='mode === "top" ? "seg-tab seg-tab--active" : "seg-tab"'>
+        <i class='ph-thin ph-star i-4'></i>
+        {{ _('jobs.tabs.top_matches') }}
+        {% if top_matches %}
+        <span class='pill pill-accent ml-1'>{{ top_matches | length }}</span>
+        {% endif %}
+      </button>
+      <button type='button'
+              @click='switchTab("saved")'
+              :class='mode === "saved" ? "seg-tab seg-tab--active" : "seg-tab"'>
+        <i class='ph-fill ph-heart i-4' style='color: hsl(348 65% 55%);'></i>
+        {{ _('jobs.tabs.saved') }}
+        {# Reactive count — drops as the user un-saves without a page reload. #}
+        <span class='pill pill-neutral ml-1' x-show="savedMeta.length > 0" x-cloak x-text="savedMeta.length"></span>
+      </button>
     </div>
   </div>
 
-  {# Split viewport: cards left, detail right (email-style) #}
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    {# role="listbox": job_card.html renders each card as role="option"
-       (ADR-012 slice 4), which is only valid inside a listbox owner. #}
-    <div class="space-y-3 min-w-0 cascade-in"
+  {# Filter row — only shown when top-matches tab is active (saved list has no
+     freshness dimension; it's explicit, not curated). #}
+  <div class="flex items-center gap-4 flex-wrap mb-4" x-show="mode === 'top'" x-cloak>
+    {# Date filter dropdown #}
+    <div class="flex items-center gap-2">
+      <label class="text-label shrink-0">{{ _('filters.added') }}</label>
+      <select class="select select-bordered select-sm cursor-pointer"
+              x-model.number="$store.filters.maxAgeDays"
+              @change="$store.filters.maxAgeDays = $event.target.value === '' ? null : Number($event.target.value)">
+        <option value="">{{ _('filters.added.all') }}</option>
+        <option value="1">{{ _('filters.added.24h') }}</option>
+        <option value="7" selected>{{ _('filters.added.7d') }}</option>
+        <option value="30">{{ _('filters.added.30d') }}</option>
+      </select>
+    </div>
+    {# Only new toggle #}
+    <label class="flex items-center gap-2 cursor-pointer select-none"
+           title="{{ _('filters.only_new.tooltip') }}">
+      <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
+      <span class="text-sm inline-flex items-center gap-1">
+        <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i> {{ _('filters.only_new') }}
+      </span>
+    </label>
+    {# Showing counter + viewed-hidden toggle — quiet, muted, far right #}
+    <div class="ml-auto flex items-center gap-2 text-sm text-body-muted">
+      <span>
+        <span x-text="$store.filters.visibleCount(topMeta)"></span>
+        {{ _('filters.matches') }}
+      </span>
+      {# Viewed-hidden notice — only when hideViewed is active and some are hidden #}
+      <template x-if="$store.filters.hideViewed && topMeta.filter(j => j.viewed).length > 0">
+        <span class="inline-flex items-center gap-1">
+          <span class="text-base-content/30">·</span>
+          <span x-text="`${topMeta.filter(j => j.viewed).length} {{ _('jobs.viewed_hidden', n='') | trim }}`"></span>
+          <button type="button"
+                  class="text-primary hover:underline cursor-pointer"
+                  @click="$store.filters.hideViewed = false"
+                  style="min-height: 0;">
+            {{ _('jobs.show_viewed') }}
+          </button>
+        </span>
+      </template>
+    </div>
+  </div>
+
+  {# ─── Split viewport: left rail 38%, right detail 62% ─── #}
+  <div class="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6">
+
+    {# ── LEFT RAIL: Top matches ──
+       x-data carries `jobs` (required by job_card.html's visibleIn binding)
+       and `showAll` (local cap-8 toggle). The parent section has no x-data
+       field for showAll — keeping it on the rail avoids $parent depth issues. #}
+    <div x-show="mode === 'top'"
+         x-data="{ jobs: window.__jobotTopMeta || [], showAll: false }"
          role="listbox"
-         aria-label="{{ _('jobs.top_matches.title') }}">
-      {% for job in top_matches %}
-        {% include "partials/job_card.html" %}
-      {% endfor %}
+         aria-label="{{ _('jobs.tabs.top_matches') }}"
+         class="min-w-0">
+      {% if not top_matches %}
+      {# Empty state skeleton when no top matches exist #}
+      <div class="card-quiet py-10 px-6 text-center">
+        <div class="space-y-2 max-w-sm mx-auto mb-4" aria-hidden="true">
+          <div class="h-3 rounded skeleton bg-base-200"></div>
+          <div class="h-3 rounded skeleton bg-base-200" style="width:80%;margin:0 auto"></div>
+          <div class="h-3 rounded skeleton bg-base-200" style="width:60%;margin:0 auto"></div>
+        </div>
+        <p class="text-body-muted text-sm">{{ _('jobs.top_matches.empty') }}</p>
+      </div>
+      {% else %}
+      <div class="space-y-3 cascade-in">
+        {# Cap 8: first 8 cards always visible; extras hidden behind showAll toggle.
+           showAll lives on this rail's own x-data scope, so `showAll` resolves
+           correctly without needing $parent traversal. #}
+        {% for job in top_matches %}
+        <div {% if loop.index > 8 %}x-show="showAll" x-cloak{% endif %}>
+          {% include "partials/job_card.html" %}
+        </div>
+        {% endfor %}
+      </div>
+      {# No-matches state (filters hide everything) #}
       <div x-show="$store.filters.visibleCount(jobs) === 0 && jobs.length > 0"
            x-cloak
-           class="card-quiet text-center py-6">
+           class="card-quiet text-center py-6 mt-3">
         <div class="text-body-muted text-sm">{{ _('filters.no_matches') }}</div>
         <button class="mt-2 text-sm text-primary hover:underline cursor-pointer"
-                @click="$store.filters.maxAgeDays = null; $store.filters.onlyNew = false;">
+                @click="$store.filters.maxAgeDays = null; $store.filters.onlyNew = false; $store.filters.hideViewed = false;">
           {{ _('action.reset') }}
         </button>
       </div>
+      {# Show all link — only when total > cap of 8 #}
+      {% if top_matches | length > 8 %}
+      <div class="mt-3" x-show="!showAll">
+        <button type="button"
+                class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
+                @click="showAll = true">
+          {{ _('jobs.show_all_n', n=top_matches | length) }}
+          <i class="ph-thin ph-arrow-right i-3"></i>
+        </button>
+      </div>
+      {% endif %}
+      {% endif %}
     </div>
+
+    {# ── LEFT RAIL: Saved jobs ──
+       Same pattern: `jobs` for job_card.html's visibleIn, `showAll` for cap-8. #}
+    <div id="saved-rail"
+         x-show="mode === 'saved'"
+         x-cloak
+         x-data="{ jobs: window.__jobotSavedMeta || [], showAll: false }"
+         role="listbox"
+         aria-label="{{ _('jobs.tabs.saved') }}"
+         class="min-w-0">
+      {# Empty state — driven by Alpine savedMeta, so it reacts live as the
+         user adds/removes saved jobs (no reload). #}
+      <div x-show="savedMeta.length === 0" x-cloak class="card-quiet text-center py-16">
+        <i class="ph-thin ph-heart i-8 text-base-content/30"></i>
+        <p class="text-body-muted text-sm mt-2">{{ _('jobs.saved.empty') }}</p>
+      </div>
+      {# Cards — re-fetched from the server on `saved-changed` (fired by
+         save/unsave) so both adding and removing re-hydrate immediately.
+         onSavedRailSwap() rebuilds savedMeta from the swapped cards. #}
+      <div id="saved-rail-content"
+           x-show="savedMeta.length > 0"
+           class="space-y-3 cascade-in"
+           hx-get="/jobs/saved-rail"
+           hx-trigger="saved-changed from:body"
+           hx-swap="innerHTML">
+        {% include "partials/saved_rail.html" %}
+      </div>
+    </div>
+
+    {# ── RIGHT PANE: shared detail view ── #}
     <aside class="hidden lg:block">
       <div id="job-detail-scroll"
            class="sticky top-20 overflow-y-auto"
            style="max-height: calc(100vh - 6rem);">
-        <div id="job-detail-pane" class="card-quiet min-h-[300px]">
+        <div id="job-detail-pane" class="card-quiet min-h-[300px]"
+             data-empty-prompt='<div class="text-body-muted text-sm text-center py-16">{{ _('results.click_prompt') }}</div>'>
           <div class="text-body-muted text-sm text-center py-16">
-            Click a job on the left to see full details here.
+            {{ _('results.click_prompt') }}
           </div>
         </div>
       </div>
     </aside>
   </div>
 </section>
-{% endif %}
 
 {% endblock %}

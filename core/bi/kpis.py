@@ -234,8 +234,21 @@ def _round(v) -> Optional[float]:
 
 # ---------- time-series (REQ-028 / ADR-036) ----------
 
-# The funnel columns of the per-user evolution matrix, in order.
+# Legacy funnel steps — kept for back-compat. Callers that need the
+# reframed leading-signal order (REQ-031) should use LEADING_STEPS.
 FUNNEL_STEPS = ("viewed", "saved", "applied", "tailored", "heard_back")
+
+# Reframed funnel (REQ-031): first-party leading signals, then outcomes.
+# search → save → tailor → gap_viewed → prep | applied → heard_back
+LEADING_STEPS = ("search", "save", "tailor", "gap_viewed", "prep", "applied", "heard_back")
+
+# search.* event types that count as a "search" signal.
+_SEARCH_TYPES = (
+    ev.SEARCH_BROAD,
+    ev.SEARCH_SUBMITTED,
+    ev.SEARCH_URL_IMPORT,
+    ev.SEARCH_REFRESH,
+)
 
 
 def compute_kpi_timeseries(
@@ -244,9 +257,11 @@ def compute_kpi_timeseries(
     now: Optional[datetime] = None,
     path: Path = db.DB_PATH,
 ) -> list[dict]:
-    """Per-bucket funnel counts, oldest bucket first (REQ-028). `granularity`
-    is 'week' (7-day buckets) or 'day'. Each bucket:
-      {start, label, active_days, viewed, saved, applied, tailored, heard_back}
+    """Per-bucket funnel counts, oldest bucket first (REQ-028 / REQ-031).
+    `granularity` is 'week' (7-day buckets) or 'day'. Each bucket:
+      {start, label, active_days,
+       search, save, tailor, gap_viewed, prep,   ← leading signals (REQ-031)
+       viewed, saved, applied, tailored, heard_back}  ← legacy columns (back-compat)
     Computed on demand from raw tables (ADR-036) — exact and retroactive."""
     now = now or datetime.utcnow()
     span = timedelta(days=1 if granularity == "day" else 7)
@@ -267,22 +282,79 @@ def _bucket(conn: sqlite3.Connection, a: datetime, b: datetime, gran: str) -> di
         return conn.execute(sql, params).fetchone()["n"]
 
     label = a.strftime("%m-%d") if gran == "day" else f"wk {a.strftime('%m-%d')}"
+
+    # Leading signals (REQ-031) — count raw events in the bucket window.
+    # `search`: any of the search.* event types.
+    search_ph = _qmarks(_SEARCH_TYPES)
+    search_count = one(
+        f"SELECT COUNT(*) n FROM events WHERE type IN ({search_ph}) AND ts_utc>=? AND ts_utc<?",
+        *_SEARCH_TYPES, ai, bi)
+
+    # `save` reuses the existing saved/tailored lines (applications.created_at)
+    save_count = one(
+        "SELECT COUNT(*) n FROM applications WHERE created_at>=? AND created_at<?", ai, bi)
+
+    # `tailor` — distinct jobs tailored in the window (same as legacy `tailored`)
+    tailor_count = one(
+        "SELECT COUNT(DISTINCT json_extract(payload_json,'$.job_id')) n FROM events "
+        "WHERE type=? AND ts_utc>=? AND ts_utc<?", ev.TAILOR_GENERATED, ai, bi)
+
+    # `gap_viewed` — profile.gap_viewed events (REQ-031; 0 on old apps that lack them)
+    gap_count = one(
+        "SELECT COUNT(*) n FROM events WHERE type=? AND ts_utc>=? AND ts_utc<?",
+        ev.PROFILE_GAP_VIEWED, ai, bi)
+
+    # `prep` — prep_session_created events (string literal; not yet a constant)
+    prep_count = one(
+        "SELECT COUNT(*) n FROM events WHERE type=? AND ts_utc>=? AND ts_utc<?",
+        "prep_session_created", ai, bi)
+
+    # ── Intention vs intensity (REQ-031 / ADR-039) ──
+    # The counts above are INTENSITY (raw events: 8 queries in a day = 8).
+    # These `_days` are INTENTION: distinct active days the user did the
+    # thing at all — the honest "did they engage this week?" measure that
+    # doesn't inflate on multi-query sessions or gap-map lens switches.
+    # fleet-pulse renders `_days` by default and toggles to raw for intensity.
+    def days_events(types: tuple[str, ...]) -> int:
+        ph = _qmarks(types)
+        return one(
+            f"SELECT COUNT(DISTINCT substr(ts_utc,1,10)) n FROM events "
+            f"WHERE type IN ({ph}) AND ts_utc>=? AND ts_utc<?", *types, ai, bi)
+
+    search_days = days_events(_SEARCH_TYPES)
+    tailor_days = days_events((ev.TAILOR_GENERATED,))
+    gap_days = days_events((ev.PROFILE_GAP_VIEWED,))
+    prep_days = days_events(("prep_session_created",))
+    save_days = one(
+        "SELECT COUNT(DISTINCT substr(created_at,1,10)) n FROM applications "
+        "WHERE created_at>=? AND created_at<?", ai, bi)
+
     return {
         "start": a.strftime("%Y-%m-%d"),
         "label": label,
         "active_days": one(
             "SELECT COUNT(DISTINCT substr(ts_utc,1,10)) n FROM events "
             "WHERE ts_utc>=? AND ts_utc<?", ai, bi),
+        # ── Leading signals (REQ-031) — intensity (raw counts) ─────
+        "search": search_count,
+        "save": save_count,
+        "tailor": tailor_count,
+        "gap_viewed": gap_count,
+        "prep": prep_count,
+        # ── Leading signals — intention (distinct active days) ─────
+        "search_days": search_days,
+        "save_days": save_days,
+        "tailor_days": tailor_days,
+        "gap_viewed_days": gap_days,
+        "prep_days": prep_days,
+        # ── Legacy / outcome columns (back-compat) ─────────────────
         "viewed": one(
             "SELECT COUNT(*) n FROM viewed_jobs WHERE viewed_at>=? AND viewed_at<?", ai, bi),
-        "saved": one(
-            "SELECT COUNT(*) n FROM applications WHERE created_at>=? AND created_at<?", ai, bi),
+        "saved": save_count,      # alias: same source as `save`
         "applied": one(
             "SELECT COUNT(*) n FROM applications "
             "WHERE applied_at IS NOT NULL AND applied_at>=? AND applied_at<?", ai, bi),
-        "tailored": one(
-            "SELECT COUNT(DISTINCT json_extract(payload_json,'$.job_id')) n FROM events "
-            "WHERE type=? AND ts_utc>=? AND ts_utc<?", ev.TAILOR_GENERATED, ai, bi),
+        "tailored": tailor_count,  # alias: same source as `tailor`
         "heard_back": one(
             "SELECT COUNT(*) n FROM events WHERE type=? AND ts_utc>=? AND ts_utc<? "
             f"AND json_extract(payload_json,'$.to_status') IN ({_qmarks(_HEARD_BACK)})",

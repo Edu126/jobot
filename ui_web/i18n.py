@@ -347,6 +347,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.top_matches.title": "Top matches for you",
         "jobs.top_matches.curated": "curated",
         "jobs.top_matches.subtitle": "Best-scoring jobs across your {n} recent searches. Click any to see full details.",
+        "jobs.top_matches.subtitle_empty": "Your best-scoring jobs across recent searches will show up here.",
+        "jobs.top_matches.empty": "Run a job search and we'll surface your top matches here.",
         # Score card / detail — chip section headers
         "jobs.matched": "Matched",
         "jobs.gaps": "Gaps",
@@ -392,6 +394,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "results.pane.list": "Job list",
         "results.pane.detail": "Job detail",
         "results.still_finding": "Still finding more jobs · showing what we have so far",
+        # REQ-034: stale-search refresh nudge (>2 days old)
+        "results.stale_nudge": "These results are over 2 days old.",
+        "results.stale_refresh": "Refresh for the latest jobs",
+        # REQ-032: saved jobs — now a seg-tab on the Jobs landing (Option B)
+        "jobs.saved.title": "Saved",
+        "jobs.saved.subtitle": "Jobs you tapped ❤ on — scored and ready to tailor.",
+        "jobs.saved.empty": "No saved jobs yet — tap ❤ on any listing to save it here.",
+        # Jobs landing — master-detail seg-tabs (Option B)
+        "jobs.tabs.top_matches": "Top matches",
+        "jobs.tabs.saved": "Saved",
+        "jobs.zone.results": "Your matches",
+        "jobs.viewed_hidden": "{n} viewed hidden",
+        "jobs.show_viewed": "Show viewed",
+        "jobs.show_all_n": "Show all {n}",
+        "jobs.cap_notice": "Showing top {cap} of {total}",
         # Profile page
         "profile.title": "Profile",
         "profile.subtitle": "Your resume, scored.",
@@ -808,6 +825,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.top_matches.title": "Mejores coincidencias para ti",
         "jobs.top_matches.curated": "seleccionadas",
         "jobs.top_matches.subtitle": "Empleos mejor puntuados entre tus {n} búsquedas recientes. Toca cualquiera para ver los detalles.",
+        "jobs.top_matches.subtitle_empty": "Aquí aparecerán tus empleos mejor puntuados de tus búsquedas recientes.",
+        "jobs.top_matches.empty": "Haz una búsqueda de empleos y aquí te mostramos tus mejores coincidencias.",
         # Score card / detail — chip section headers
         "jobs.matched": "Coincide",
         "jobs.gaps": "Brechas",
@@ -853,6 +872,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "results.pane.list": "Lista de empleos",
         "results.pane.detail": "Detalle del empleo",
         "results.still_finding": "Seguimos buscando más empleos · mostrando lo que tenemos por ahora",
+        # REQ-034: nudge de actualización para búsquedas antiguas (>2 días)
+        "results.stale_nudge": "Estos resultados tienen más de 2 días.",
+        "results.stale_refresh": "Actualizar para traer lo último",
+        # REQ-032: empleos guardados — ahora pestaña en Jobs landing (Opción B)
+        "jobs.saved.title": "Guardados",
+        "jobs.saved.subtitle": "Empleos a los que diste ❤ — puntuados y listos para adaptar.",
+        "jobs.saved.empty": "Aún no hay empleos guardados — toca ❤ en cualquier oferta para guardarla aquí.",
+        # Jobs landing — pestañas master-detail (Opción B)
+        "jobs.tabs.top_matches": "Mejores coincidencias",
+        "jobs.tabs.saved": "Guardados",
+        "jobs.zone.results": "Tus coincidencias",
+        "jobs.viewed_hidden": "{n} vistas ocultas",
+        "jobs.show_viewed": "Mostrar vistas",
+        "jobs.show_all_n": "Mostrar los {n}",
+        "jobs.cap_notice": "Mostrando los {cap} mejores de {total}",
         # Perfil
         "profile.title": "Perfil",
         "profile.subtitle": "Tu currículum, puntuado.",

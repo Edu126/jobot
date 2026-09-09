@@ -1,4 +1,4 @@
-"""Fixture test for core.bi.pulse.collect_signals.
+"""Fixture test for core.bi.pulse.collect_signals AND REQ-031 leading signals.
 
 Runs without pytest — invoke directly:
     .venv/bin/python tests/test_pulse_signals.py
@@ -9,6 +9,11 @@ Seeds a temp SQLite DB with rows landing IN, BEFORE, and AFTER the
   - Every top-level section key is present with the expected shape.
   - Bounded lists (feedback message truncation, high-score dismissal
     detection, stuck-state cutoffs) behave.
+
+REQ-031 additions:
+  - core.events.PROFILE_GAP_VIEWED constant is defined.
+  - core.bi.kpis._bucket returns the new leading-signal keys.
+  - fleet_pulse._matrix() handles buckets missing the new keys (back-compat).
 """
 from __future__ import annotations
 
@@ -23,7 +28,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import db  # noqa: E402
-from core.bi import pulse  # noqa: E402
+from core import events as ev  # noqa: E402
+from core.bi import pulse, kpis  # noqa: E402
 
 
 def _iso(dt: datetime) -> str:
@@ -273,6 +279,86 @@ def main() -> int:
     # JSON-serializability guard — the whole dict has to survive json.dumps
     # since it goes into the Gemini prompt as text.
     json.dumps(sig)
+
+    # ── REQ-031: leading-signal additions ─────────────────────────────────
+
+    # 1. PROFILE_GAP_VIEWED constant exists and has the correct string value.
+    _assert(hasattr(ev, "PROFILE_GAP_VIEWED"), "ev.PROFILE_GAP_VIEWED is missing")
+    _assert(ev.PROFILE_GAP_VIEWED == "profile.gap_viewed",
+            f"PROFILE_GAP_VIEWED value unexpected: {ev.PROFILE_GAP_VIEWED!r}")
+
+    # 2. LEADING_STEPS constant is present and ordered correctly.
+    _assert(hasattr(kpis, "LEADING_STEPS"), "kpis.LEADING_STEPS is missing")
+    _assert(list(kpis.LEADING_STEPS[:5]) == ["search", "save", "tailor", "gap_viewed", "prep"],
+            f"LEADING_STEPS order wrong: {kpis.LEADING_STEPS}")
+
+    # 3. _bucket returns all leading-signal keys (with a real DB).
+    with tempfile.TemporaryDirectory() as d2:
+        path2 = Path(d2) / "leading.db"
+        db.init_db(path2)
+        now2 = datetime.utcnow()
+        b_start = now2 - timedelta(days=7)
+        # Seed gap_viewed + prep events inside the window.
+        with db.tx(path2) as conn2:
+            for ts, typ in [
+                (now2 - timedelta(days=1), ev.PROFILE_GAP_VIEWED),
+                (now2 - timedelta(days=2), ev.SEARCH_BROAD),
+                (now2 - timedelta(days=2), "prep_session_created"),
+            ]:
+                conn2.execute(
+                    "INSERT INTO events (ts_utc, type, payload_json) VALUES (?,?,?)",
+                    ((ts.replace(microsecond=0).isoformat() + "Z"), typ, "{}"),
+                )
+        with db.connect(path2) as conn2:
+            bucket = kpis._bucket(conn2, b_start, now2, "week")
+        for key in ("search", "save", "tailor", "gap_viewed", "prep"):
+            _assert(key in bucket, f"_bucket missing leading key: {key!r}")
+        _assert(bucket["gap_viewed"] == 1,
+                f"gap_viewed expected 1, got {bucket['gap_viewed']}")
+        _assert(bucket["search"] == 1,
+                f"search expected 1 (one SEARCH_BROAD), got {bucket['search']}")
+        _assert(bucket["prep"] == 1,
+                f"prep expected 1, got {bucket['prep']}")
+        # REQ-031/ADR-039: intention (distinct active days) sits alongside
+        # intensity (raw counts); distinct-days is never greater than raw.
+        for key in ("search", "save", "tailor", "gap_viewed", "prep"):
+            dkey = f"{key}_days"
+            _assert(dkey in bucket, f"_bucket missing intention key: {dkey!r}")
+            _assert(bucket[dkey] <= bucket[key],
+                    f"{dkey} ({bucket[dkey]}) must be <= {key} ({bucket[key]})")
+        _assert(bucket["search_days"] == 1,
+                f"search_days expected 1 active day, got {bucket['search_days']}")
+
+    # 4. fleet_pulse._matrix() tolerates buckets missing leading keys (old apps).
+    import importlib.util, importlib
+    _fp_path = Path(__file__).resolve().parent.parent / ".claude" / "skills" / "fleet-pulse" / "fleet_pulse.py"
+    spec = importlib.util.spec_from_file_location("fleet_pulse", _fp_path)
+    fp_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fp_mod)
+
+    # Old-app bucket: only legacy keys, no leading-signal keys.
+    old_series = [{"label": "wk 01-01", "viewed": 5, "saved": 3, "applied": 1,
+                   "tailored": 2, "heard_back": 0}]
+    html_old = fp_mod._matrix(old_series)
+    _assert("<table" in html_old, "matrix should return table HTML for old-app series")
+    _assert("0" in html_old, "old-app bucket should render 0s for missing leading keys")
+
+    # New-app bucket: all leading-signal keys present.
+    new_series = [{"label": "wk 09-01", "search": 4, "save": 3, "tailor": 2,
+                   "gap_viewed": 1, "prep": 0, "applied": 1, "heard_back": 0,
+                   "viewed": 10, "saved": 3, "tailored": 2}]
+    html_new = fp_mod._matrix(new_series)
+    _assert("<table" in html_new, "matrix should return table HTML for new-app series")
+    _assert("4" in html_new, "search count should appear in matrix HTML")
+
+    # 5. Toggle (ADR-039): leading cells carry BOTH intention (data-days,
+    #    shown by default) and intensity (data-raw).
+    tog_series = [{"label": "wk 09-08", "search": 6, "search_days": 2,
+                   "save": 0, "tailor": 0, "gap_viewed": 0, "prep": 0,
+                   "applied": 0, "heard_back": 0}]
+    html_tog = fp_mod._matrix(tog_series)
+    _assert('class="lead" data-days="2" data-raw="6">2<' in html_tog,
+            "leading cell must carry both values and display intention (days) by default")
 
     print("OK — all assertions passed")
     return 0

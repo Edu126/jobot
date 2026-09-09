@@ -19,7 +19,7 @@ import math
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Iterator, Optional
 
 from jobspy import scrape_jobs
@@ -344,13 +344,19 @@ def _row_to_job(row) -> Job:
     # single button to fall back on.
     if not board_url and direct_url:
         board_url, direct_url = direct_url, None
+
+    # REQ-033: when the publisher omits date_posted (LinkedIn jobs typically),
+    # default to today's fetch date so the card label ages naturally instead
+    # of freezing at "≤24h / hoy". Mirrors what ats/base.py:138 already does.
+    today_iso = date.today().isoformat()
+
     return Job(
         id=str(row.get("id") or f"{row.get('site')}-{hash(board_url or direct_url or title)}"),
         title=title or "(no title)",
         company=_coerce_str(row.get("company")) or "(unknown company)",
         location=_coerce_str(row.get("location")),
         site=_coerce_str(row.get("site")),
-        date_posted=_coerce_date(row.get("date_posted")),
+        date_posted=_coerce_date(row.get("date_posted"), fetch_date=today_iso),
         job_url=board_url,
         job_url_direct=direct_url,
         description=description,
@@ -381,18 +387,28 @@ def _coerce_float(value: Any) -> Optional[float]:
         return None
 
 
-def _coerce_date(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, float) and math.isnan(value):
-        return ""
+def _coerce_date(value: Any, fetch_date: Optional[str] = None) -> str:
+    """Coerce a jobspy date value to YYYY-MM-DD.
+
+    When ``value`` is absent or unparseable (common for LinkedIn jobs that
+    carry no publisher date), fall back to ``fetch_date`` — the date of the
+    scrape run — so the card shows a real, aging date instead of the frozen
+    "≤24h / hoy" label.  Callers that know the fetch moment pass it in;
+    ``_row_to_job`` passes ``date.today().isoformat()`` by default, mirroring
+    what ``core/jobs/ats/base.py:138`` already does.
+    """
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return fetch_date or ""
     if isinstance(value, datetime):
         return value.strftime("%Y-%m-%d")
     try:
         # jobspy sometimes returns pandas Timestamps
-        return str(value)[:10]
+        s = str(value).strip()[:10]
+        if not s or s == "NaT" or s == "nan":
+            return fetch_date or ""
+        return s
     except Exception:
-        return ""
+        return fetch_date or ""
 
 
 # ---------- language detection ----------

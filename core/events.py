@@ -56,6 +56,8 @@ APP_STATUS_CHANGED     = "app.status_changed"
 # Resume
 RESUME_UPLOADED        = "resume.uploaded"
 ATS_REPORT_VIEWED      = "ats.report_viewed"
+# Profile / Gap map (REQ-031)
+PROFILE_GAP_VIEWED     = "profile.gap_viewed"   # aggregated gap map rendered for the user
 # Errors / friction
 ERROR                  = "error"
 # Scraper blocked / rate-limited by a specific job board (IP block, 429,

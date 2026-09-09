@@ -125,16 +125,45 @@ def _sparkline(weekly: list[dict]) -> str:
 
 
 def _matrix(series: list[dict] | None) -> str:
-    """Funnel-evolution matrix: rows = weeks, cols = funnel steps (REQ-028)."""
+    """Funnel-evolution matrix: rows = weeks (REQ-028 / REQ-031).
+
+    Primary columns: leading first-party signals (search · save · tailor · gap · prep).
+    Trailing columns: self-reported outcomes (applied · heard).
+    Tolerates old apps whose JSON lacks new keys — defaults to 0, never crashes."""
     if not series:
         return '<span class="muted">no time-series (redeploy this app for drill-down)</span>'
     head = "".join(f"<th>{c}</th>" for c in
-                   ("week", "viewed", "saved", "applied", "tailored", "heard"))
-    body = "".join(
-        f'<tr><td class="mono">{b["label"]}</td><td>{b["viewed"]}</td>'
-        f'<td>{b["saved"]}</td><td>{b["applied"]}</td><td>{b["tailored"]}</td>'
-        f'<td>{b["heard_back"]}</td></tr>' for b in series)
-    return f'<table class="mtx"><tr>{head}</tr>{body}</table>'
+                   ("week", "search", "save", "tailor", "gap", "prep", "applied", "heard"))
+    rows = []
+    for b in series:
+        # Intensity (raw event counts). Default missing keys to 0 (old apps).
+        search    = b.get("search", 0)
+        save      = b.get("save", b.get("saved", 0))   # fall back to legacy key
+        tailor    = b.get("tailor", b.get("tailored", 0))
+        gap       = b.get("gap_viewed", 0)
+        prep      = b.get("prep", 0)
+        # Intention (distinct active days) — the DEFAULT view (REQ-031/ADR-039).
+        # Old apps lack the `_days` keys → fall back to the raw value so they
+        # still render (they just can't distinguish the two modes).
+        search_d  = b.get("search_days", search)
+        save_d    = b.get("save_days", save)
+        tailor_d  = b.get("tailor_days", tailor)
+        gap_d     = b.get("gap_viewed_days", gap)
+        prep_d    = b.get("prep_days", prep)
+        applied   = b.get("applied", 0)
+        heard     = b.get("heard_back", 0)
+
+        def lead(dval, rval) -> str:
+            # Cell shows intention by default; carries both for the toggle.
+            return f'<td class="lead" data-days="{dval}" data-raw="{rval}">{dval}</td>'
+
+        rows.append(
+            f'<tr><td class="mono">{b["label"]}</td>'
+            + lead(search_d, search) + lead(save_d, save) + lead(tailor_d, tailor)
+            + lead(gap_d, gap) + lead(prep_d, prep)
+            + f'<td class="muted">{applied}</td><td class="muted">{heard}</td></tr>'
+        )
+    return f'<table class="mtx"><tr>{head}</tr>{"".join(rows)}</table>'
 
 
 def _detail(r: dict) -> str:
@@ -227,6 +256,7 @@ def render(rows: list[dict], history: list[dict]) -> str:
  .mtx td:first-child,.mtx th:first-child{{text-align:left}}
  details.udetail{{border-bottom:1px solid #eee}} details.udetail summary{{padding:.6rem .2rem;cursor:pointer}}
  .sparks .lbl{{margin-bottom:.2rem}} #flt{{padding:.4rem .7rem;border:1px solid #ddd;border-radius:8px;width:260px;margin:.5rem 0 1rem}}
+ #mtxtog{{padding:.35rem .7rem;border:1px solid #ddd;border-radius:8px;background:#fafafa;cursor:pointer;font-size:12px;color:#555;margin:.2rem 0 1rem}}
 </style>
 <h1>Jobot · fleet pulse</h1>
 <div class="sub">{n} reachable of {len(rows)} apps · pulled {now} · deterministic KPIs (ADR-034/035), not LLM</div>
@@ -239,6 +269,15 @@ def render(rows: list[dict], history: list[dict]) -> str:
 </table>
 
 <h2 style="font-size:1.1rem;margin:2rem 0 .3rem">Per-user drill-down</h2>
+<button id="mtxtog" onclick="
+  var raw = this.dataset.mode !== 'raw';
+  document.querySelectorAll('.lead').forEach(function(td){{
+    td.textContent = raw ? td.dataset.raw : td.dataset.days;
+  }});
+  this.dataset.mode = raw ? 'raw' : 'days';
+  this.textContent = raw ? 'Funnel shows: intensity (raw events) · click for intention'
+                         : 'Funnel shows: intention (active days) · click for intensity';
+">Funnel shows: intention (active days) · click for intensity</button>
 <input id="flt" placeholder="filter users…" oninput="
   var q=this.value.toLowerCase();
   document.querySelectorAll('.udetail').forEach(function(d){{

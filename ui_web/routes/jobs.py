@@ -123,6 +123,25 @@ _EXPERIENCE_PATTERNS = [
 ]
 
 
+# REQ-035: Top matches drops searches older than this (fetch age, not posting
+# age). 14d survives a ~2-week gap without emptying the section; see the
+# jobs.html skeleton empty-state for the zero case.
+_TOP_MATCHES_MAX_AGE_DAYS = 14
+
+
+def _score_fields(s: dict) -> dict:
+    """The cached-score fields shared by the Top-matches and Saved enrichment
+    (job_card.html reads these). One source so the two lists can't drift."""
+    import json as _json
+    return {
+        "_score": s["score"],
+        "_verdict": s["verdict"],
+        "_reasoning": s["reasoning"],
+        "_matched": _json.loads(s["matched_json"]),
+        "_gaps": _json.loads(s["gaps_json"]),
+    }
+
+
 def _list_top_matches(min_score: int = 65, limit: int = 20) -> tuple[list[dict], int]:
     """Aggregate top-scored jobs across all cached searches for the current
     resume. Deduplicated by job_url; sorted by score desc. Enriches each job
@@ -148,7 +167,16 @@ def _list_top_matches(min_score: int = 65, limit: int = 20) -> tuple[list[dict],
         cache_count += 1
         label = data.get("params_label") or path.stem[:8]
         fetched_at = data.get("fetched_at", "")
-        for j in data.get("jobs", []):
+        # REQ-035 root cause: current cache files are POINTER format
+        # ({job_ids: [...]}), not inline ({jobs: [...]}). Reading data["jobs"]
+        # returned [] for every file, so Top matches was empty for EVERYONE —
+        # never a scoring-coverage problem. Hydrate pointers via db.get_jobs()
+        # (what cache.load() already does); keep the legacy inline path too.
+        job_dicts = data.get("jobs")
+        if not job_dicts:
+            ids = data.get("job_ids", [])
+            job_dicts = db.get_jobs(ids) if ids else []
+        for j in job_dicts:
             all_jobs.append((j, label, fetched_at))
 
     if not all_jobs:
@@ -192,14 +220,20 @@ def _list_top_matches(min_score: int = 65, limit: int = 20) -> tuple[list[dict],
             except Exception:
                 pass
 
+        # REQ-035: drop entries fetched more than 14 days ago. `age_days` is
+        # the FETCH age (when the search ran), not the posting age — all jobs
+        # in a search share one `fetched_at` — so too tight a window makes Top
+        # matches vanish for anyone who hasn't searched this week (the empty
+        # state then invites a fresh search). 14d survives a ~2-week gap while
+        # still hiding genuinely stale searches. Posting age is unreliable, so
+        # fetch age is the pragmatic proxy. See jobs.html empty-state.
+        if age_days > _TOP_MATCHES_MAX_AGE_DAYS:
+            continue
+
         app = db.get_application_by_job(job["id"])
         by_url[url] = {
             **job,
-            "_score": s["score"],
-            "_verdict": s["verdict"],
-            "_reasoning": s["reasoning"],
-            "_matched": _json.loads(s["matched_json"]),
-            "_gaps": _json.loads(s["gaps_json"]),
+            **_score_fields(s),
             "_source_label": source,
             "_fetched_at": fetched_at,
             "_age_days": age_days,
@@ -210,6 +244,44 @@ def _list_top_matches(min_score: int = 65, limit: int = 20) -> tuple[list[dict],
 
     top = sorted(by_url.values(), key=lambda x: x["_score"], reverse=True)[:limit]
     return top, cache_count
+
+
+def _list_saved_jobs(limit: int = 50) -> list[dict]:
+    """REQ-032: jobs the user saved (❤ = an 'interested' application),
+    enriched with the same `_score/_verdict/_matched/_gaps/_experience/
+    _app_status` fields as `_list_top_matches` so `job_card.html` renders them
+    identically. Gives saved jobs a home in the Jobs tab — they otherwise only
+    surfaced in Applications. Newest-saved first (`list_applications` orders by
+    last activity). Unscored saved jobs render with a pending/blank ring, which
+    the card + filter store already tolerate (score `None` passes minScore=0)."""
+    interested = db.list_applications(statuses=["interested"])
+    if not interested:
+        return []
+    job_ids = [a["job_id"] for a in interested]
+    jobs_by_id = {j["id"]: j for j in db.get_jobs(job_ids)}
+
+    resume = db.get_current_resume()
+    scores: dict[str, dict] = {}
+    if resume:
+        scores = ss.get_cached_scores(int(resume["id"]), job_ids, get_reasoning_language())
+
+    out: list[dict] = []
+    for a in interested:
+        job = jobs_by_id.get(a["job_id"])
+        if not job:
+            continue
+        enriched = {
+            **job,
+            "_app_status": a["status"],
+            "_experience": _extract_experience(job.get("description", "")),
+        }
+        s = scores.get(a["job_id"])
+        if s:
+            enriched.update(_score_fields(s))
+        out.append(enriched)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _extract_experience(description: str) -> Optional[str]:
@@ -444,6 +516,11 @@ async def jobs_landing(request: Request):
         if summary:
             resume_role_label = summary.get("role_label", "")
 
+    # REQ-032 Option B: saved jobs are now an inline tab on the Jobs landing,
+    # not a separate page. Load them alongside top_matches so both rails are
+    # server-rendered and toggled client-side with Alpine x-show.
+    saved_jobs = _list_saved_jobs()
+
     return templates.TemplateResponse(
         request,
         "pages/jobs.html",
@@ -458,7 +535,22 @@ async def jobs_landing(request: Request):
             "top_matches": top_matches,
             "cache_count": cache_count,
             "resume_role_label": resume_role_label,
+            "saved_jobs": saved_jobs,
         },
+    )
+
+
+# NOTE: GET /jobs/saved (the standalone page) removed — Saved is now a seg-tab
+# on /jobs (Option B). Its rail is re-hydrated by this fragment endpoint.
+@router.get("/jobs/saved-rail")
+async def jobs_saved_rail(request: Request):
+    """REQ-032: the Saved rail's cards as a fragment. The /jobs page re-fetches
+    this on the `saved-changed` htmx event (fired by save/unsave) so the Saved
+    list + count stay in sync without a full page reload."""
+    return templates.TemplateResponse(
+        request,
+        "partials/saved_rail.html",
+        {"saved_jobs": _list_saved_jobs()},
     )
 
 
@@ -907,6 +999,16 @@ async def jobs_results(request: Request, cache_key: str):
     discovery_in_progress = bool(active_task)
     discovery_task_id = active_task["id"] if active_task else None
 
+    # REQ-034: offer to refresh when results are >2 days old. Never auto-fire
+    # (rate limits + cost); the banner is an opt-in one-tap nudge only.
+    _STALE_THRESHOLD_DAYS = 2
+    age_secs = jobs_cache.age_seconds(cached.fetched_at)
+    is_stale = (
+        not discovery_in_progress
+        and age_secs is not None
+        and age_secs > _STALE_THRESHOLD_DAYS * 86400
+    )
+
     return templates.TemplateResponse(
         request,
         "pages/jobs_results.html",
@@ -932,6 +1034,7 @@ async def jobs_results(request: Request, cache_key: str):
             "total_viewed": total_viewed,
             "discovery_in_progress": discovery_in_progress,
             "discovery_task_id": discovery_task_id,
+            "is_stale": is_stale,
         },
     )
 
@@ -2126,11 +2229,14 @@ async def jobs_save(request: Request, job_id: str, status: str = Form("intereste
 
     events.track(events.JOB_SAVED, job_id=job_id, status=status)
 
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "partials/save_action.html",
         {"job_id": job_id, "current_status": status},
     )
+    # REQ-032: re-hydrate the /jobs Saved rail + count without a reload.
+    resp.headers["HX-Trigger"] = "saved-changed"
+    return resp
 
 
 @router.post("/jobs/unsave/{job_id}")
@@ -2143,11 +2249,14 @@ async def jobs_unsave(request: Request, job_id: str):
     if app and app["status"] == "interested":
         db.delete_application(app["id"])
         events.track(events.JOB_UNSAVED, job_id=job_id)
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         request,
         "partials/save_action.html",
         {"job_id": job_id, "current_status": None if (app and app["status"] == "interested") else (app["status"] if app else None)},
     )
+    # REQ-032: re-hydrate the /jobs Saved rail + count without a reload.
+    resp.headers["HX-Trigger"] = "saved-changed"
+    return resp
 
 
 @router.post("/jobs/mark-applied/{job_id}")

@@ -65,6 +65,11 @@ def _seed(path: Path) -> None:
         # a status transition event so the time-series heard_back has timing
         _e(conn, NOW - timedelta(days=1), ev.APP_STATUS_CHANGED,
            to_status="interviewing", job_id="j1")
+        # REQ-031: leading signals in the current (newest) week
+        _e(conn, NOW - timedelta(days=2), ev.SEARCH_BROAD, queries=["engineer"])
+        _e(conn, NOW - timedelta(days=2), ev.SEARCH_SUBMITTED, query="engineer")
+        _e(conn, NOW - timedelta(days=1), ev.PROFILE_GAP_VIEWED, context="all")
+        _e(conn, NOW - timedelta(days=1), "prep_session_created", source="typed")
 
 
 def _approx(a, b, tol=0.05) -> bool:
@@ -134,6 +139,25 @@ def main() -> int:
     check("ts.sum_tailored", sum(b["tailored"] for b in wk) == 2, [b["tailored"] for b in wk])
     check("ts.day_len", len(day) == 21, len(day))
     check("ts.day_sum_applied", sum(b["applied"] for b in day) == 3, [b["applied"] for b in day])
+
+    # REQ-031: leading-signal columns present and correctly counted.
+    # search: 2 events (SEARCH_BROAD + SEARCH_SUBMITTED) in the newest week.
+    check("ts.leading_keys", all(k in nb for k in ("search", "save", "tailor", "gap_viewed", "prep")),
+          list(nb.keys()))
+    check("ts.newest_search", nb["search"] == 2, nb)
+    check("ts.newest_gap_viewed", nb["gap_viewed"] == 1, nb)
+    check("ts.newest_prep", nb["prep"] == 1, nb)
+    # save and tailor are aliases of saved / tailored in the newest bucket.
+    check("ts.newest_save_alias", nb["save"] == nb["saved"], nb)
+    check("ts.newest_tailor_alias", nb["tailor"] == nb["tailored"], nb)
+    # Older weeks that predate REQ-031 events → 0, not missing.
+    oldest = wk[0]
+    check("ts.oldest_search_zero", oldest["search"] == 0, oldest)
+    check("ts.oldest_gap_zero", oldest["gap_viewed"] == 0, oldest)
+    check("ts.oldest_prep_zero", oldest["prep"] == 0, oldest)
+    # All leading-signal keys must be present in every bucket.
+    for key in ("search", "save", "tailor", "gap_viewed", "prep"):
+        check(f"ts.key_present_{key}", key in nb, f"missing key: {key}")
 
     # Empty DB → honest None/0, no crash.
     with tempfile.TemporaryDirectory() as d:

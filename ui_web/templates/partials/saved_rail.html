@@ -1,0 +1,22 @@
+{# Saved-rail cards fragment (REQ-032). Rendered inline on /jobs AND re-fetched
+   by GET /jobs/saved-rail on the `saved-changed` htmx event, so saving /
+   un-saving re-hydrates the list from the server (source of truth) with no
+   page reload. Renders ONLY the cards + show-all; the empty state and count
+   live in jobs.html, driven by Alpine `savedMeta` (rebuilt from these cards
+   after each swap). #}
+{% for job in saved_jobs %}
+{# .saved-card = the unit the Alpine after-swap handler counts by data-job-id. #}
+<div class="saved-card"{% if loop.index > 8 %} x-show="showAll" x-cloak{% endif %}>
+  {% include "partials/job_card.html" %}
+</div>
+{% endfor %}
+{% if saved_jobs | length > 8 %}
+<div class="mt-3" x-show="!showAll">
+  <button type="button"
+          class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
+          @click="showAll = true">
+    {{ _('jobs.show_all_n', n=saved_jobs | length) }}
+    <i class="ph-thin ph-arrow-right i-3"></i>
+  </button>
+</div>
+{% endif %}
