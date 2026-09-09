@@ -11,29 +11,18 @@
 </div>
 <p class="text-sm text-body-muted mb-3">{{ _('profile.gap_map.subtitle') }}</p>
 
-{# Context lens (REQ-020 Phase 2 / ADR-025): All / Top 3 Closest / Job-specific.
-   Each control re-fetches THIS fragment into #gap-map with the new lens — the
-   tabs + dropdown come back re-rendered with the active state from the server.
-   Classifications are reused across lenses (no LLM cost). #}
-<div class="flex flex-wrap items-center gap-2 mb-3" hx-indicator="#gap-map-spin">
-  <div role="tablist" class="tabs tabs-boxed tabs-sm">
-    <button type="button" role="tab" class="tab {{ 'tab-active' if context == 'all' else '' }}"
-            hx-get="/profile/gap-map?context=all" hx-target="#gap-map" hx-swap="innerHTML">{{ _('profile.gap_map.ctx.all') }}</button>
-    <button type="button" role="tab" class="tab {{ 'tab-active' if context == 'top3' else '' }}"
-            hx-get="/profile/gap-map?context=top3" hx-target="#gap-map" hx-swap="innerHTML">{{ _('profile.gap_map.ctx.top3') }}</button>
-    <button type="button" role="tab" class="tab {{ 'tab-active' if context == 'job' else '' }}"
-            hx-get="/profile/gap-map?context=job" hx-target="#gap-map" hx-swap="innerHTML">{{ _('profile.gap_map.ctx.job') }}</button>
-  </div>
-  {% if context == 'job' %}
-  <select class="select select-bordered select-sm max-w-xs"
-          name="job_id" hx-get="/profile/gap-map" hx-vals='{"context": "job"}'
-          hx-target="#gap-map" hx-swap="innerHTML" hx-trigger="change">
-    {% for j in scored_jobs %}
-    <option value="{{ j.job_id }}" {{ 'selected' if j.job_id == job_id else '' }}>{{ j.title }}{% if j.company %} — {{ j.company }}{% endif %}</option>
-    {% endfor %}
-  </select>
-  {% endif %}
+{# Single lens (REQ-036 / ADR-040): the map is always the recent, strong-fit
+   aggregate — the All/Top-3/Job-specific switcher (ADR-025) was removed as it
+   never landed. The Rebuild button flushes this résumé's cached classifications
+   and re-renders fresh (the user's escape hatch when the map looks stale). #}
+<div class="flex items-center justify-end gap-2 mb-3" hx-indicator="#gap-map-spin">
   <span id="gap-map-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
+  <button type="button" class="btn btn-ghost btn-xs gap-1"
+          title="{{ _('profile.gap_map.flush_hint') }}"
+          hx-post="/profile/gap-map/flush"
+          hx-target="#gap-map" hx-swap="innerHTML">
+    <i class="ph-thin ph-arrows-clockwise i-3"></i>{{ _('profile.gap_map.flush') }}
+  </button>
 </div>
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -44,10 +33,14 @@
       {% if not col.clusters %}
       <p class="text-xs text-body-muted italic">{{ _('profile.gap_map.pillar_empty') }}</p>
       {% else %}
+      {% set colmax = col.clusters | map(attribute='count') | max %}
       <div class="space-y-1.5">
         {% for c in col.clusters %}
         {% set count_label = _('profile.gap_map.in_1_role') if c.count == 1 else _('profile.gap_map.in_n_roles', n=c.count) %}
         {% set has_detail = c.suggestion or (c.members | length > 1) %}
+        {# Frequency bar (REQ-036): width = count / pillar-max, floored to a visible
+           sliver so the gap blocking the most roles reads first at a glance. #}
+        {% set pct = [ (c.count / colmax * 100) | int, 10 ] | max %}
         <div x-data="{
                open: false,
                pos: '',
@@ -59,28 +52,33 @@
                  this.pos = 'left:' + left + 'px; top:' + (r.bottom + 6) + 'px; width:' + w + 'px';
                }
              }" class="group relative block">
-          <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-200/40 hover:bg-base-200 px-3 py-2 {{ 'cursor-help' if has_detail else '' }}"
+          <div class="flex flex-col gap-1.5 rounded-lg border border-base-300 bg-base-200/40 hover:bg-base-200 px-3 py-2 {{ 'cursor-help' if has_detail else '' }}"
                x-ref="row"
                {% if has_detail %}
                @mouseenter="place($refs.row); open = true"
                @mouseleave="open = false"
                @click="place($refs.row); open = !open"
                {% endif %}>
-            <span class="font-medium text-sm text-base-content/90 truncate">{{ c.canonical }}</span>
-            <span class="flex items-center gap-1 shrink-0">
-              {% if show_counts %}<span class="chip chip-neutral">{{ count_label }}</span>{% endif %}
-              <button type="button"
-                      class="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-base-content/40 hover:text-error"
-                      aria-label="{{ _('profile.gap_map.dismiss') }}"
-                      title="{{ _('profile.gap_map.dismiss') }}"
-                      @click.stop
-                      hx-post="/profile/gap-map/dismiss"
-                      hx-vals='{{ {"canonical": c.canonical, "context": context, "job_id": job_id} | tojson }}'
-                      hx-target="#gap-map"
-                      hx-swap="innerHTML">
-                <i class="ph-thin ph-x i-3"></i>
-              </button>
-            </span>
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-medium text-sm text-base-content/90 truncate">{{ c.canonical }}</span>
+              <span class="flex items-center gap-1 shrink-0">
+                <span class="chip chip-neutral">{{ count_label }}</span>
+                <button type="button"
+                        class="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-base-content/40 hover:text-error"
+                        aria-label="{{ _('profile.gap_map.dismiss') }}"
+                        title="{{ _('profile.gap_map.dismiss') }}"
+                        @click.stop
+                        hx-post="/profile/gap-map/dismiss"
+                        hx-vals='{{ {"canonical": c.canonical} | tojson }}'
+                        hx-target="#gap-map"
+                        hx-swap="innerHTML">
+                  <i class="ph-thin ph-x i-3"></i>
+                </button>
+              </span>
+            </div>
+            <div class="h-1 rounded-full bg-base-300/60 overflow-hidden" aria-hidden="true">
+              <div class="h-full rounded-full bg-primary/45" style="width: {{ pct }}%"></div>
+            </div>
           </div>
           {% if has_detail %}
           <span x-show="open" x-cloak :style="pos"
@@ -123,7 +121,7 @@
               class="chip chip-neutral inline-flex items-center gap-1 cursor-pointer hover:text-primary"
               title="{{ _('profile.gap_map.restore') }}"
               hx-post="/profile/gap-map/restore"
-              hx-vals='{{ {"canonical": d, "context": context, "job_id": job_id} | tojson }}'
+              hx-vals='{{ {"canonical": d} | tojson }}'
               hx-target="#gap-map"
               hx-swap="innerHTML">
         <i class="ph-thin ph-arrow-counter-clockwise i-3"></i>{{ d | title }}

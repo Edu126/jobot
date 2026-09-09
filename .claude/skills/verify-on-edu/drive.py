@@ -5,8 +5,10 @@ Updated for REQ-021 (profile shell): a PERSISTENT résumé header sits above the
 sub-tabs; default tab is now **My Profile & Skills** (inline ATS report card +
 parsed-section readout); **Market Fit & Gaps** holds the REQ-020 gap map. So the
 driver: loads → checks the header + inline ATS card on the default tab → switches
-to Market → runs the gap-map checks (3 pillars, no h-scroll, context lenses,
-popover, ✕ dismiss) → confirms the header persists across the switch.
+to Market → runs the gap-map checks (3 pillars, no h-scroll, the >70 filter
+dropping low-fit gaps, frequency bars, popover, ✕ dismiss, Rebuild) → confirms the
+header persists across the switch. (REQ-036/ADR-040: the All/Top-3/Job lens
+switcher is gone — single recent/high-fit lens + a Rebuild flush.)
 
 Run with the repo venv (has playwright + chromium):
     .venv/bin/python .claude/skills/verify-on-edu/drive.py https://jobbotv2-edu.fly.dev /tmp/edu_shots
@@ -92,29 +94,30 @@ with sync_playwright() as p:
         "() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
     check("no_horizontal_scroll", overflow <= 1, f"overflow={overflow}px")
 
-    # Context lenses (REQ-020 Phase 2) live INSIDE #gap-map.
     def gap_canons() -> set[str]:
         return {t.strip() for t in page.locator("#gap-map .group .font-medium").all_inner_texts()}
 
-    ctx_tabs = page.locator("#gap-map [role=tab]")
-    check("context_tabs_present", ctx_tabs.count() == 3, f"{ctx_tabs.count()} context tabs")
+    # REQ-036 / ADR-040: single lens (the All/Top-3/Job switcher was removed).
+    check("no_context_tabs", page.locator("#gap-map [role=tab]").count() == 0,
+          "lens switcher removed")
     all_canons = gap_canons()
 
-    ctx_tabs.nth(1).click()   # Top 3 Closest
-    page.wait_for_selector("#gap-map .group", timeout=10000)
-    page.wait_for_timeout(500)
-    top3_canons = gap_canons()
-    check("top3_lens_narrows", bool(top3_canons) and top3_canons < all_canons,
-          f"all={sorted(all_canons)} top3={sorted(top3_canons)}")
-    page.screenshot(path=str(OUT / "03_top3_lens.png"), full_page=True)
+    # The >70 filter must drop the ≤70 fixture jobs' gaps (Terraform/Power BI/Docker
+    # live only in the score-40/20 jobs); Kubernetes (from the 92/85/78 jobs) stays.
+    low_fit = {"Terraform", "Power BI", "Docker"} & all_canons
+    check("highfit_filter_drops_lowfit", not low_fit,
+          f"low-fit gaps leaked: {sorted(low_fit)} | shown={sorted(all_canons)}")
+    check("highfit_gap_present", "Kubernetes" in all_canons,
+          f"Kubernetes (from >70 jobs) shown | shown={sorted(all_canons)}")
 
-    page.locator("#gap-map [role=tab]").nth(2).click()   # Job Specific
-    page.wait_for_timeout(700)
-    check("job_lens_dropdown", page.locator("#gap-map select").count() == 1, "job dropdown present")
+    # Frequency bar (REQ-036): each pill carries an inline width-styled bar.
+    check("frequency_bars_present",
+          page.locator("#gap-map .group [style*='width']").count() > 0,
+          f"{page.locator('#gap-map .group [style*=width]').count()} bars")
 
-    page.locator("#gap-map [role=tab]").nth(0).click()   # back to All
-    page.wait_for_selector("#gap-map .group", timeout=10000)
-    page.wait_for_timeout(400)
+    # Rebuild button (flush) present in the panel header.
+    check("rebuild_button_present",
+          page.get_by_role("button", name="Rebuild").count() >= 1, "Rebuild button")
 
     # Popover on hover (grouped terms + defense hook).
     first = page.locator("#gap-map .group").first
@@ -147,6 +150,19 @@ with sync_playwright() as p:
         check("restore_brings_pill_back", restored == before, f"{after} → {restored}")
         page.screenshot(path=str(OUT / "06_after_restore.png"), full_page=True)
 
+    # Rebuild flush (REQ-036): posts, re-renders the panel without erroring. On a
+    # keyless -edu the reclassify can't run, so gaps degrade to honest real/domain
+    # — the map must still render (pills present), not blank/500. Done LAST since
+    # it wipes the fixture's cached classifications (restore reseeds afterwards).
+    page.get_by_role("button", name="Rebuild").first.click()
+    try:
+        page.wait_for_selector("#gap-map .group", state="visible", timeout=15000)
+        rebuilt = page.locator("#gap-map .group").count()
+        check("rebuild_rerenders", rebuilt > 0, f"{rebuilt} pills after Rebuild")
+    except Exception as e:  # noqa: BLE001
+        check("rebuild_rerenders", False, f"map blank/errored after Rebuild: {e}")
+    page.screenshot(path=str(OUT / "07_after_rebuild.png"), full_page=True)
+
     # ── PREP surface (REQ-023/025) — for the REQ-027 stranger page ────────
     # Non-fatal: a hiccup here must not lose the gap-map shots above.
     try:
@@ -155,12 +171,12 @@ with sync_playwright() as p:
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(1500)   # fit context bar + lazy kit fragment
         # Fit context bar (score + reasoning + matched/gaps) at the top.
-        page.screenshot(path=str(OUT / "07_prep_fit.png"), full_page=True)
+        page.screenshot(path=str(OUT / "08_prep_fit.png"), full_page=True)
         # Confirm the cached kit actually rendered (a STAR question is present).
         star = page.get_by_text("regulated program", exact=False)
         check("prep_kit_renders", star.count() >= 1, "STAR question from cached kit")
         page.wait_for_timeout(800)
-        page.screenshot(path=str(OUT / "08_prep_kit.png"), full_page=True)
+        page.screenshot(path=str(OUT / "09_prep_kit.png"), full_page=True)
     except Exception as e:  # noqa: BLE001
         check("prep_surface", False, f"prep capture failed: {e}")
 

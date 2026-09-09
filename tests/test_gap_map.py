@@ -72,9 +72,9 @@ def test_build_map_ranks_real_only_bucketed() -> None:
                 db.upsert_job({"id": jid, "title": "T", "company": "C", "description": "d"})
             lang = "en"
             db.save_scores(rid, [
-                {"job_id": "j1", "score": 50, "verdict": "stretch", "reasoning": "r",
+                {"job_id": "j1", "score": 80, "verdict": "stretch", "reasoning": "r",
                  "matched": [], "gaps": ["PMP certification", "AutoCAD"], "model": "m"},
-                {"job_id": "j2", "score": 50, "verdict": "stretch", "reasoning": "r",
+                {"job_id": "j2", "score": 80, "verdict": "stretch", "reasoning": "r",
                  "matched": [], "gaps": ["PMP certification", "Six Sigma"], "model": "m"},
             ], lang, ss.PROMPT_VERSION, ss.SCORING_VERSION)
 
@@ -110,11 +110,11 @@ def test_clustering_merges_variants() -> None:
                 db.upsert_job({"id": jid, "title": "T", "company": "C", "description": "d"})
             lang = "en"
             db.save_scores(rid, [
-                {"job_id": "j1", "score": 50, "verdict": "s", "reasoning": "r",
+                {"job_id": "j1", "score": 80, "verdict": "s", "reasoning": "r",
                  "matched": [], "gaps": ["Fluent French"], "model": "m"},
-                {"job_id": "j2", "score": 50, "verdict": "s", "reasoning": "r",
+                {"job_id": "j2", "score": 80, "verdict": "s", "reasoning": "r",
                  "matched": [], "gaps": ["Bilingual French (CBC)"], "model": "m"},
-                {"job_id": "j3", "score": 50, "verdict": "s", "reasoning": "r",
+                {"job_id": "j3", "score": 80, "verdict": "s", "reasoning": "r",
                  "matched": [], "gaps": ["Fluent French"], "model": "m"},
             ], lang, ss.PROMPT_VERSION, ss.SCORING_VERSION)
 
@@ -143,7 +143,7 @@ def test_dismiss_filters_cluster() -> None:
             db.upsert_job({"id": "j1", "title": "T", "company": "C", "description": "d"})
             lang = "en"
             db.save_scores(rid, [
-                {"job_id": "j1", "score": 50, "verdict": "s", "reasoning": "r",
+                {"job_id": "j1", "score": 80, "verdict": "s", "reasoning": "r",
                  "matched": [], "gaps": ["Fluent French"], "model": "m"},
             ], lang, ss.PROMPT_VERSION, ss.SCORING_VERSION)
             db.save_gap_classifications(rid, lang, gm.PROMPT_VERSION, [
@@ -174,7 +174,7 @@ def test_build_map_keeps_unclassified_as_real() -> None:
             rid = db.save_resume("cv.pdf", {"raw_text": "some text"}, b"x")
             db.upsert_job({"id": "j1", "title": "T", "company": "C", "description": "d"})
             db.save_scores(rid, [
-                {"job_id": "j1", "score": 40, "verdict": "stretch", "reasoning": "r",
+                {"job_id": "j1", "score": 80, "verdict": "stretch", "reasoning": "r",
                  "matched": [], "gaps": ["Kubernetes"], "model": "m"},
             ], "en", ss.PROMPT_VERSION, ss.SCORING_VERSION)
             # No classification seeded, client=None → can't classify. Must still
@@ -186,20 +186,57 @@ def test_build_map_keeps_unclassified_as_real() -> None:
                     "unclassified → default pillar, no invented suggestion")
 
 
-def test_context_scopes_top3_and_job() -> None:
-    """REQ-020 Phase 2 / ADR-025: the All / Top 3 / Job-specific lenses narrow
-    which scored jobs feed the counts, reusing the same classifications."""
+def test_recent_highfit_filter() -> None:
+    """REQ-036 / ADR-040: only jobs scored within 60 days AND with score > 70
+    feed the aggregation. A low-fit job and a stale high-fit job are both
+    excluded — a hard filter, no fallback, so the gap signal stays in-lane and
+    current."""
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "t.db"
         db.init_db(db_path)
         with _EnvDB(db_path):
             rid = db.save_resume("cv.pdf", {"raw_text": "text"}, b"x")
             lang = "en"
-            # scores: jA=90, jB=80, jC=70, jD=10 (jD excluded from Top 3).
+            for jid in ("jGood", "jLow", "jStale"):
+                db.upsert_job({"id": jid, "title": f"Role {jid}", "company": "Co", "description": "d"})
+            db.save_scores(rid, [
+                {"job_id": "jGood", "score": 85, "verdict": "s", "reasoning": "r",
+                 "matched": [], "gaps": ["Kubernetes"], "model": "m"},
+                {"job_id": "jLow", "score": 55, "verdict": "s", "reasoning": "r",
+                 "matched": [], "gaps": ["Data architecture"], "model": "m"},   # out-of-lane noise
+                {"job_id": "jStale", "score": 90, "verdict": "s", "reasoning": "r",
+                 "matched": [], "gaps": ["Terraform"], "model": "m"},
+            ], lang, ss.PROMPT_VERSION, ss.SCORING_VERSION)
+            # Age jStale past the 60-day window (scored_at is ISO8601-UTC).
+            with db.connect(db_path) as conn:
+                conn.execute(
+                    "UPDATE job_scores SET scored_at = '2000-01-01T00:00:00Z' WHERE job_id = 'jStale'"
+                )
+                conn.commit()
+
+            counts = db.gap_counts_for_resume(
+                rid, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION,
+                min_score=gm.GAP_MAP_MIN_SCORE, since=gm._recency_cutoff(),
+            )
+            _assert(set(counts) == {"Kubernetes"},
+                    f"only the recent high-fit gap survives, got {counts}")
+            ranked = [j["job_id"] for j in gm.scored_jobs(rid, lang)]
+            _assert(ranked == ["jGood"], f"low-fit + stale jobs excluded from ranking, got {ranked}")
+
+
+def test_build_map_excludes_subfloor_jobs() -> None:
+    """REQ-036 / ADR-040: build_gap_map is a single recent/high-fit view — a
+    sub-70 job's gaps never reach the map, and counts sum only over the >70 jobs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "t.db"
+        db.init_db(db_path)
+        with _EnvDB(db_path):
+            rid = db.save_resume("cv.pdf", {"raw_text": "text"}, b"x")
+            lang = "en"
             spec = [("jA", 90, ["Kubernetes"]),
                     ("jB", 80, ["Kubernetes", "Terraform"]),
-                    ("jC", 70, ["PMP"]),
-                    ("jD", 10, ["Docker"])]
+                    ("jC", 75, ["PMP"]),
+                    ("jD", 60, ["Docker"])]   # sub-floor → excluded
             for jid, _s, _g in spec:
                 db.upsert_job({"id": jid, "title": f"Role {jid}", "company": "Co", "description": "d"})
             db.save_scores(rid, [
@@ -214,27 +251,81 @@ def test_context_scopes_top3_and_job() -> None:
                 {"gap": "Docker", "kind": "real", "category": "technical", "canonical": "Docker", "suggestion": "s"},
             ])
 
-            # Ranking drives Top-3 selection + the dropdown.
             ranked = [j["job_id"] for j in gm.scored_jobs(rid, lang)]
-            _assert(ranked == ["jA", "jB", "jC", "jD"], f"ranked by score desc, got {ranked}")
+            _assert(ranked == ["jA", "jB", "jC"], f"ranking excludes the sub-70 job, got {ranked}")
 
-            def canons(pillars):
-                return {c.canonical for p in gm.PILLARS for c in pillars[p]}
+            pillars = gm.build_gap_map(rid, "text", None, lang=lang)
+            canon = {c.canonical for p in gm.PILLARS for c in pillars[p]}
+            _assert(canon == {"Kubernetes", "Terraform", "PMP"}, f"Docker (jD=60) filtered, got {canon}")
+            k = [c for c in pillars["technical"] if c.canonical == "Kubernetes"][0]
+            _assert(k.count == 2, f"Kubernetes counted in jA+jB only, got {k.count}")
 
-            all_c = canons(gm.build_gap_map(rid, "text", None, lang=lang, scope=("all",)))
-            _assert(all_c == {"Kubernetes", "Terraform", "PMP", "Docker"}, f"all lens, got {all_c}")
 
-            top3 = gm.build_gap_map(rid, "text", None, lang=lang, scope=("top3",))
-            _assert("Docker" not in canons(top3), "Top 3 excludes the lowest-scored job's gap")
-            k = [c for c in top3["technical"] if c.canonical == "Kubernetes"][0]
-            _assert(k.count == 2, f"Kubernetes counted in jA+jB within Top 3, got {k.count}")
+def test_classify_drains_full_filtered_set() -> None:
+    """REQ-036: build_gap_map classifies the WHOLE recency/fit-filtered gap set in
+    up to MAX_CLASSIFY_CHUNKS batches — not just the first 40 — so no gap is left
+    unclassified and dumped into the domain pillar (the Mehran -hermana bug)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "t.db"
+        db.init_db(db_path)
+        with _EnvDB(db_path):
+            rid = db.save_resume("cv.pdf", {"raw_text": "text"}, b"x")
+            lang = "en"
+            db.upsert_job({"id": "j1", "title": "T", "company": "C", "description": "d"})
+            gaps = [f"gap {i}" for i in range(90)]   # > 2×MAX_GAPS_PER_CALL
+            db.save_scores(rid, [
+                {"job_id": "j1", "score": 85, "verdict": "s", "reasoning": "r",
+                 "matched": [], "gaps": gaps, "model": "m"},
+            ], lang, ss.PROMPT_VERSION, ss.SCORING_VERSION)
 
-            job = gm.build_gap_map(rid, "text", None, lang=lang, scope=("job", "jD"))
-            _assert(canons(job) == {"Docker"}, f"Job-specific = that job's gaps only, got {canons(job)}")
+            calls: list[int] = []
 
-            # Unknown/empty job scope → empty (route defaults the id before calling).
-            _assert(canons(gm.build_gap_map(rid, "text", None, lang=lang, scope=("job", ""))) == set(),
-                    "blank job id → empty")
+            def fake_classify(resume_text, batch, client, *, lang, persona, anchors):
+                calls.append(len(batch))
+                return {g: {"kind": "real", "suggestion": "s",
+                            "category": "technical", "canonical": g} for g in batch}
+
+            class _Client:
+                def all_models_exhausted(self):
+                    return False
+
+            orig_c, orig_p = gm._classify, gm.ai_summary.persona_line
+            gm._classify = fake_classify
+            gm.ai_summary.persona_line = lambda _rid: ""
+            try:
+                gm.build_gap_map(rid, "text", _Client(), lang=lang)
+            finally:
+                gm._classify, gm.ai_summary.persona_line = orig_c, orig_p
+
+            cached = db.get_gap_classifications(rid, gaps, lang, gm.PROMPT_VERSION)
+            _assert(len(cached) == 90, f"all 90 gaps classified, got {len(cached)}")
+            _assert(calls == [40, 40, 10], f"drained in bounded batches, got {calls}")
+
+
+def test_flush_clears_classifications() -> None:
+    """REQ-036 / ADR-040: the manual flush drops this résumé+lang's cached gap
+    classifications so the next build reclassifies fresh — scoped to the lang,
+    leaving other languages and dismissals untouched."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "t.db"
+        db.init_db(db_path)
+        with _EnvDB(db_path):
+            rid = db.save_resume("cv.pdf", {"raw_text": "text"}, b"x")
+            db.save_gap_classifications(rid, "en", gm.PROMPT_VERSION, [
+                {"gap": "Kubernetes", "kind": "real", "suggestion": "s",
+                 "category": "technical", "canonical": "Kubernetes"},
+            ])
+            db.save_gap_classifications(rid, "es", gm.PROMPT_VERSION, [
+                {"gap": "Docker", "kind": "real", "suggestion": "s",
+                 "category": "technical", "canonical": "Docker"},
+            ])
+            _assert(db.get_gap_classifications(rid, ["Kubernetes"], "en", gm.PROMPT_VERSION), "seeded en")
+            n = db.delete_gap_classifications(rid, "en")
+            _assert(n == 1, f"one en row deleted, got {n}")
+            _assert(not db.get_gap_classifications(rid, ["Kubernetes"], "en", gm.PROMPT_VERSION),
+                    "en classifications gone after flush")
+            _assert(db.get_gap_classifications(rid, ["Docker"], "es", gm.PROMPT_VERSION),
+                    "other language's cache untouched")
 
 
 def main() -> int:

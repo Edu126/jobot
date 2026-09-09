@@ -1,7 +1,9 @@
 # ADR-025: Gap-map context scopes — All / Top 3 / Job-specific over one cache
 
 Date: 2026-09-03
-Status: Accepted
+Status: Accepted — lenses narrowed to a single "all" view by ADR-040 (2026-09-09).
+The `scope` machinery below stays in code (dormant); only the All lens is
+reachable from the UI, now over a recent/high-fit aggregation.
 Relates to: REQ-020 (tactical gap panel — this is its Phase 2), ADR-022
 (aggregation), ADR-023 (per-gap classification cache), ADR-008 (economy)
 

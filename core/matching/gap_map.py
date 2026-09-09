@@ -9,11 +9,13 @@ you want" (product vision: gap monetized 3×).
 Mechanism:
 1. `db.gap_counts_for_resume` aggregates every gap across `job_scores` with a
    frequency count — pure SQL, no LLM (ADR-022).
-2. Each DISTINCT gap is classified JD-FREE in ONE batched call (ADR-023): résumé
-   × gap → {kind: wording|real, suggestion, category, canonical}. Cached per-gap
-   in `gap_classification`, so repeat renders are ~free and only newly-seen gaps
-   cost a call. Already-known canonicals are fed back as anchors so clusters stay
-   stable across incremental calls.
+2. Each DISTINCT gap is classified JD-FREE (ADR-023): résumé × gap → {kind:
+   wording|real, suggestion, category, canonical}. Cached per-gap in
+   `gap_classification`, so repeat renders are ~free and only newly-seen gaps cost
+   a call. The whole (recency/fit-filtered) set is drained in up to
+   MAX_CLASSIFY_CHUNKS batches per build so no gap is left unclassified and
+   mis-bucketed into domain (REQ-036). Already-known canonicals are fed back as
+   anchors so clusters stay stable across batches.
 3. REAL gaps are grouped by `canonical` (variants like "Fluent French" +
    "Bilingual French (CBC)" collapse into one concept), bucketed into 3 pillars
    (technical / certifications / domain), ranked by summed count, top 5 each.
@@ -26,6 +28,7 @@ strength), never an invented skill or a course pitch.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta
 
 from core import db
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
@@ -41,13 +44,28 @@ from core.settings import language_instruction
 PROMPT_VERSION = "2026-09-02-jdfree-pillars-clusters"
 
 MAX_RESUME_CHARS = 12000
-MAX_GAPS_PER_CALL = 40   # distinct gaps; short phrases, one call comfortably fits
+MAX_GAPS_PER_CALL = 40   # distinct gaps per classify call; short phrases fit
+MAX_CLASSIFY_CHUNKS = 3  # per build: drain up to 3×MAX_GAPS_PER_CALL missing gaps
+                         # so the filtered set classifies fully, bounded (REQ-036)
 MAX_ANCHORS = 40         # existing canonical labels fed back to stabilise clusters
 VALID_KINDS = ("wording", "real")
 PILLARS = ("technical", "certifications", "domain")
 DEFAULT_PILLAR = "domain"   # where an unknown/ambiguous category lands (ADR-023)
 TOP_PER_PILLAR = 5
-TOP_N_CLOSEST = 3           # jobs in the "Top 3 Closest Roles" lens (ADR-025)
+
+# The map's recent/high-fit filter (REQ-036 / ADR-040): only jobs scored within
+# GAP_MAP_RECENCY_DAYS AND with score > GAP_MAP_MIN_SCORE feed the aggregation, so
+# stale postings and low-fit roles (outside the user's lane) never pollute the
+# gap signal. Hard filter — no fallback; a thin map is an honest signal.
+GAP_MAP_RECENCY_DAYS = 60
+GAP_MAP_MIN_SCORE = 70
+
+
+def _recency_cutoff() -> str:
+    """ISO8601-UTC cutoff `GAP_MAP_RECENCY_DAYS` ago — compared lexicographically
+    against `scored_at` (same format), so no date parsing in SQL (ADR-040)."""
+    cut = datetime.utcnow() - timedelta(days=GAP_MAP_RECENCY_DAYS)
+    return cut.isoformat(timespec="seconds") + "Z"
 
 
 @dataclass
@@ -63,27 +81,15 @@ class GapCluster:
 
 
 def scored_jobs(resume_id: int, lang: str | None = None) -> list[dict]:
-    """The résumé's scored jobs ranked by fit score desc — {job_id, title,
-    company, score} (ADR-025). Powers the Job-specific dropdown + Top-3 lens.
-    Keeps the scoring-version constants in this module, not the route."""
+    """The résumé's recent, high-fit scored jobs ranked by fit score desc —
+    {job_id, title, company, score}. Used by the route only to gate whether the
+    gap-map section renders at all. Keeps the scoring-version + filter constants
+    in this module, not the route."""
     lang = ss._resolve_lang(lang)
-    return db.scored_jobs_for_resume(resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION)
-
-
-def _scope_job_ids(resume_id: int, lang: str, scope: tuple) -> set[str] | None:
-    """Resolve a context lens (ADR-025) to the set of job_ids that feed the
-    counts. None = all scored jobs (no filter). ("top3",) → the 3 highest-scored;
-    ("job", job_id) → that one job; anything else → all."""
-    kind = scope[0] if scope else "all"
-    if kind == "job":
-        jid = scope[1] if len(scope) > 1 else ""
-        return {jid} if jid else set()
-    if kind == "top3":
-        jobs = db.scored_jobs_for_resume(
-            resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION,
-        )
-        return {j["job_id"] for j in jobs[:TOP_N_CLOSEST]}
-    return None   # "all"
+    return db.scored_jobs_for_resume(
+        resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION,
+        min_score=GAP_MAP_MIN_SCORE, since=_recency_cutoff(),
+    )
 
 
 def build_gap_map(
@@ -92,49 +98,57 @@ def build_gap_map(
     client: GeminiClient | None,
     *,
     lang: str | None = None,
-    scope: tuple = ("all",),
 ) -> dict[str, list[GapCluster]]:
     """Return the candidate's REAL gaps bucketed into the 3 pillars, each pillar
     ranked by cluster frequency and capped at TOP_PER_PILLAR. Empty pillars when
-    nothing's scored or the résumé is text-less. `scope` (ADR-025) narrows which
-    scored jobs feed the counts — ("all",) / ("top3",) / ("job", job_id); the
-    per-gap classifications are scope-independent and reused, so switching lens
-    costs no LLM call. `client` may be None (no API key) — then we render from
-    cached classifications only and never classify new gaps. Gaps we can't
-    classify (no client / quota out) still appear, honestly, as real with no
-    suggestion (own cluster, domain pillar) — never dropped or faked. Dismissed
-    clusters (ADR-024) are filtered out."""
+    nothing's scored or the résumé is text-less. Counts feed from the résumé's
+    recent, high-fit scored jobs only (REQ-036 / ADR-040). `client` may be None
+    (no API key) — then we render from cached classifications only and never
+    classify new gaps. Gaps we can't classify (no client / quota out) still
+    appear, honestly, as real with no suggestion (own cluster, domain pillar) —
+    never dropped or faked. Dismissed clusters (ADR-024) are filtered out."""
     empty: dict[str, list[GapCluster]] = {p: [] for p in PILLARS}
     if not resume_text.strip():
         return empty
     lang = ss._resolve_lang(lang)
 
-    job_ids = _scope_job_ids(resume_id, lang, scope)
-    if job_ids is not None and not job_ids:
-        return empty   # a job/top3 lens that resolved to no jobs
-
     counts = db.gap_counts_for_resume(
-        resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION, job_ids=job_ids,
+        resume_id, lang, ss.PROMPT_VERSION, ss.SCORING_VERSION,
+        min_score=GAP_MAP_MIN_SCORE, since=_recency_cutoff(),
     )
     if not counts:
         return empty
 
     cached = db.get_gap_classifications(resume_id, list(counts), lang, PROMPT_VERSION)
-    missing = [g for g in counts if g not in cached]
 
-    if missing and client is not None and not client.all_models_exhausted():
+    # Classify the WHOLE filtered gap set, not just the first batch. Field lesson
+    # (REQ-036, Mehran on -hermana): with lazy 40-per-render classification and a
+    # user scoring faster than that, most gaps stayed UNclassified and every
+    # unclassified gap defaults to real+domain — flooding the domain pillar and
+    # starving technical/certs. The >70 filter bounds the set (~tens of gaps), so
+    # we drain `missing` in batches, capped at MAX_CLASSIFY_CHUNKS to stay bounded
+    # even for a pathological set. Anchors are re-fed each batch so late variants
+    # still attach to earlier clusters. Cached after, so warm renders cost 0; a
+    # failed/quota batch stops the loop and the rest stay honest 'real'.
+    if client is not None and not client.all_models_exhausted():
         persona = ai_summary.persona_line(resume_id)
-        anchors = _known_canonicals(cached)
-        fresh = _classify(
-            resume_text, missing[:MAX_GAPS_PER_CALL], client,
-            lang=lang, persona=persona, anchors=anchors,
-        )
-        if fresh:
+        for _ in range(MAX_CLASSIFY_CHUNKS):
+            missing = [g for g in counts if g not in cached]
+            if not missing:
+                break
+            fresh = _classify(
+                resume_text, missing[:MAX_GAPS_PER_CALL], client,
+                lang=lang, persona=persona, anchors=_known_canonicals(cached),
+            )
+            if not fresh:
+                break   # failure/quota — remaining gaps degrade to honest 'real'
             db.save_gap_classifications(
                 resume_id, lang, PROMPT_VERSION,
                 [{"gap": g, **v} for g, v in fresh.items()],
             )
             cached.update(fresh)
+            if client.all_models_exhausted():
+                break
 
     dismissed = db.get_gap_dismissals(resume_id, lang)
 

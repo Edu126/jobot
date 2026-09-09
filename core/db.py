@@ -2046,23 +2046,35 @@ def scored_jobs_for_resume(
     prompt_version: str,
     scoring_version: str,
     path: Path = DB_PATH,
+    *,
+    min_score: int = 0,
+    since: str | None = None,
 ) -> list[dict]:
-    """This résumé's scored jobs ranked by fit score desc (REQ-020 Phase 2 /
-    ADR-025). Each: {job_id, title, company, score}. Powers the Top-3 lens
-    (first 3 job_ids) and the Job-specific dropdown. Empty on a text-less
-    résumé."""
+    """This résumé's scored jobs ranked by fit score desc (REQ-020). Each:
+    {job_id, title, company, score}. Empty on a text-less résumé. `min_score`
+    keeps only jobs with `score > min_score`; `since` (an ISO8601-UTC string,
+    lexicographic compare) keeps only jobs scored on/after it — together the gap
+    map's recent/high-fit filter (REQ-036 / ADR-040)."""
+    where = ["js.resume_hash = ?", "js.lang = ?",
+             "js.prompt_version = ?", "js.scoring_version = ?"]
     with connect(path) as conn:
         resume_hash = _text_hash_for(conn, resume_id)
         if not resume_hash:
             return []
+        params: list = [resume_hash, lang, prompt_version, scoring_version]
+        if min_score > 0:
+            where.append("js.score > ?")
+            params.append(min_score)
+        if since:
+            where.append("js.scored_at >= ?")
+            params.append(since)
         rows = conn.execute(
-            """SELECT js.job_id AS job_id, j.title AS title, j.company AS company,
+            f"""SELECT js.job_id AS job_id, j.title AS title, j.company AS company,
                       js.score AS score
                FROM job_scores js JOIN jobs j ON j.id = js.job_id
-               WHERE js.resume_hash = ? AND js.lang = ?
-                     AND js.prompt_version = ? AND js.scoring_version = ?
+               WHERE {' AND '.join(where)}
                ORDER BY js.score DESC, js.job_id ASC""",
-            (resume_hash, lang, prompt_version, scoring_version),
+            params,
         ).fetchall()
     return [
         {"job_id": r["job_id"], "title": r["title"], "company": r["company"], "score": r["score"]}
@@ -2077,32 +2089,36 @@ def gap_counts_for_resume(
     scoring_version: str,
     path: Path = DB_PATH,
     *,
-    job_ids: set[str] | None = None,
+    min_score: int = 0,
+    since: str | None = None,
 ) -> dict[str, int]:
     """Aggregate every gap across THIS résumé's scored jobs → {gap: count}
     (REQ-019 / ADR-022). Pure SQL over `job_scores.gaps_json` for the current
     résumé text + lang + scoring version — no LLM. Count = how many of the
     user's roles flag that gap (its rank in the map). Case-insensitive dedupe,
-    keeping the first-seen surface form as the display label. When `job_ids` is
-    given, only those jobs feed the count (REQ-020 Phase 2 lenses / ADR-025);
-    None = all scored jobs. An empty set yields no counts."""
-    if job_ids is not None and not job_ids:
-        return {}
+    keeping the first-seen surface form as the display label. `min_score` keeps
+    only jobs with `score > min_score` and `since` (ISO8601-UTC, lexicographic)
+    only jobs scored on/after it — the recent/high-fit filter (REQ-036/ADR-040)."""
     counts: dict[str, int] = {}
     canonical: dict[str, str] = {}
+    where = ["resume_hash = ?", "lang = ?", "prompt_version = ?", "scoring_version = ?"]
     with connect(path) as conn:
         resume_hash = _text_hash_for(conn, resume_id)
         if not resume_hash:
             return {}
+        params: list = [resume_hash, lang, prompt_version, scoring_version]
+        if min_score > 0:
+            where.append("score > ?")
+            params.append(min_score)
+        if since:
+            where.append("scored_at >= ?")
+            params.append(since)
         rows = conn.execute(
-            """SELECT job_id, gaps_json FROM job_scores
-               WHERE resume_hash = ? AND lang = ?
-                     AND prompt_version = ? AND scoring_version = ?""",
-            (resume_hash, lang, prompt_version, scoring_version),
+            f"""SELECT job_id, gaps_json FROM job_scores
+               WHERE {' AND '.join(where)}""",
+            params,
         ).fetchall()
     for r in rows:
-        if job_ids is not None and r["job_id"] not in job_ids:
-            continue
         try:
             gaps = json.loads(r["gaps_json"])
         except (TypeError, ValueError):
@@ -2190,6 +2206,25 @@ def save_gap_classifications(
             )
             n += 1
     return n
+
+
+def delete_gap_classifications(
+    resume_id: int, lang: str, path: Path = DB_PATH,
+) -> int:
+    """Drop this résumé + lang's cached gap classifications so the next
+    build_gap_map reclassifies fresh — the manual flush (REQ-036 / ADR-040).
+    Scoped to lang (the cache is keyed on résumé hash + lang + gap); leaves
+    other languages' rows and the dismissals untouched. Returns rows deleted.
+    No-ops on a text-less résumé."""
+    with tx(path) as conn:
+        resume_hash = _text_hash_for(conn, resume_id)
+        if not resume_hash:
+            return 0
+        cur = conn.execute(
+            "DELETE FROM gap_classification WHERE resume_hash = ? AND lang = ?",
+            (resume_hash, lang),
+        )
+        return cur.rowcount
 
 
 def get_gap_dismissals(

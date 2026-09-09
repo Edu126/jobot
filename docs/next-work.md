@@ -13,6 +13,24 @@ keep the numeric coverage score in a verdict-tinted ring. The A-layer
 
 ## Actually open
 
+0. **REQ-036 gap-map rework — code done 2026-09-09, investigation done, not yet
+   committed / not yet verified on -edu.** Recent (60d) + high-fit (`score > 70`)
+   hard filter, single lens (switcher removed, ADR-025 dormant), manual
+   **Rebuild** flush, frequency bars, and — from the -hermana investigation —
+   full-set classification per build (drains all missing gaps in ≤3 batches so
+   nothing dumps into the domain pillar). Shipped in `gap_map.py` + `db.py` +
+   `profile.py` + `events.py` + `partials/gap_map.html` + `i18n.py`
+   ([ADR-040](decisions/ADR-040-gap-map-recent-high-fit-single-lens.md)); unit
+   tests green (`tests/test_gap_map.py`, 9).
+   **Investigation findings (Mehran / -hermana, read-only over SSH):** the "2
+   gaps" was a stale snapshot (now 13); the >70 filter validly removes 125/209
+   gaps that live only in ≤70 jobs; the real defect was 128/209 gaps unclassified
+   → all defaulting to domain (now fixed). **Still open:** (a) verify on -edu;
+   (b) sprint hygiene (`/simplify` + `/code-review`); (c) **REQ-037** — scoring
+   emits advice-as-gap + over-scores off-lane roles (upstream, `semantic_score`,
+   NOT scheduled); (d) note: 165/264 of Mehran's scored rows are under an OLD
+   scoring `prompt_version` and invisible to the map by design — fine, but if a
+   user's map looks empty after a scoring-version bump, that's why.
 1. **REQ-016 sprint hygiene** (deferred by Eduardo 2026-08-31). `/simplify` +
    `/code-review low` on the REQ-016 commits (`e630742` B-layer, `d01a305`
    validation harness + A-layer rollback) — to be folded into a larger
