@@ -302,32 +302,6 @@ def test_classify_drains_full_filtered_set() -> None:
             _assert(calls == [40, 40, 10], f"drained in bounded batches, got {calls}")
 
 
-def test_flush_clears_classifications() -> None:
-    """REQ-036 / ADR-040: the manual flush drops this résumé+lang's cached gap
-    classifications so the next build reclassifies fresh — scoped to the lang,
-    leaving other languages and dismissals untouched."""
-    with tempfile.TemporaryDirectory() as tmp:
-        db_path = Path(tmp) / "t.db"
-        db.init_db(db_path)
-        with _EnvDB(db_path):
-            rid = db.save_resume("cv.pdf", {"raw_text": "text"}, b"x")
-            db.save_gap_classifications(rid, "en", gm.PROMPT_VERSION, [
-                {"gap": "Kubernetes", "kind": "real", "suggestion": "s",
-                 "category": "technical", "canonical": "Kubernetes"},
-            ])
-            db.save_gap_classifications(rid, "es", gm.PROMPT_VERSION, [
-                {"gap": "Docker", "kind": "real", "suggestion": "s",
-                 "category": "technical", "canonical": "Docker"},
-            ])
-            _assert(db.get_gap_classifications(rid, ["Kubernetes"], "en", gm.PROMPT_VERSION), "seeded en")
-            n = db.delete_gap_classifications(rid, "en")
-            _assert(n == 1, f"one en row deleted, got {n}")
-            _assert(not db.get_gap_classifications(rid, ["Kubernetes"], "en", gm.PROMPT_VERSION),
-                    "en classifications gone after flush")
-            _assert(db.get_gap_classifications(rid, ["Docker"], "es", gm.PROMPT_VERSION),
-                    "other language's cache untouched")
-
-
 def main() -> int:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

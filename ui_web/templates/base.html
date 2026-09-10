@@ -220,13 +220,6 @@
         });
       });
 
-      // Gap-map Rebuild refused when no working LLM client is available (no key
-      // or quota-exhausted). The flush POST leaves the map untouched and fires
-      // this so the user knows nothing was wiped (ADR-041).
-      document.body.addEventListener('gap-rebuild-unavailable', (e) => {
-        Alpine.store('toast').show((e.detail || {}).msg, 'info');
-      });
-
       // Swipe-to-save / swipe-to-dismiss on `article.job-swipeable` cards.
       // Below lg only — desktop keeps the heart button + right sidebar
       // pattern. Horizontal-only gestures; vertical scrolls cancel the

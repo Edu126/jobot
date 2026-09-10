@@ -2208,25 +2208,6 @@ def save_gap_classifications(
     return n
 
 
-def delete_gap_classifications(
-    resume_id: int, lang: str, path: Path = DB_PATH,
-) -> int:
-    """Drop this résumé + lang's cached gap classifications so the next
-    build_gap_map reclassifies fresh — the manual flush (REQ-036 / ADR-040).
-    Scoped to lang (the cache is keyed on résumé hash + lang + gap); leaves
-    other languages' rows and the dismissals untouched. Returns rows deleted.
-    No-ops on a text-less résumé."""
-    with tx(path) as conn:
-        resume_hash = _text_hash_for(conn, resume_id)
-        if not resume_hash:
-            return 0
-        cur = conn.execute(
-            "DELETE FROM gap_classification WHERE resume_hash = ? AND lang = ?",
-            (resume_hash, lang),
-        )
-        return cur.rowcount
-
-
 def get_gap_dismissals(
     resume_id: int, lang: str, path: Path = DB_PATH,
 ) -> set[str]:

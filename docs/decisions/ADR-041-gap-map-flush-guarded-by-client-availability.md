@@ -1,9 +1,11 @@
 # ADR-041: The gap-map Rebuild flush is guarded by LLM-client availability
 
 Date: 2026-09-09
-Status: Accepted
+Status: Superseded by ADR-042 (the whole Rebuild flush was removed the same day —
+the guard is moot with no flush to guard). Kept for the reasoning trail.
 Relates to: ADR-040 (the flush, decision 4), REQ-036, ADR-008 (economy),
-GOV-005 (honesty), the RAM-only exhaustion state in `core/llm/gemini.py`
+GOV-005 (honesty), the DB-persisted per-day exhaustion state in
+`core/llm/gemini.py` (`gemini_model_state`).
 
 ## Context
 

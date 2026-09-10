@@ -34,6 +34,9 @@ their keep.
 4. **Manual flush** deletes this résumé's `gap_classification` rows and
    re-renders; `build_gap_map` then reclassifies the (now recent/high-fit) gap
    set fresh. User-initiated only, ADR-008 economy preserved.
+   **[Superseded by ADR-042 — the manual Rebuild was removed: it was an unbounded
+   user-triggered cost vector, and decision 5 (full-classify on every render)
+   makes the map self-populate without it.]**
 5. **Classify the whole filtered set per build**, draining `missing` in up to
    MAX_CLASSIFY_CHUNKS batches of MAX_GAPS_PER_CALL — not just the first batch.
    Field lesson from Mehran (-hermana): lazy 40-per-render classification never

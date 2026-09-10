@@ -83,6 +83,11 @@ premise and surfaced the real defect:
 
 5. **Classify the whole filtered gap set per build** (bounded, ADR-040 dec. 5) so
    no gap is left unclassified and mis-bucketed into domain.
+6. **The manual flush (decision 3) was REMOVED same day (ADR-042).** Decision 5
+   makes the map self-populate on every render, so the ask behind decision 3
+   (Mehran's under-populated map) is met without a button — and a user-triggered
+   full reclassification is an unbounded LLM-cost vector. Recompute is now
+   incremental + cached on each visit; no rebuild button, no rate-limit needed.
 
 ## Scope guardrails
 

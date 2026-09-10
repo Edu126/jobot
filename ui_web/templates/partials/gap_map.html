@@ -12,18 +12,10 @@
 <p class="text-sm text-body-muted mb-3">{{ _('profile.gap_map.subtitle') }}</p>
 
 {# Single lens (REQ-036 / ADR-040): the map is always the recent, strong-fit
-   aggregate — the All/Top-3/Job-specific switcher (ADR-025) was removed as it
-   never landed. The Rebuild button flushes this résumé's cached classifications
-   and re-renders fresh (the user's escape hatch when the map looks stale). #}
-<div class="flex items-center justify-end gap-2 mb-3" hx-indicator="#gap-map-spin">
-  <span id="gap-map-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
-  <button type="button" class="btn btn-ghost btn-xs gap-1"
-          title="{{ _('profile.gap_map.flush_hint') }}"
-          hx-post="/profile/gap-map/flush"
-          hx-target="#gap-map" hx-swap="innerHTML">
-    <i class="ph-thin ph-arrows-clockwise i-3"></i>{{ _('profile.gap_map.flush') }}
-  </button>
-</div>
+   aggregate — the All/Top-3/Job-specific switcher (ADR-025) was removed. There's
+   no manual rebuild (ADR-042): the map recomputes incrementally on each visit,
+   classifying only NOT-yet-cached gaps, so it self-populates at ~0 repeat cost.
+   False positives are handled per-cluster by the ✕ (ADR-024). #}
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
   {% for col in columns %}
