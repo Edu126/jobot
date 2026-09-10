@@ -364,11 +364,33 @@ async def profile_gap_map_restore(request: Request, canonical: str = Form(...)):
 async def profile_gap_map_flush(request: Request):
     """Manual rebuild (REQ-036 / ADR-040): drop this résumé's cached gap
     classifications so the re-render reclassifies the recent/high-fit gap set
-    fresh. The user's escape hatch when the map looks stale or wrong. One
-    LLM call, user-initiated (ADR-008 economy)."""
+    fresh. User-initiated (ADR-008 economy).
+
+    GUARD (learned the hard way, ADR-041): only wipe if we can actually rebuild.
+    Deleting classifications with no working client — no API key, or the model
+    marked quota-exhausted — would leave every gap unclassified: unclustered
+    singletons all dumped into the domain pillar, i.e. the good map destroyed and
+    not self-healing until a later successful render. So when no usable client is
+    available we DON'T delete; we re-render the untouched map + toast that rebuild
+    is unavailable."""
     current = db.get_current_resume()
     if not current:
         return HTMLResponse("", status_code=200)
+
+    client = None
+    api_key = resolve_api_key()
+    if api_key:
+        try:
+            client = GeminiClient(api_key=api_key)
+        except GeminiError:
+            client = None
+    if client is None or client.all_models_exhausted():
+        resp = await _render_gap_map(request)   # map left exactly as it was
+        resp.headers["HX-Trigger"] = json.dumps(
+            {"gap-rebuild-unavailable": {"msg": translate("profile.gap_map.rebuild_unavailable")}}
+        )
+        return resp
+
     db.delete_gap_classifications(int(current["id"]), get_reasoning_language())
     events.track(events.PROFILE_GAP_FLUSHED)
     return await _render_gap_map(request)

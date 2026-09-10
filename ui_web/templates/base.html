@@ -215,9 +215,16 @@
           onClick: () => htmx.ajax('POST', '/profile/gap-map/restore', {
             target: '#gap-map',
             swap: 'innerHTML',
-            values: { canonical: d.canonical, context: d.context, job_id: d.job_id },
+            values: { canonical: d.canonical },
           }),
         });
+      });
+
+      // Gap-map Rebuild refused when no working LLM client is available (no key
+      // or quota-exhausted). The flush POST leaves the map untouched and fires
+      // this so the user knows nothing was wiped (ADR-041).
+      document.body.addEventListener('gap-rebuild-unavailable', (e) => {
+        Alpine.store('toast').show((e.detail || {}).msg, 'info');
       });
 
       // Swipe-to-save / swipe-to-dismiss on `article.job-swipeable` cards.
