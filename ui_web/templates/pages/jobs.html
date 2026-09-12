@@ -507,7 +507,10 @@
     }
   }">
 
-  {# Seg-tabs: [● Top matches (N)] [♥ Saved (M)] #}
+  {# Seg-tabs + inline filters on ONE row:
+       [★ Top matches (N)] [♥ Saved (M)] ·········· [Added ▼] [✨ Only new] · N matches
+     The filter group is pushed right (ml-auto) and only shows on the Top
+     matches tab — Saved is an explicit list with no freshness dimension. #}
   <div class="flex items-center gap-4 mb-4 flex-wrap">
     <div class='seg-tabs' role='group' aria-label='{{ _("jobs.zone.results") }}'>
       <button type='button'
@@ -528,55 +531,58 @@
         <span class='pill pill-neutral ml-1' x-show="savedMeta.length > 0" x-cloak x-text="savedMeta.length"></span>
       </button>
     </div>
-  </div>
 
-  {# Filter row — only shown when top-matches tab is active (saved list has no
-     freshness dimension; it's explicit, not curated). #}
-  <div class="flex items-center gap-4 flex-wrap mb-4" x-show="mode === 'top'" x-cloak>
-    {# Date filter dropdown #}
-    <div class="flex items-center gap-2">
-      <label class="text-label shrink-0">{{ _('filters.added') }}</label>
-      <select class="select select-bordered select-sm cursor-pointer"
-              x-model.number="$store.filters.maxAgeDays"
-              @change="$store.filters.maxAgeDays = $event.target.value === '' ? null : Number($event.target.value)">
-        <option value="">{{ _('filters.added.all') }}</option>
-        <option value="1">{{ _('filters.added.24h') }}</option>
-        <option value="7" selected>{{ _('filters.added.7d') }}</option>
-        <option value="30">{{ _('filters.added.30d') }}</option>
-      </select>
-    </div>
-    {# Only new toggle #}
-    <label class="flex items-center gap-2 cursor-pointer select-none"
-           title="{{ _('filters.only_new.tooltip') }}">
-      <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
-      <span class="text-sm inline-flex items-center gap-1">
-        <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i> {{ _('filters.only_new') }}
-      </span>
-    </label>
-    {# Showing counter + viewed-hidden toggle — quiet, muted, far right #}
-    <div class="ml-auto flex items-center gap-2 text-sm text-body-muted">
-      <span>
-        <span x-text="$store.filters.visibleCount(topMeta)"></span>
-        {{ _('filters.matches') }}
-      </span>
-      {# Viewed-hidden notice — only when hideViewed is active and some are hidden #}
-      <template x-if="$store.filters.hideViewed && topMeta.filter(j => j.viewed).length > 0">
-        <span class="inline-flex items-center gap-1">
-          <span class="text-base-content/30">·</span>
-          <span x-text="`${topMeta.filter(j => j.viewed).length} {{ _('jobs.viewed_hidden', n='') | trim }}`"></span>
-          <button type="button"
-                  class="text-primary hover:underline cursor-pointer"
-                  @click="$store.filters.hideViewed = false"
-                  style="min-height: 0;">
-            {{ _('jobs.show_viewed') }}
-          </button>
+    {# Inline filter group — right-aligned, only when the Top matches tab is active. #}
+    <div class="flex items-center gap-4 flex-wrap ml-auto" x-show="mode === 'top'" x-cloak>
+      {# Date filter dropdown #}
+      <div class="flex items-center gap-2">
+        <label class="text-label shrink-0">{{ _('filters.added') }}</label>
+        <select class="select select-bordered select-sm cursor-pointer"
+                x-model.number="$store.filters.maxAgeDays"
+                @change="$store.filters.maxAgeDays = $event.target.value === '' ? null : Number($event.target.value)">
+          <option value="">{{ _('filters.added.all') }}</option>
+          <option value="1">{{ _('filters.added.24h') }}</option>
+          <option value="7" selected>{{ _('filters.added.7d') }}</option>
+          <option value="30">{{ _('filters.added.30d') }}</option>
+        </select>
+      </div>
+      {# Only new toggle #}
+      <label class="flex items-center gap-2 cursor-pointer select-none"
+             title="{{ _('filters.only_new.tooltip') }}">
+        <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
+        <span class="text-sm inline-flex items-center gap-1">
+          <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i> {{ _('filters.only_new') }}
         </span>
-      </template>
+      </label>
+      {# Showing counter + viewed-hidden toggle — quiet, muted, at the end #}
+      <div class="flex items-center gap-2 text-sm text-body-muted">
+        <span>
+          <span x-text="$store.filters.visibleCount(topMeta)"></span>
+          {{ _('filters.matches') }}
+        </span>
+        {# Viewed-hidden notice — only when hideViewed is active and some are hidden #}
+        <template x-if="$store.filters.hideViewed && topMeta.filter(j => j.viewed).length > 0">
+          <span class="inline-flex items-center gap-1">
+            <span class="text-base-content/30">·</span>
+            <span x-text="`${topMeta.filter(j => j.viewed).length} {{ _('jobs.viewed_hidden', n='') | trim }}`"></span>
+            <button type="button"
+                    class="text-primary hover:underline cursor-pointer"
+                    @click="$store.filters.hideViewed = false"
+                    style="min-height: 0;">
+              {{ _('jobs.show_viewed') }}
+            </button>
+          </span>
+        </template>
+      </div>
     </div>
   </div>
 
-  {# ─── Split viewport: left rail 38%, right detail 62% ─── #}
-  <div class="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6">
+  {# ─── Split viewport — bounded dual-scroll (approach B) ───
+     On lg+, the whole split pins under the header and fills the rest of the
+     viewport; each column (workspace-pane) scrolls internally so the body
+     doesn't grow past this block — the page "ends here". Below lg it falls
+     back to normal stacked flow (workspace-pane is lg-only in app.css). #}
+  <div class="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6 lg:sticky lg:top-20 lg:h-[calc(100dvh_-_6rem)]">
 
     {# ── LEFT RAIL: Top matches ──
        x-data carries `jobs` (required by job_card.html's visibleIn binding)
@@ -586,7 +592,7 @@
          x-data="{ jobs: window.__jobotTopMeta || [], showAll: false }"
          role="listbox"
          aria-label="{{ _('jobs.tabs.top_matches') }}"
-         class="min-w-0">
+         class="min-w-0 lg:h-full workspace-pane">
       {% if not top_matches %}
       {# Empty state skeleton when no top matches exist #}
       <div class="card-quiet py-10 px-6 text-center">
@@ -640,7 +646,7 @@
          x-data="{ jobs: window.__jobotSavedMeta || [], showAll: false }"
          role="listbox"
          aria-label="{{ _('jobs.tabs.saved') }}"
-         class="min-w-0">
+         class="min-w-0 lg:h-full workspace-pane">
       {# Empty state — driven by Alpine savedMeta, so it reacts live as the
          user adds/removes saved jobs (no reload). #}
       <div x-show="savedMeta.length === 0" x-cloak class="card-quiet text-center py-16">
@@ -660,16 +666,15 @@
       </div>
     </div>
 
-    {# ── RIGHT PANE: shared detail view ── #}
-    <aside class="hidden lg:block">
-      <div id="job-detail-scroll"
-           class="sticky top-20 overflow-y-auto"
-           style="max-height: calc(100vh - 6rem);">
-        <div id="job-detail-pane" class="card-quiet min-h-[300px]"
-             data-empty-prompt='<div class="text-body-muted text-sm text-center py-16">{{ _('results.click_prompt') }}</div>'>
-          <div class="text-body-muted text-sm text-center py-16">
-            {{ _('results.click_prompt') }}
-          </div>
+    {# ── RIGHT PANE: shared detail view. The aside IS the scroll container
+       (#job-detail-scroll) so selectedJob.select() can reset its scrollTop,
+       matching the results page. Height comes from the bounded grid above. #}
+    <aside id="job-detail-scroll"
+           class="hidden lg:block lg:h-full workspace-pane">
+      <div id="job-detail-pane" class="card-quiet min-h-[300px]"
+           data-empty-prompt='<div class="text-body-muted text-sm text-center py-16">{{ _('results.click_prompt') }}</div>'>
+        <div class="text-body-muted text-sm text-center py-16">
+          {{ _('results.click_prompt') }}
         </div>
       </div>
     </aside>

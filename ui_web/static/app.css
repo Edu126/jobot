@@ -1,11 +1,11 @@
 /* ─────────────────────────────────────────────────────────────
    Jobot design system — Wealthsimple-inspired.
-   Warm off-white base, hunter-green accent, Inter typography,
+   Linen off-white base, hunter-green accent, Plus Jakarta Sans typography,
    quiet cards, generous whitespace, tabular numerics.
    ───────────────────────────────────────────────────────────── */
 
 :root {
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
 }
 
 /* Fix: sticky header (h-16 = 4rem) was overlapping content on scroll.
@@ -39,10 +39,16 @@ html {
   --n:  25% 0.010 260;
   --nc: 95% 0.003 260;
 
-  /* Base — warm off-white page, pure white cards */
-  --b1: 100% 0 0;              /* base-100 — cards, navbar */
-  --b2: 97.5% 0.010 85;        /* base-200 — warm cream page bg */
-  --b3: 92% 0.014 80;          /* base-300 — subtle warm border */
+  /* Base — two defined levels, cooler & less yellow than the old cream
+     (#F5F1E8) which read too warm/"YC". Cards are the lightest surface so
+     they float forward; the page carries the subtle linen tint:
+       cards = white #FFFFFF                      → --b1
+       page  = light linen #F5F4F0 (cool tint)  → --b2
+     Lighter + half the yellow chroma vs the earlier #F1EEE6, which read
+     too "beige/dark" as a full-bleed bg while still keeping cards afloat. */
+  --b1: 100% 0 0;              /* base-100 — cards, navbar (white) */
+  --b2: 96.7% 0.005 95.1;      /* base-200 — page bg (light linen #F5F4F0) */
+  --b3: 91.0% 0.014 88.7;      /* base-300 — quiet border #E5E1D7 */
   --bc: 20% 0.015 265;         /* base-content — near-black text */
 
   --in: 55% 0.17 240;          /* info blue */
@@ -65,7 +71,7 @@ html {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Typography — Inter with optical features enabled
+   Typography — Plus Jakarta Sans with optical features enabled
    ───────────────────────────────────────────────────────────── */
 
 body {
@@ -74,13 +80,12 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.011em;
-  /* Warm wash — soft radial gradients on the cream base give the app a
-     lived-in feel without breaking the minimalism. Top-left leans salmon;
-     bottom-right leans primary green. Bumped from 5%/4% opacity to make it
-     actually register — subtle enough to not compete with content. */
+  /* Clean linen page with a single faint green wash at bottom-right for a
+     hint of life. Dropped the top-left salmon wash — it read as an uneven
+     "peach" tint that reintroduced the warm/"YC" feel we're moving away
+     from, and muddied the clean linen. */
   background:
-    radial-gradient(ellipse 110rem 70rem at 0% -15%, oklch(var(--a) / 0.10) 0%, transparent 60%),
-    radial-gradient(ellipse 100rem 70rem at 100% 110%, oklch(var(--p) / 0.075) 0%, transparent 60%),
+    radial-gradient(ellipse 100rem 70rem at 100% 110%, oklch(var(--p) / 0.05) 0%, transparent 60%),
     oklch(var(--b2));
   background-attachment: fixed;
   min-height: 100vh;
@@ -136,11 +141,11 @@ body {
    ───────────────────────────────────────────────────────────── */
 
 .card-quiet {
-  /* 82% alpha lets the warm wash bleed through cards so they read
-     "on the wash" instead of pasted rectangles. Resting box-shadow
-     is barely there — enough to imply lift without competing with
-     the hover glow. */
-  background: oklch(var(--b1) / 0.85);
+  /* Solid white surface (--b1) so cards float as the lightest level over
+     the linen page (--b2), not a translucent wash. Resting box-shadow is
+     barely there — enough to imply lift without competing with the hover
+     glow. */
+  background: oklch(var(--b1));
   border: 1px solid oklch(var(--b3));
   border-radius: var(--rounded-box);
   padding: 1.5rem;
@@ -618,21 +623,29 @@ html, body {
   border-radius: 0.75rem;
   font-size: 0.9375rem;
   font-weight: 500;
-  color: oklch(var(--bc) / 0.5);
+  color: oklch(var(--bc) / 0.55);
   cursor: pointer;
   transition: color 0.18s ease, background 0.18s ease,
               box-shadow 0.22s ease, transform 0.15s ease;
-  border: 1px solid transparent;
-  background: transparent;
+  /* Resting inactive tab reads as a real button: a subtle surface + faint
+     border (promoted from the old hover look) so it doesn't disappear into
+     the page the way a bare-text tab did. */
+  border: 1px solid oklch(var(--b3) / 0.7);
+  background: oklch(var(--b1) / 0.5);
   position: relative;
   letter-spacing: -0.005em;
 }
 .seg-tab i {
   transition: color 0.18s ease;
 }
+/* Hover on an inactive tab adds depth — solid surface + soft green lift —
+   so the affordance ladder reads rest → hover → active. */
 .seg-tab:hover:not(.seg-tab--active) {
   color: oklch(var(--bc) / 0.9);
-  background: oklch(var(--b1) / 0.6);
+  background: oklch(var(--b1));
+  border-color: oklch(var(--b3));
+  box-shadow: 0 2px 6px oklch(var(--p) / 0.08);
+  transform: translateY(-1px);
 }
 .seg-tab:hover:not(.seg-tab--active) i {
   color: oklch(var(--a) / 0.7);
@@ -816,7 +829,7 @@ html, body {
 }
 
 /* Rendered job description — structured HTML from jd_html filter.
-   Small, readable, clear hierarchy. Same font as body (Inter), not mono. */
+   Small, readable, clear hierarchy. Same font as body (Plus Jakarta Sans), not mono. */
 .jd-body {
   font-size: 0.875rem;
   line-height: 1.6;
