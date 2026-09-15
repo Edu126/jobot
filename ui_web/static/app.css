@@ -885,7 +885,7 @@ html, body {
 }
 
 /* Rendered job description — structured HTML from jd_html filter.
-   Small, readable, clear hierarchy. Same font as body (Plus Jakarta Sans), not mono. */
+   Small, readable, clear hierarchy. Same font as body (IBM Plex Sans), not mono. */
 .jd-body {
   font-size: 0.875rem;
   line-height: 1.6;
