@@ -59,6 +59,7 @@ from core.llm.prompts import Level
 from core.llm.rewrite import rewrite_resume, tailored_to_text
 from core.matching.affinity import compute_affinity, resume_hints
 from core.matching import gap_enhance as ge
+from core.matching import fit_story
 from core.matching import semantic_score as ss
 from core.matching.semantic_score import (
     DEFAULT_BATCH_SIZE as _SCORE_BATCH_SIZE,
@@ -2028,6 +2029,9 @@ async def jobs_analyzed(request: Request, job_id: str):
                 "matched": _json.loads(row["matched_json"]),
                 "gaps": _json.loads(row["gaps_json"]),
             }
+    # A fact about the VACANCY (its title's level), not a claim about the
+    # candidate — safer + more useful than inferring the applicant's seniority.
+    job["_job_level"] = fit_story.job_level_label(job.get("title"))
 
     app = db.get_application_by_job(job_id)
     job["_app_status"] = app["status"] if app else None
@@ -2080,6 +2084,9 @@ async def jobs_detail(request: Request, job_id: str):
                 "matched": _json.loads(row["matched_json"]),
                 "gaps": _json.loads(row["gaps_json"]),
             }
+    # A fact about the VACANCY (its title's level), not a claim about the
+    # candidate — safer + more useful than inferring the applicant's seniority.
+    job["_job_level"] = fit_story.job_level_label(job.get("title"))
 
     app = db.get_application_by_job(job_id)
     job["_app_status"] = app["status"] if app else None

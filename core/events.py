@@ -132,6 +132,22 @@ def counts_by_type_last_week() -> dict[str, int]:
     return {r["type"]: int(r["n"]) for r in rows}
 
 
+def distinct_jobs_viewed_last_week() -> int:
+    """Distinct jobs opened in the last 7 days — NOT raw open events. Opening the
+    same job 15 times is 1 job viewed, not 15 (Eduardo 2026-09-15). The funnel
+    already counts this way (funnel_last_month); the week-hero used a raw COUNT(*)
+    and over-reported. Legacy events with no job_id fall back to counting the row
+    so nothing silently drops."""
+    since = (datetime.utcnow() - timedelta(days=7)).isoformat(timespec="seconds") + "Z"
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT COALESCE(json_extract(payload_json, '$.job_id'), rowid)) AS n "
+            "FROM events WHERE type = ? AND ts_utc >= ?",
+            (JOB_DETAIL_VIEWED, since),
+        ).fetchone()
+    return int(row["n"]) if row else 0
+
+
 def daily_activity(days: int = 14) -> list[dict]:
     """Rows of {day: 'YYYY-MM-DD', count: N} for the last `days` days,
     oldest first. Useful for a spark-bar visualization."""
@@ -472,7 +488,7 @@ def this_week_hero_stats() -> dict:
                        "Friday", "Saturday", "Sunday"][best]
 
     return {
-        "jobs_viewed": counts.get(JOB_DETAIL_VIEWED, 0),
+        "jobs_viewed": distinct_jobs_viewed_last_week(),   # distinct jobs, not raw opens
         "tailored": counts.get(TAILOR_GENERATED, 0),
         "applied": int(applied_row["n"]) if applied_row else 0,
         "streak_days": _current_streak_days(),

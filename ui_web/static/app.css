@@ -1,11 +1,25 @@
 /* ─────────────────────────────────────────────────────────────
    Jobot design system — Wealthsimple-inspired.
-   Linen off-white base, hunter-green accent, Plus Jakarta Sans typography,
-   quiet cards, generous whitespace, tabular numerics.
+   Linen off-white base, hunter-green accent, Inter body + Space Grotesk
+   display typography, quiet cards, generous whitespace, tabular numerics.
    ───────────────────────────────────────────────────────────── */
 
 :root {
-  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  /* Type SYSTEM (Eduardo 2026-09-15): body = IBM Plex Sans (humanist, a bit of
+     character, NOT the generic Inter/AI-SaaS look); headings = Schibsted
+     Grotesk (clean grotesque with editorial lineage — flip to Archivo in the
+     /jobs Font Lab). Hierarchy is not "two fonts + bold" — it's the scale below,
+     where each level earns its rank through size + weight + line-height +
+     TRACKING together. Both vars are live-swappable via the Font Lab. */
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Schibsted Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Every heading level wears the display face. The per-level SIZE/WEIGHT/TRACKING
+   that actually build the hierarchy live in the type-scale block further down
+   (.text-display / .text-title / h3 / h4 / .text-eyebrow). */
+h1, h2, h3, h4, h5, .text-display, .text-title, .font-display {
+  font-family: var(--font-display);
 }
 
 /* Fix: sticky header (h-16 = 4rem) was overlapping content on scroll.
@@ -71,15 +85,19 @@ html {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Typography — Plus Jakarta Sans with optical features enabled
+   Typography — a SYSTEM. Body = IBM Plex Sans, headings = Schibsted Grotesk
+   (via --font-display). Hierarchy = a deliberate scale (size · weight ·
+   line-height · tracking), NOT bold-vs-regular. See the .text-* ladder below.
    ───────────────────────────────────────────────────────────── */
 
 body {
   font-family: var(--font-sans);
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.011em;
+  /* IBM Plex Sans is a touch wider than Inter; ease the negative tracking so it
+     breathes and reads warm rather than cramped. */
+  letter-spacing: -0.003em;
+  line-height: 1.55;
   /* Clean linen page with a single faint green wash at bottom-right for a
      hint of life. Dropped the top-left salmon wash — it read as an uneven
      "peach" tint that reintroduced the warm/"YC" feel we're moving away
@@ -91,46 +109,84 @@ body {
   min-height: 100vh;
 }
 
-.text-display {
-  /* Was 2.5rem/40px — dropped so a one-word H1 ("Jobs", "Profile",
-     "Applications") doesn't dwarf the muted subtitle underneath. The
-     smaller size also matches the Wealthsimple typographic feel where
-     display type earns weight through space + weight, not raw size. */
-  font-size: 2rem;                /* 32px */
-  line-height: 1.15;
+/* ── The heading ladder ──
+   Rule of thumb baked in: the BIGGER the type, the TIGHTER the tracking
+   (large grotesque wants negative letter-spacing to feel considered); the
+   SMALLER the type, the LOOSER (small caps/labels want positive tracking to
+   stay legible + gain character). Weight steps too — not everything is 600. */
+
+/* L1 · Display — page titles ("Jobs", "Profile"). */
+.text-display, h1 {
+  font-family: var(--font-display);
+  font-size: 2.375rem;            /* 38px */
+  line-height: 1.08;
   font-weight: 600;
-  letter-spacing: -0.028em;
+  letter-spacing: -0.028em;       /* tightest — big type closes up */
 }
 
-.text-title {
-  font-size: 1.375rem;            /* 22px */
-  line-height: 1.3;
+/* L2 · Title — major section headers ("Top matches"). */
+.text-title, h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;              /* 24px */
+  line-height: 1.22;
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.018em;
+}
+
+/* L3 · Heading — card titles, sub-sections (job-card <h3>). */
+h3 {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;           /* 17px */
+  line-height: 1.32;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+}
+
+/* L4 · Subhead — small headings inside cards/panels. */
+h4 {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;           /* 15px */
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.004em;
+}
+
+/* L5 · Eyebrow / kicker — the character move. Small, UPPERCASE, WIDE tracking,
+   muted. Turns bland "Recent searches"-style labels into a designed kicker that
+   reads with intent instead of just being bold. Apply `.text-eyebrow` to
+   section labels; bare <h5> gets it too. */
+.text-eyebrow, .text-label, h5 {
+  font-family: var(--font-display);
+  font-size: 0.6875rem;           /* 11px */
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.13em;         /* loosest — small caps open up */
+  text-transform: uppercase;
+  color: oklch(var(--bc) / 0.5);
 }
 
 .text-metric {
+  font-family: var(--font-display);   /* display grotesque numerals — see .hero-num */
   font-variant-numeric: tabular-nums;
   font-size: 2.25rem;             /* 36px */
   line-height: 1;
-  font-weight: 500;
-  letter-spacing: -0.025em;
-}
-
-.text-metric-sm {
-  font-variant-numeric: tabular-nums;
-  font-size: 1.5rem;              /* 24px */
-  line-height: 1.1;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
-.text-label {
-  font-size: 0.8125rem;           /* 13px */
-  color: oklch(var(--bc) / 0.55);
-  font-weight: 500;
-  letter-spacing: 0.005em;
+.text-metric-sm {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.5rem;              /* 24px */
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.018em;
 }
+
+/* `.text-label` is now an alias of the eyebrow (see above) — every section
+   label across the app becomes a consistent uppercase kicker in one place,
+   rather than editing 60+ template sites (Eduardo 2026-09-15: eyebrows on all
+   sections). Update the eyebrow rule to restyle them all. */
 
 .text-body-muted {
   color: oklch(var(--bc) / 0.6);
@@ -908,9 +964,13 @@ html, body {
    ───────────────────────────────────────────────────────────── */
 .hero-num {
   /* -10% per feedback: card was taking too much vertical estate */
+  /* Big metrics wear the DISPLAY grotesque at a medium weight — IBM Plex at 700
+     read heavy/"sad" here (Eduardo 2026-09-15); Schibsted's open numerals at 600
+     look designed, not mechanical, and the looser tracking lets "161" breathe. */
+  font-family: var(--font-display);
   font-size: 2.5rem;
-  font-weight: 700;
-  letter-spacing: -0.035em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 1;
   color: oklch(var(--bc));
   font-variant-numeric: tabular-nums;
@@ -1113,11 +1173,12 @@ html { scroll-behavior: smooth; }
   filter: brightness(1.05);
 }
 .funnel-count {
+  font-family: var(--font-display);
   color: white;
   font-size: 1.625rem;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.015em;
   text-shadow: 0 1px 2px oklch(0% 0 0 / 0.18);
 }
 .funnel-label {

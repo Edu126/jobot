@@ -49,6 +49,7 @@ Reliability:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -176,10 +177,21 @@ def score_single_no_cache(
     lang: str | None = None,
     resume_id: int | None = None,
     persona: str | None = None,
+    use_content_cache: bool = True,
 ) -> ScoreResult | None:
-    """One-shot score for arbitrary resume text vs a single job. Does NOT
-    touch the DB cache — used to re-score a *tailored* resume where we don't
-    want to pollute `job_scores` (which is keyed on the original resume_id).
+    """One-shot score for arbitrary resume text vs a single job. Does NOT write
+    to `job_scores` (keyed on the original resume_id) — used to re-score a
+    *tailored* resume without polluting the resume-scoped cache.
+
+    It DOES use the content-addressed `tailored_scores` cache (v24): the score
+    is keyed on a hash of the exact text scored, so re-scoring identical text
+    returns the SAME number instead of a fresh, drift-prone LLM call. This is
+    the stability guarantee for the tailored "after" score and the prep fit —
+    Gemini is not deterministic even at temperature 0 (adversarial eval,
+    2026-09-14: the same text drifted 35↔45, 82↔55), so we freeze the first
+    result by content instead of pretending re-inference reproduces. Pass
+    `use_content_cache=False` to force a fresh score (e.g. measuring raw model
+    drift in a diagnostic).
 
     `resume_id`, when the caller has one, resolves the persona line (role/
     domain/seniority, via `ai_summary`) — even a tailored resume's persona
@@ -192,10 +204,20 @@ def score_single_no_cache(
     """
     if not resume_text.strip() or not job:
         return None
-    if client.all_models_exhausted():
-        return None
     lang = _resolve_lang(lang)
     resume_snippet = resume_text.strip()[:MAX_RESUME_CHARS]
+    job_id = job.get("id") or ""
+
+    # Content-cache hit: identical text × job × lang × versions → frozen score.
+    text_hash = _content_hash(resume_snippet) if use_content_cache else ""
+    if text_hash and job_id:
+        cached = db.get_content_score(
+            text_hash, job_id, lang, PROMPT_VERSION, SCORING_VERSION)
+        if cached is not None:
+            return _row_to_result({**cached, "job_id": job_id})
+
+    if client.all_models_exhausted():
+        return None
     if persona is None:
         persona = ai_summary.persona_line(resume_id)
     try:
@@ -204,7 +226,19 @@ def score_single_no_cache(
         )
     except QuotaExhaustedError:
         return None
-    return results[0] if results else None
+    result = results[0] if results else None
+
+    if result is not None and text_hash and job_id:
+        db.save_content_score(
+            text_hash, job_id, lang, PROMPT_VERSION, SCORING_VERSION, result.to_dict())
+    return result
+
+
+def _content_hash(text: str) -> str:
+    """SHA-256 of the exact (stripped) text handed to the model — same algorithm
+    as the resume text hash (db._resume_text_hash), so the two caches agree on
+    what 'identical text' means."""
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
 
 
 def score_stats(

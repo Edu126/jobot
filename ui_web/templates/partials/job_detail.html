@@ -13,9 +13,14 @@
         <span class="font-medium text-base-content/80">{{ job.company }}</span>
         {% if job.location %}<span class="text-base-content/30 mx-1">·</span>{{ job.location }}{% endif %}
       </div>
+      {# Level is a FACT about the vacancy (read from its title), not a claim
+         about the candidate — folded into the meta line, no extra chip. The
+         domain fit ("your field" vs a pivot) is left to the score reasoning
+         below, which already says it in plain language. #}
       <div class="text-xs text-base-content/40 mt-1">
         {{ job.site }} · posted {{ job.date_posted or '?' }}
-        {% if ai %} · {{ ai.verdict | title }}{% endif %}
+        {% if ai %} · {{ ai.verdict | verdict_label }}{% endif %}
+        {% if job._job_level %} · {{ job._job_level }}{% endif %}
       </div>
     </div>
     {# Single header slot. save_action.html handles ALL states:

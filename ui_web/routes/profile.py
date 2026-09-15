@@ -766,7 +766,7 @@ async def profile_insights(request: Request):
         "sessions_week": counts.get(events.PAGE_VIEW, 0),
         "searches_broad": counts.get(events.SEARCH_BROAD, 0),
         "searches_url": counts.get(events.SEARCH_URL_IMPORT, 0),
-        "jobs_viewed": counts.get(events.JOB_DETAIL_VIEWED, 0),
+        "jobs_viewed": events.distinct_jobs_viewed_last_week(),   # distinct jobs, not raw opens
         "tailors_generated": counts.get(events.TAILOR_GENERATED, 0),
         "resumes_downloaded": counts.get(events.TAILOR_RESUME_DOWNLOAD, 0),
     }

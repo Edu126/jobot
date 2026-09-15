@@ -42,7 +42,7 @@ def _resume_text_hash(parsed: dict) -> str:
 
 # ---------- schema ----------
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 # Body of the `job_scores` table (columns + PK — no `CREATE TABLE ...`
 # wrapper, no trailing semicolon). Reused by both _SCHEMA_SQL (fresh
@@ -171,6 +171,30 @@ CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
 
 CREATE TABLE IF NOT EXISTS job_scores (__JOB_SCORES_BODY__);
 CREATE INDEX IF NOT EXISTS idx_job_scores_resume ON job_scores(resume_id);
+
+-- v24 (2026-09-14): content-addressed cache for score_single_no_cache — the
+-- tailored-resume "after" score, the prep-session fit, and one-off job scores.
+-- job_scores (v17) already stabilises the ORIGINAL resume by TEXT HASH; this
+-- extends the same "same text in → same number out" guarantee to arbitrary
+-- text that has no resumes row (a tailored variant, a pasted JD). Keyed purely
+-- on the scored text's hash, so re-scoring identical text is a lookup, never a
+-- fresh (drift-prone) LLM call. No FK on job_id: pasted JDs (ADR-030) aren't in
+-- the jobs table. Old rows age out on a prompt/scoring version bump.
+CREATE TABLE IF NOT EXISTS tailored_scores (
+    text_hash        TEXT NOT NULL,
+    job_id           TEXT NOT NULL,
+    lang             TEXT NOT NULL DEFAULT '',
+    prompt_version   TEXT NOT NULL DEFAULT '',
+    scoring_version  TEXT NOT NULL DEFAULT '',
+    score            INTEGER NOT NULL,
+    verdict          TEXT NOT NULL,
+    reasoning        TEXT NOT NULL,
+    matched_json     TEXT NOT NULL,
+    gaps_json        TEXT NOT NULL,
+    model            TEXT NOT NULL,
+    scored_at        TEXT NOT NULL,
+    PRIMARY KEY (text_hash, job_id, lang, prompt_version, scoring_version)
+);
 
 CREATE TABLE IF NOT EXISTS saved_searches (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1708,6 +1732,72 @@ def save_scores(
             )
             n += 1
     return n
+
+
+def get_content_score(
+    text_hash: str,
+    job_id: str,
+    lang: str,
+    prompt_version: str,
+    scoring_version: str,
+    path: Path = DB_PATH,
+) -> Optional[dict]:
+    """Content-addressed score lookup for `tailored_scores` (v24). Returns the
+    row dict for this exact scored TEXT × job under the current lang + versions,
+    or None on a miss. This is what makes a re-score of identical text a lookup
+    instead of a fresh (drift-prone) LLM call — the stability guarantee for the
+    tailored "after" score and prep fit. Empty `text_hash` ⇒ None (caller scores
+    without caching)."""
+    if not text_hash or not job_id:
+        return None
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT score, verdict, reasoning, matched_json, gaps_json, model, scored_at
+               FROM tailored_scores
+               WHERE text_hash = ? AND job_id = ? AND lang = ?
+                     AND prompt_version = ? AND scoring_version = ?""",
+            (text_hash, job_id, lang, prompt_version, scoring_version),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def save_content_score(
+    text_hash: str,
+    job_id: str,
+    lang: str,
+    prompt_version: str,
+    scoring_version: str,
+    score: dict,
+    path: Path = DB_PATH,
+) -> None:
+    """Upsert one content-addressed score into `tailored_scores` (v24). Keyed on
+    the scored text's hash, so the next identical re-score is served verbatim.
+    `score` needs: job_id, score, verdict, reasoning, matched (list), gaps
+    (list), model. No-op on empty `text_hash`."""
+    if not text_hash or not job_id:
+        return
+    with tx(path) as conn:
+        conn.execute(
+            """INSERT INTO tailored_scores (
+                text_hash, job_id, lang, prompt_version, scoring_version,
+                score, verdict, reasoning, matched_json, gaps_json, model, scored_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(text_hash, job_id, lang, prompt_version, scoring_version) DO UPDATE SET
+                score = excluded.score,
+                verdict = excluded.verdict,
+                reasoning = excluded.reasoning,
+                matched_json = excluded.matched_json,
+                gaps_json = excluded.gaps_json,
+                model = excluded.model,
+                scored_at = excluded.scored_at""",
+            (
+                text_hash, job_id, lang, prompt_version, scoring_version,
+                int(score["score"]), str(score["verdict"]), str(score.get("reasoning", "")),
+                json.dumps(score.get("matched") or [], ensure_ascii=False),
+                json.dumps(score.get("gaps") or [], ensure_ascii=False),
+                str(score.get("model", "")), _now(),
+            ),
+        )
 
 
 def get_cached_gap_enhancement(
