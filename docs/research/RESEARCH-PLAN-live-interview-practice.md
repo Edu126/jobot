@@ -52,6 +52,25 @@ at what cost ceiling, and on which transport** — or do we stay asynchronous?
 - Product/vendor claims (pricing, limits) must cite the **vendor's own docs**
   with a date — pricing drifts; an unverifiable number is flagged, not quoted.
 - Credit budget: 4 pillar agents + consolidation done in-session (no 5th agent).
+
+### Verification deviation (recorded 2026-09-16 — read before trusting a ✓)
+
+**The skill's prescribed check could not be run.** This session runs in the
+remote sandbox, whose network policy denies `CONNECT` to `api.openalex.org`
+and `api.crossref.org` (`403`, confirmed independently by two pillar agents
+*and* directly from this shell + the proxy's own `recentRelayFailures`). Policy
+denials are not to be routed around.
+
+Substitute standard actually applied: **cross-triangulation** — a source counts
+as ✓ only when ≥2 independent results (PubMed listing · publisher DOI page ·
+ERIC / Semantic Scholar / institutional page) agree on title, authors, year and
+venue. This is **weaker** than a DOI-API hit and is labelled as such in the memo.
+
+**Verification debt (open):** re-run the OpenAlex/Crossref pass for every ✓ in
+the memo from a machine with those hosts reachable (local dev, not the sandbox),
+before any claim from it is quoted outside the repo. Vendor pricing has the same
+problem from the other direction — several vendor domains were egress-blocked,
+so every price in Pillar 2/4 is third-party-triangulated and flagged ⚠.
 - Lateral thinking + Six Hats analysis is **founder-side** (Eduardo + Vision),
   not delegated — agents source, they don't conclude.
 

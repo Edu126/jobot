@@ -1,6 +1,6 @@
 # LLM Surface
 
-Last updated: 2026-09-03
+Last updated: 2026-09-16
 
 Every Gemini call in the app, in one place. If you add or remove a
 call, update this file — [ADR-008](../decisions/ADR-008-prompt-conventions.md)
@@ -44,6 +44,8 @@ for why.
 | 5 | `core/llm/company_research.py::fetch_company_context` | **RETIRED from the Prep path (ADR-029)** — Tavily replaced Gemini grounding as the outlook's search hop. Function kept (dormant, no caller); no longer spends Google Search grounding quota. | — | — | — | — |
 | 11 | `core/prep/company_outlook.py::_structure` | Prep company outlook (hop 2), lazy on session open + a one-off refresh **only in the empty/fallback state** ([ADR-031](../decisions/ADR-031-refresh-news-gated-not-user-facing.md) gated the always-on "Refresh news" for cost) ([REQ-023](../requirements/REQ-023-prep-land-it-kit.md) / [ADR-027](../decisions/ADR-027-company-outlook-persistent-cache-shared.md)) | No | `company_outlook(company_norm, role_title, lang, prompt_version)` — normalized company (`prep.matching.normalize_company`) × role × lang × every varying dim (ADR-008 rule 3); shared by Tailor + Prep; `PROMPT_VERSION` in `company_outlook.py` gates hits | `get_output_language()` | JSON — structures **Tavily's snippets (hop 1, ADR-029 — a non-Gemini HTTP call)** into `{culture_tone, strategic_focus, recent_news:[{headline,date,url}]}`. `culture_tone`/`strategic_focus` may carry `**bold**` key phrases (2026-09-05 reading aid, rendered via `md_bold`; PROMPT_VERSION deliberately NOT bumped — cost). Adds NO facts (GOV-005); empty fields render as "nothing found". `temperature=0.0` |
 | 12 | `core/prep/kit.py::_generate` | Prep kit, lazy on prep-session open ([REQ-023](../requirements/REQ-023-prep-land-it-kit.md) / [ADR-028](../decisions/ADR-028-prep-kit-read-only-cached-blob.md)) | No (one call → whole kit) | `prep_kits(prep_session_id, lang, prompt_version)` — read-only blob, no user-edit layer; `PROMPT_VERSION` in `kit.py` gates hits | `get_output_language()` | JSON — `{star_qa:[{kind, question, star\|talking_points}], reverse_qs:[{category, question}]}`. STAR grounded ONLY in real résumé experience (unanswerable items DROPPED — grounded-or-none, GOV-005); `defensive_gap` items reuse #9's REQ-018 real-gap defense hooks when the session is job-bound. `temperature=0.0` |
+| 13 | **PLANNED** — live session, browser-side (`ui_web/static/prep_call.js` via `@google/genai`), token minted by `ui_web/routes/prep.py::call_token` | The live prep call, on user tap ([REQ-041](../requirements/REQ-041-live-prep-call.md) / [ADR-047](../decisions/ADR-047-live-call-browser-direct-ephemeral-token.md)) | n/a — a streaming session, not a request | **None — uncacheable by nature** (first site to break the ADR-019 pattern; reproducibility moves to the *agenda*, ADR-048) | `get_output_language()` → `speech_config.language_code`; **EN-only until `es-419` is confirmed** (ADR-050, gate G2) | **Streaming bidirectional audio** — NOT `generate_json`. Audio in 16kHz PCM / out 24kHz + in-stream input & output transcription. System instruction carries company outlook × JD × résumé × the selected kit questions. **Runs on a Live-API model, NOT `DEFAULT_MODEL_CHAIN`** — an ADR-008 rule-6 override, which is what ADR-047 exists for. Flag-gated OFF until gate G1 (ADR-051) |
+| 14 | **PLANNED** — `core/prep/debrief.py::_generate` | End of a live call, over the posted transcript ([ADR-049](../decisions/ADR-049-debrief-is-a-separate-call-and-never-a-score.md)) | No (one call → whole debrief) | Persisted per call on the prep session (a call is a one-off event, not a cacheable artifact) | `get_output_language()` | JSON — `{strongest_moment (quoted from the transcript), one_thing, unanswered[], substance_notes[]}`. **Never a score** (ADR-016 precedent, ADR-049). Grounded-or-none: a claim that can't cite the transcript doesn't render. Ordinary `generate_json` on `DEFAULT_MODEL_CHAIN`. `temperature=0.0` |
 | 6 | `core/bi/pulse.py::generate_report` | Weekly GH Actions cron (`.github/workflows/pulse.yml`) + `/admin/pulse` manual | No | `admin_reports` table (one row per run) | None (admin-only, English) | JSON (unwraps `{"markdown": "..."}`) |
 | 7 | `ui_web/routes/profile.py::_generate_suggestions` | Jobs page "Quick fill" chips first render (lazy) | No | `suggested_queries(resume_id, lang)` | `get_output_language()` | JSON |
 | 8 | `core/resume/ai_summary.py::_grounded_or_none` (used by `get_or_generate` / `persona_line`) | Lazy fragment on Profile page after resume upload — **and now also** the first scoring call (#1) or tailor call (#2) for a resume that skipped Profile, via `persona_line()` | No, but retries **once** silently on ungrounded output | `resume_ai_summary(resume_id, lang)` — gained `domain`/`seniority` columns ([ADR-013](../decisions/ADR-013-persona-source-shared-resume-profile.md)) | `get_output_language()` | JSON validated via Pydantic + custom grounding check |
@@ -88,6 +90,20 @@ for why.
   `generate_content` daily quota instead of the 5,000/mo bucket — check
   AI Studio → Quotas for the real assigned limit. Plan B if it bites: a
   dedicated search API (Brave/Tavily) → normal Gemini (ADR-004 swap).
+- **The live call is the first non-`generate_content` site (#13).** It is
+  streaming, uncacheable, metered per second, and runs on a Live-API model
+  outside `DEFAULT_MODEL_CHAIN` — three simultaneous departures from ADR-008's
+  defaults, which is why it required its own ADR (rule 7) before any code.
+  Two facts behind it are **unverified** (the sandbox blocks `ai.google.dev`):
+  the Live model's **free-tier status** and the real **$/1M audio token** rates.
+  Both are gate **G1** in
+  [the research memo](../research/RESEARCH-live-interview-practice.md); the site
+  stays flag-gated OFF until a human confirms them in a browser.
+- **The audio never reaches our server** (ADR-047) — so unlike every other site
+  in this table, there is no server-side hook to inspect, sanitize or retry a
+  turn. Prompt-injection hardening and grounding for #13 must be **front-loaded
+  into the system instruction**; the JD/résumé fencing pattern from #4/#8
+  applies there, not mid-stream.
 - **Kill switch**: `LLM_DISABLED=1` env var short-circuits every
   site via `feature_flags.is_llm_disabled()` — most routes check
   before instantiating a client, but a few sites rely on the
