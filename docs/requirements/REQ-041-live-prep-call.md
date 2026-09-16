@@ -118,6 +118,58 @@ feedback-inmediato; the research moved it to second position, as the ramp.
    that "practice ≠ cheat" becomes *architecture* — no calendar hook, no
    live-call attach, no overlay, ever. **GOV-008.**
 
+## Activation — the hole the first draft left open
+
+*Added 2026-09-16. Adversarial review's most important finding, and it was a
+real omission: the first draft designed the token mint, the transport, the
+modes, the avatar, the debrief and the caps — and never designed **the moment
+someone presses Start**.*
+
+The research surfaced the number and then we walked past it: **two-thirds of
+graduates offered coaching for FREE did not use it.** The bottleneck in this
+category is not the quality of the coaching. It is willingness to begin. Our
+counter-metric measured the wrong failure: we designed against "the call ends
+badly" when the far larger failure is **the call never starts**.
+
+So activation is a first-class part of this REQ, not UI polish:
+
+1. **The entry point is not "start a 5-minute interview." It is one question.**
+   *"Contesta una pregunta en voz alta — 40 segundos."* The ask has to be small
+   enough that declining it feels sillier than doing it. The kit's own carousel
+   already proved the pattern here: one card at a time beat a wall of Q&A.
+2. **The first question is never graded.** A warm-up the model asks to get the
+   user talking, explicitly outside the debrief. The cost of the first ten
+   seconds has to be zero.
+3. **Show the artifact before asking for the call.** The strongest argument for
+   pressing Start is seeing what comes out the other end — the debrief shape,
+   built from their own kit, before they commit a voice.
+4. **Instrument the funnel we never defined**: `call.entry_seen` →
+   `call.started` → `call.first_answer` → `call.completed` → `call.returned`.
+   The drop between the first two is the number this feature lives or dies on,
+   and today we have no way to see it.
+
+**An open question this raises, worth Eduardo's read:** an avatar with a face
+*raises* the stakes of first contact — someone is watching you be bad at this.
+It is possible the right first call is voice-only with a waveform, and the face
+arrives on call two, once it is a reward rather than an audience. That cuts
+against the original ask, so it is flagged, not decided.
+
+## The non-voice path — missing, and the ICP makes it worse
+
+Also absent from the first draft, and it lands hardest on exactly our users:
+someone in a shared apartment who cannot rehearse aloud without being overheard;
+someone who stutters or is hard of hearing; a noisy house where even a slow VAD
+trips on a sibling or a TV; a person rehearsing in their second language, who is
+the *most* self-conscious about being heard fumbling it.
+
+Two cheap answers, both available now:
+
+- **Live captions of the interviewer, always on.** Output transcription already
+  streams in-band (Pillar 3) — captions are nearly free and we simply didn't
+  propose them.
+- **A text-answer fallback** for at least one question, so the surface is not
+  "voice or nothing."
+
 ### Open gates (need a human, not an agent)
 
 - **G1 — the $0 gate (blocking).** Whether the conversational Live model exists
@@ -127,7 +179,47 @@ feedback-inmediato; the research moved it to second position, as the ramp.
   $75–225/h) — a product call, not an engineering one.
 - **G2 — `es-419`.** If Google exposes only `es-ES`, shipping a Spanish call
   breaks non-negotiable #4.
+- **G3 — token-bound constraints (blocking, and it decides ADR-047).** Can the
+  ephemeral token **lock** model, system instruction, modality and tools
+  (`live_connect_constraints` / the constrained endpoint), or does the client
+  choose them? If it cannot, every cap in ADR-051 is advisory, the
+  system instruction has to be handed to the browser in cleartext, and **the
+  transport must change** — a server-side relay, or no feature. ⚠ The field
+  names come from secondary sources; `ai.google.dev` was egress-blocked.
+- **G4 — the 15-min / 2-min session caps and the direct-connect mechanism** are
+  snippet-sourced too, and ADR-047/ADR-050 are built on them. Confirm before
+  either leaves "design" status.
 - **D1 — does Drill ship in v1 at all**, or does v1 stay single-mode?
+- **D2 — is v1 the full framework or the thin slice below?** Recommendation:
+  the thin slice.
+
+## The thin slice — what I'd actually build first
+
+*Added after adversarial review flagged the original v1 as a big-bang out of
+step with this repo's own history (REQ-023/025 shipped as five one-day
+increments; v1 as first drafted needs a new client audio pipeline, a new route,
+a new call site, new schema, new cap infrastructure, a consent screen, three
+screens of UI and i18n — all downstream of four unresolved gates).*
+
+**Ships:** Simulation only (no mode picker) · a fixed 3-question deck from the
+existing kit (no deck toggles) · **captions on** · the debrief exactly as
+ADR-049 specifies · a hard-coded single-call allowance instead of cap
+infrastructure.
+
+**Cuts, deliberately and reversibly:** Drill · Mentor · the stance×deck picker ·
+**the avatar animation** (a "listening / speaking" state indicator instead) ·
+Spanish (already gated by G2) · session-resumption handling.
+
+The avatar cut is the one that contradicts the original ask directly, so it is
+flagged as a choice, not an omission: it is the single largest block of net-new
+client code, and it is downstream of the question that actually decides this
+feature — *will anyone press Start?* If they do, the face is additive and
+nothing about the transport, schema or debrief contract changes.
+
+**Measures:** entry_seen → started (the adoption question) · completion rate ·
+whether Gemini Live behaves as documented at all (every Pillar-3 fact is
+snippet-sourced) · and REQ-041's own success test — do they come back for a
+second call before the real interview.
 
 ## How we'll know it worked
 

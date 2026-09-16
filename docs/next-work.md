@@ -13,6 +13,19 @@ keep the numeric coverage score in a verdict-tinted ring. The A-layer
 
 ## Actually open
 
+-1. **The 150-word ADR rule is dead in practice — decide whether to revive or
+   retire it.** CLAUDE.md says ADRs are "under 150 words". Measured today:
+   ADR-047 1,124 · ADR-048 688 · ADR-049 1,044 · ADR-050 777 · ADR-051 1,126 ·
+   ADR-052 516 (`wc -w`) — and the erosion predates this batch (ADR-027 ≈700). Trimming
+   ADR-047/051/052 to 150 words would delete the security reasoning an
+   adversarial review just added, which is a bad trade to make silently. Two
+   honest options: raise the limit (e.g. 150 words for a simple call, ~700 for
+   one that carries a threat model), or split the long ones. **Eduardo's call —
+   flagged rather than quietly ignored.**
+0bis. **ADR-043 and ADR-044 do not exist** — the sequence jumps 042 → 045, with
+   no file and no reference anywhere. Probably abandoned drafts; worth a
+   one-line note so a future reader doesn't assume data loss.
+
 0. **REQ-036 gap-map rework — code done 2026-09-09, investigation done, not yet
    committed / not yet verified on -edu.** Recent (60d) + high-fit (`score > 70`)
    hard filter, single lens (switcher removed, ADR-025 dormant), manual

@@ -30,9 +30,32 @@ when the call ends. Not a Live call. It inherits every existing convention:
 JSON-mode, `language_instruction()`, temperature 0.0, quota accounting, and its
 own row in `llm-surface.md`.
 
-**The debrief never contains a score.** No number, no grade, no stars, no
-"7/10". A number turns rehearsal into judgment, and jobot already refuses raw
-percentages where they invite gaming (ADR-016). The output contract is:
+**The debrief never contains a PERFORMANCE score** — no grade, no stars, no
+"7/10".
+
+*Corrected 2026-09-16 after adversarial review.* This ADR originally justified
+that by citing ADR-016 ("no raw %"), which is **`Superseded by ADR-038`** — the
+repo already reversed it. ADR-038's actual reasoning is the test that matters:
+the objection to a number was that it **drifted run-to-run and invited
+regenerate-until-greener chasing**; once the score became coverage-anchored
+(ADR-018) and cache-stable (ADR-019), the objection went stale and the number
+stayed. So the right move is not to swap the citation and keep the conclusion —
+it is to **re-run ADR-038's test** on what we propose:
+
+| Candidate signal | Stays put for the same inputs? | Resists chasing? | Verdict |
+|---|---|---|---|
+| A performance score of a spoken answer | **No** — uncached and irreproducible; the same person answering twice scores differently | **No** — it is the definition of a number to chase | **Banned.** Also collides with GOV-008's ban on employability inference |
+| A **progress count** over the user's own transcripts | **Yes** — a count of facts, not a judgment | **Yes** — you cannot move it without actually doing the thing | **Allowed** |
+
+So: **no performance score, but a progress count is permitted and wanted** —
+*"answered 5 of 5 this time, 3 of 5 last time"*, *"defended 2 of the 3 gaps you
+flagged"*. Sourced only to deltas in the user's own transcripts, never a
+percentage, never comparable across users, never an applicant-percentile (the
+one guardrail ADR-038 explicitly preserved from ADR-016). This is also what the
+north-star metric — *career advancement per hour of effort* — needs in order to
+move against something more than an anecdote.
+
+The output contract is:
 
 - **`strongest_moment`** — one thing they actually said, **quoted from their own
   transcript**, and why it works. Feedback runs through self-efficacy; lead with
@@ -57,8 +80,14 @@ improves the *written* kit — and is scoped separately, not in v1.
 
 ## Alternatives considered
 
-- **Score the performance.** Rejected: pre-mortem #4, ADR-016 precedent, and it
-  converts the one low-stakes surface we have into another judgment.
+- **Score the performance.** Rejected on ADR-038's own test (above), not by
+  citing a superseded ADR: an unreproducible number is exactly the drifting,
+  chaseable kind ADR-038 kept a number *despite* — and it converts the one
+  low-stakes surface we have into another judgment (pre-mortem #4).
+- **Ban every number, including the progress count.** Rejected — that was this
+  ADR's first draft, and it was wrong. It foreclosed a non-gameable signal on a
+  precedent the repo had already overturned, and left the north-star metric with
+  nothing to measure.
 - **Mid-session function calling to accumulate a structured scorecard.**
   Rejected for v1 — it puts evaluation logic inside an unobservable stream
   (ADR-047), and the transcript already gives us everything after the fact.
@@ -78,8 +107,12 @@ improves the *written* kit — and is scoped separately, not in v1.
   accounting — the expensive part of this feature is the audio, not the analysis.
 - The transcript is a **new data class** (the user's spoken words, verbatim) —
   governed in GOV-008, not here.
-- "No score" will feel like a missing feature to anyone benchmarking us against
-  the category. That is the point, and it is the same call ADR-016 already made.
+- "No performance score" will feel like a missing feature to anyone
+  benchmarking us against the category. That is the point — and it now rests on
+  ADR-038's live test rather than on ADR-016's superseded conclusion.
+- The progress count needs **transcripts from more than one call** to say
+  anything, so it is dark on a first call and must degrade honestly ("first
+  one — nothing to compare yet") rather than showing a lonely "5/5".
 - The debrief's honesty is bounded by transcription quality; accented or noisy
   input degrades it. When transcription is visibly broken, show the transcript
   and skip the analysis rather than analyze garbage.

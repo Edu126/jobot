@@ -1,7 +1,8 @@
 # ADR-050: The interviewer is drawn client-side from played audio; we never send video to Gemini, and ES stays dark until `es-419` is confirmed
 
 Date: 2026-09-16
-Status: Accepted (design)
+Status: Accepted (design) — the 15-min / 2-min session caps this ADR rests on
+are ⚠ snippet-sourced; **gate G4** confirms them before this leaves "design".
 Relates to: REQ-041, ADR-047 (transport), ADR-003 (no build step), ADR-046
 (typography), architecture vision non-negotiable #4 (LatAm-first Spanish),
 research memo Pillar 3
@@ -66,6 +67,12 @@ Research (Pillar 3) turned that preference into a hard constraint:
 
 ## Consequences
 
+- **The avatar may not ship in the first slice at all.** REQ-041's thin slice
+  replaces it with a listening/speaking state indicator, because it is the
+  largest block of net-new client code and it sits downstream of the question
+  that actually decides the feature (will anyone press Start). This ADR stays
+  the design for *when* it ships; a face may also be the wrong thing to show a
+  user on their very first call (REQ-041, Activation).
 - The avatar costs **zero tokens and zero server CPU**. It is pure client
   rendering of bytes already in the browser's audio graph.
 - We inherit a mobile constraint: audio autoplay and mic permission require a

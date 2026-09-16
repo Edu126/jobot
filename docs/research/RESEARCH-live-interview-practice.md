@@ -40,13 +40,13 @@ Mode: deep (4 pillars)
    content engine — `prep_kits.star_qa` already carries the deck kinds Eduardo
    named, already grounded and GOV-005-checked.
 6. **The architecture is cheaper than expected: the audio never touches our
-   server.** The browser connects straight to Gemini over WebSocket using a
-   **server-minted ephemeral token**; `@google/genai` loads from a CDN as an ES
+   server** — ⚠ *on snippet-sourced docs; gates G3/G4.* The browser connects
+   straight to Gemini over WebSocket using a **server-minted ephemeral token**; `@google/genai` loads from a CDN as an ES
    module, so ADR-003's no-build-step rule survives. Our Fly machine mints a
    token and gets out of the way.
 7. **Audio-only is not a simplification — it is the constraint that makes a
-   5-minute call possible.** Session cap is **15 min audio-only vs 2 min with
-   video**. Drawing the avatar client-side from the audio we're already playing
+   5-minute call possible.** Session cap is reportedly **15 min audio-only vs 2
+   min with video** (⚠ unverified, gate G4). Drawing the avatar client-side from the audio we're already playing
    keeps us in the 15-minute lane. Eduardo's instinct was load-bearing.
 8. **~6 cents per 5-minute call** (⚠ modelled from blocked pricing pages)
    against a human coach at $75–225/h. **But whether the Live model exists on
@@ -284,6 +284,45 @@ not a vendor figure.
 | Free-tier status of the Live model unconfirmed | Ship behind a flag that defaults OFF until verified | ADR-051, gate G1 |
 | Live "copilot" backlash is structural (bans, in-person rounds) | No calendar hook, no live-call attach, no overlay — *ever*, by architecture | **GOV-008** |
 
+## What this research pass itself MISSED
+
+*Added 2026-09-16 after an adversarial review of the memo and the ADRs it
+produced. Recording it here because a research practice that never audits its
+own output is just a longer opinion.*
+
+1. **Token config-locking — the biggest miss.** Four pillars and five ADRs went
+   by without anyone asking *who sends the session setup frame*. The answer is
+   the client, which made every cap in ADR-051 advisory and would have put the
+   user's résumé in a devtools tab. Google ships `live_connect_constraints` and
+   a constrained endpoint precisely for this, and the pass never surfaced them.
+   → new **gate G3**; ADR-047 rewritten; ADR-051 rewritten.
+2. **Prompt injection into an unsupervised voice channel.** The pass inventoried
+   the transport and the cost and never asked what a *hostile* job description
+   does when the output is speech instead of JSON. `core/prep/kit.py` doesn't
+   fence its inputs today. → **ADR-052**, and a concrete vishing scenario now in
+   GOV-008.
+3. **A dead precedent, cited as live.** ADR-049 justified "never a score" with
+   ADR-016 — which the repo already superseded with ADR-038. Re-running
+   ADR-038's actual test changed the answer: a *performance* score stays banned,
+   a *progress count* is allowed and wanted.
+4. **Activation was never designed.** The pass found "two-thirds of graduates
+   offered free coaching didn't use it", filed it as a market signal, and then
+   designed six documents about what happens *after* someone presses Start.
+   → REQ-041 gained an activation section and a funnel to instrument.
+5. **No non-voice path**, for a bilingual user base that is the most likely to
+   be self-conscious about being overheard. Live captions were sitting right
+   there in Pillar 3's in-stream transcription and nobody proposed them.
+6. **Session caps and the direct-connect mechanism got no gate**, although they
+   rest on exactly the same blocked-domain snippets as pricing, which did.
+   → **gate G4**.
+
+Two things the review got wrong, worth recording so they aren't re-imported:
+the economic attack burns **the user's own** `GOOGLE_API_KEY` (each beta user
+supplies their own, GOV-001), not the maintainer's; and the audit's claim that
+we miscited ADR-008 "rule 7" was right, while its suggestion that ADR-008 was
+"silently amended" was not — the narrowing is a new ADR (052) with a pointer
+left in the old one, which is the house convention.
+
 ## Decisions to make here (with Eduardo)
 
 **G1 — the $0 gate (blocking, not delegable).** Two numbers decide whether this
@@ -295,6 +334,12 @@ eyeball them. If there is no free tier, this is the **first feature in jobot's
 history that costs money per use** — which is a product decision (a paid tier
 anchor), not an engineering one. Everything below is designed so that answer
 changes a flag, not the architecture.
+
+**G3 — token-bound constraints (blocking).** Can an ephemeral token *lock*
+model, system instruction, modality and tools, or does the client choose them?
+If it cannot, ADR-047 does not hold and the transport must change. **G4 — the
+session caps and the direct-connect mechanism** rest on the same blocked-domain
+snippets and need the same eyeball pass. Both are detailed in REQ-041.
 
 **G2 — `es-419`.** If Google exposes only `es-ES`, a Spanish call ships in
 Spain register and **violates non-negotiable #4**. Verify before enabling ES;

@@ -93,10 +93,14 @@ for why.
 - **The live call is the first non-`generate_content` site (#13).** It is
   streaming, uncacheable, metered per second, and runs on a Live-API model
   outside `DEFAULT_MODEL_CHAIN` — three simultaneous departures from ADR-008's
-  defaults, which is why it required its own ADR (rule 7) before any code.
-  Two facts behind it are **unverified** (the sandbox blocks `ai.google.dev`):
-  the Live model's **free-tier status** and the real **$/1M audio token** rates.
-  Both are gate **G1** in
+  defaults, which is why it required its own ADR before any code, under **rule
+  6** (model-tier override) and this file's own "Adding a new site" step 4 (a
+  new pattern opens an ADR). Rule 7 is what puts it in this table.
+  Four facts behind it are **unverified** (the sandbox blocks `ai.google.dev`):
+  the Live model's **free-tier status**, the real **$/1M audio token** rates,
+  whether **ephemeral tokens can lock the session config** (ADR-047 does not
+  hold without it), and the **15-min / 2-min session caps**.
+  They are gates **G1** and **G3** in
   [the research memo](../research/RESEARCH-live-interview-practice.md); the site
   stays flag-gated OFF until a human confirms them in a browser.
 - **The audio never reaches our server** (ADR-047) — so unlike every other site

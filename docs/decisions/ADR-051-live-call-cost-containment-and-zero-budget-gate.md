@@ -33,13 +33,48 @@ this becomes **the first feature in jobot's history that costs money per use** �
 a product decision (a paid-tier anchor), not an engineering one, and it belongs
 to Eduardo.
 
-**2. Caps are enforced at token-mint time, never mid-stream.** ADR-047 leaves us
-no server-side visibility once the socket is open, so the mint endpoint is the
-*only* enforcement point that exists:
-- **per-user daily call cap** (start: 3/day) — cheaper and kinder than policing
-  session length;
-- **a hard session cap** passed in the session config (5 min for Simulation),
-  well inside the 15-minute audio-only limit;
+**2. Caps are enforced at token-mint time, never mid-stream — and "enforced"
+means bound into the token, not passed beside it.**
+
+*Rewritten 2026-09-16 after adversarial review, which broke the first draft.*
+The original said caps were "enforced at mint time… a hard session cap **passed
+in** the session config". That was wrong in a way worth naming: **the client
+sends the setup frame.** A cap we merely hand to the client is a cap the client
+can ignore — and ADR-047 is explicitly built so we never look again. So:
+
+- **The caps hold only if the token is config-locked** (ADR-047's
+  `live_connect_constraints` clause). **Gate G3.** If tokens cannot bind model,
+  system instruction, modality, tools and duration, then nothing in this ADR is
+  enforceable and the feature needs a different transport — not a stricter
+  sentence.
+- **There is no implementation path today, and the obvious shortcut is a trap.**
+  `core/llm/usage.py::check_and_charge` keeps **one aggregate bucket** keyed
+  `(identity, "any", day)` at `MAX_LLM_CALLS_PER_DAY = 600`; a live call would
+  count as 1 of 600, the same as a free JSON score. Special-casing the model
+  inside that aggregate would let ~200× the modelled dollar exposure through
+  before the aggregate noticed. A live-call cap needs **its own counter**
+  (`live_call_usage(identity, day, calls)`) plus a real concurrency row — new
+  schema, not a flag on old code.
+- **The identity these caps key on is trivially rotatable.**
+  `ui_web/ratelimit.py::get_identity` prefers the `jobot_sid` cookie; a private
+  window mints a fresh one and a fresh bucket. `docs/rate-limiting-quotas.md` §9
+  already says it: *"Don't rate-limit by session cookie alone. Attackers rotate
+  cookies for free."* For a surface metered in real money this must key on
+  something not casually rotatable — `resume_hash` ownership now, the account
+  once auth exists — or the budget must be sized assuming the bypass.
+- **Whose money is at risk:** each beta user supplies **their own**
+  `GOOGLE_API_KEY` to their own Fly app (GOV-001). A runaway session burns *that
+  user's* quota — the same person the feature is for. That is not a reason to
+  relax; it is the reason the cap is a kindness, not a business control.
+
+With those preconditions stated, the caps themselves:
+- **per-user daily call cap** (start: 3/day, in its own counter) — cheaper and
+  kinder than policing session length;
+- **a hard session cap bound into the token** (5 min for Simulation), well
+  inside the ⚠ reported 15-minute audio-only limit;
+- **`response_modalities: ["AUDIO"]` and an empty tools array, both locked** —
+  so a stolen or replayed token cannot become a general-purpose voice+tools
+  Gemini session on the user's key;
 - **one concurrent call per user** — concurrency, not RPM, is the right control
   for long-lived sessions;
 - the existing `check_and_charge` identity accounting is extended to count a
@@ -80,6 +115,10 @@ empty kit.
   a human coach's $75–225/hour).
 - A daily cap of 3 is a guess. It is instrumented from day one so it becomes a
   measurement rather than a guess.
+- **A crashed or backgrounded tab still spends a slot** (we charge at mint), with
+  no debrief to show for it and no "calls remaining" meter to explain the
+  refusal (non-negotiable #2). That is an accepted unfairness, and a
+  `live_call.abandoned` event exists so we can see how often it bites.
 - Live calls are **uncacheable by nature** — the first call site that breaks
   ADR-019's "cache is stability" pattern. Reproducibility moves from the cache to
   the *agenda*: the same kit yields the same questions (ADR-048), even though the
