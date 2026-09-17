@@ -6,17 +6,7 @@
    after each swap). #}
 {% for job in saved_jobs %}
 {# .saved-card = the unit the Alpine after-swap handler counts by data-job-id. #}
-<div class="saved-card"{% if loop.index > 8 %} x-show="showAll" x-cloak{% endif %}>
+<div class="saved-card">
   {% include "partials/job_card.html" %}
 </div>
 {% endfor %}
-{% if saved_jobs | length > 8 %}
-<div class="mt-3" x-show="!showAll">
-  <button type="button"
-          class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
-          @click="showAll = true">
-    {{ _('jobs.show_all_n', n=saved_jobs | length) }}
-    <i class="ph-thin ph-arrow-right i-3"></i>
-  </button>
-</div>
-{% endif %}

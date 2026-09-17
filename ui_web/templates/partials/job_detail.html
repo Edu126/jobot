@@ -2,7 +2,9 @@
    GET /jobs/detail/{id} whenever the user clicks a card on the left. #}
 {% from "macros/ring.html" import score_ring %}
 
-<div class="space-y-5">
+{# .detail-in plays a soft fade+rise each time the pane swaps in (new card
+   selected) so switching jobs feels alive, not a hard content replace. #}
+<div class="space-y-5 detail-in">
 
   {# ── Header: score + title + meta + save ── #}
   <div class="flex items-start gap-3">

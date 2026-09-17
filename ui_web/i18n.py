@@ -203,7 +203,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.view_on": "View on {site}",
         # Jobs page — top-level copy
         "jobs.title": "Jobs",
-        "jobs.subtitle": "Search job boards, see AI-scored matches with reasoning, curate what to apply to.",
+        "jobs.greeting": "Hi, {name}",
+        "jobs.greeting_generic": "Hi there 👋",
+        "jobs.subtitle": "Let's find your next role.",
         "jobs.tab.broad": "Broad",
         "jobs.tab.broad_full": "Broad search",
         "jobs.tab.individual": "Individual",
@@ -213,9 +215,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.analyze": "Analyze",
         "jobs.form.location_placeholder": "City, region, country",
         "jobs.form.job_placeholder_first": "Job title (e.g. Revit specialist)",
-        "jobs.form.job_placeholder_first_generic": "Job title",
-        "jobs.form.job_placeholder_first_personal": "Job title (e.g. {role})",
+        "jobs.form.job_placeholder_first_generic": "Type a role to search — e.g. Data Analyst, BI Developer…",
+        "jobs.form.job_placeholder_first_personal": "Type a role to search — e.g. {role}…",
         "jobs.form.job_placeholder_more": "Another job title (e.g. BIM Modeler)",
+        # Broad-search chip field (roles as removable tokens, up to 3)
+        "jobs.form.roles_label": "Roles to search",
+        "jobs.form.roles_draft_placeholder_more": "Add another role…",
+        "jobs.form.remove_role": "Remove role",
         # Loading stages (longOp overlay text) — broad search / multi-run / URL import
         "jobs.stages.search.starting": "Starting the search…",
         "jobs.stages.search.linkedin": "Scanning LinkedIn postings…",
@@ -341,6 +347,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.quick_fill.label": "Quick fill:",
         "jobs.quick_fill.shuffle": "Shuffle",
         "jobs.quick_fill.no_suggestions": "No suggestions yet — upload a resume to unlock these.",
+        # For you — role-fit suggestions (relocated quick-fill), below the search card
+        "jobs.for_you.title": "For you",
+        "jobs.for_you.finding": "Finding job titles that match your resume…",
+        "jobs.scroll_cue": "Your matches, just below",
         # Jobs page — recent + top matches
         "jobs.recent.title": "Recent searches",
         "jobs.recent.cached": "{n} cached",
@@ -678,7 +688,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.view_on": "Ver en {site}",
         # Página de empleos
         "jobs.title": "Empleos",
-        "jobs.subtitle": "Busca ofertas, revisa coincidencias puntuadas por IA con reasoning, y decide a cuáles postular.",
+        "jobs.greeting": "Hola, {name}",
+        "jobs.greeting_generic": "Hola 👋",
+        "jobs.subtitle": "Busquemos tu próxima posición.",
         "jobs.tab.broad": "Amplia",
         "jobs.tab.broad_full": "Búsqueda amplia",
         "jobs.tab.individual": "Individual",
@@ -688,9 +700,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "action.analyze": "Analizar",
         "jobs.form.location_placeholder": "Ciudad, región, país",
         "jobs.form.job_placeholder_first": "Puesto (ej. Especialista en Revit)",
-        "jobs.form.job_placeholder_first_generic": "Puesto",
-        "jobs.form.job_placeholder_first_personal": "Puesto (ej. {role})",
+        "jobs.form.job_placeholder_first_generic": "Escribe un rol a buscar — ej. Analista de Datos, BI Developer…",
+        "jobs.form.job_placeholder_first_personal": "Escribe un rol a buscar — ej. {role}…",
         "jobs.form.job_placeholder_more": "Otro puesto (ej. Modelador BIM)",
+        # Campo de chips de la búsqueda amplia (roles como tokens removibles, hasta 3)
+        "jobs.form.roles_label": "Roles a buscar",
+        "jobs.form.roles_draft_placeholder_more": "Añade otro rol…",
+        "jobs.form.remove_role": "Quitar rol",
         # Etapas de carga (texto del overlay longOp) — búsqueda / múltiple / URL
         "jobs.stages.search.starting": "Iniciando la búsqueda…",
         "jobs.stages.search.linkedin": "Explorando ofertas en LinkedIn…",
@@ -816,6 +832,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.quick_fill.label": "Autollenar:",
         "jobs.quick_fill.shuffle": "Barajar",
         "jobs.quick_fill.no_suggestions": "Sin sugerencias todavía — sube tu currículum para desbloquearlas.",
+        # Para ti — sugerencias role-fit (quick-fill relocalizado), bajo el search card
+        "jobs.for_you.title": "Para ti",
+        "jobs.for_you.finding": "Buscando puestos que encajan con tu currículum…",
+        "jobs.scroll_cue": "Tus coincidencias, aquí abajo",
         # Recientes + top matches
         "jobs.recent.title": "Búsquedas recientes",
         "jobs.recent.cached": "{n} en caché",

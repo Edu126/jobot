@@ -3,17 +3,24 @@
    swaps). We swap this fragment INTO it via hx-swap=innerHTML.
 
    mousedown (not click) so the fill fires BEFORE the input's blur
-   hides the dropdown. Requires: items (list[str]), idx, kind. #}
+   hides the dropdown. Requires: items, idx, kind.
+
+   items can be either plain strings (geocode/location) OR dicts
+   {value, recent} (job-title search-suggest). Recent rows (search history)
+   get a leading clock glyph — Chrome-omnibox style — so the user knows
+   which suggestions come from what they've searched before. #}
 {% if items %}
 <ul class="typeahead-list">
   {% for item in items %}
+  {% set val = item.value if item is mapping else item %}
+  {% set is_recent = item.recent if item is mapping else False %}
   <li>
     <button type="button"
-            class="typeahead-item"
+            class="typeahead-item{% if is_recent %} typeahead-item--recent{% endif %}"
             tabindex="-1"
             @mousedown.prevent="fillTypeahead('{{ kind }}', '{{ idx }}', $el.dataset.value)"
-            data-value="{{ item }}">
-      {{ item }}
+            data-value="{{ val }}">
+      {% if is_recent %}<i class="ph-thin ph-clock-counter-clockwise" style="margin-right:8px;color:oklch(55% 0.02 265);"></i>{% endif %}{{ val }}
     </button>
   </li>
   {% endfor %}

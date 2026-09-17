@@ -13,7 +13,7 @@
    contain interactive descendants, and this one holds the save button
    and the mobile action row. Proper fix is to make the title the single
    focusable control; deferred rather than pretended away. #}
-<article class="card-quiet cursor-pointer transition-shadow job-swipeable scroll-mt-20 relative"
+<article class="job-card cursor-pointer transition-shadow job-swipeable scroll-mt-20 relative"
          data-job-id="{{ job.id }}"
          tabindex="0"
          role="option"
@@ -36,19 +36,19 @@
             the user is currently reading would lose their place). #}
          style="opacity: 0.72;"
          {% endif %}
-         :class="$store.selectedJob.id === '{{ job.id }}' ? 'card-quiet--selected' : ''"
+         :class="$store.selectedJob.id === '{{ job.id }}' ? 'job-card--selected' : ''"
          @click="$store.selectedJob.select('{{ job.id }}')"
          x-show="$store.filters.visibleIn(jobs, '{{ job.id }}')">
 
   {# Score ring pinned to top-right corner.
      pr-14 on the body keeps the title from underlapping the ring. #}
-  <div class="absolute top-4 right-4">
+  <div class="absolute top-3 right-3">
     {% include "partials/score_badge.html" %}
   </div>
 
   {# Body — right-padded so title never overlaps the score ring. #}
-  <div class="pr-14">
-    <h3 class="text-base font-semibold tracking-tight leading-snug line-clamp-2">{{ job.title }}</h3>
+  <div class="pr-12">
+    <h3 class="text-[0.95rem] font-semibold tracking-tight leading-snug line-clamp-2">{{ job.title }}</h3>
     <div class="text-sm text-body-muted mt-0.5">
       <span class="font-medium text-base-content/80">{{ job.company }}</span>
       <span class="text-base-content/30 mx-1">·</span>{{ job.location or '?' }}
@@ -65,7 +65,7 @@
        "you already opened this" signals become noise. Per user
        feedback 2026-08-21 ("deberia reemplazar el new/viewed"). #}
     {% if job._is_applied or job._is_new or job._is_new_since_expand or job._is_viewed or job._is_dismissed or job._experience or job.is_remote or job.min_salary or job._source_label %}
-    <div class="flex flex-wrap gap-1.5 mt-2">
+    <div class="flex flex-wrap gap-1.5 mt-1.5">
       {% if job._is_applied %}
       {# Green + filled check = "you tracked this one." Replaces
          New/Viewed since those are irrelevant once you've applied. #}
@@ -87,8 +87,8 @@
         {# New and Viewed are mutually exclusive: once you've opened a job it
            isn't "new" to you anymore, so Viewed wins and we suppress New. #}
         {% if job._is_new and not job._is_viewed %}
-        <span class="chip chip-accent inline-flex items-center gap-1" title="First seen in the last 48 hours">
-          <i class="ph-fill ph-sparkle i-3"></i>{{ _('chip.new') }}
+        <span class="chip chip-accent inline-flex items-center gap-1.5" title="First seen in the last 48 hours">
+          <span class="inline-block w-1.5 h-1.5 rounded-full" style="background: currentColor;"></span>{{ _('chip.new') }}
         </span>
         {% endif %}
         {% if job._is_viewed %}

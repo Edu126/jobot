@@ -385,12 +385,15 @@ async def api_geocode(request: Request):
 
 @router.get("/api/search-suggest")
 async def api_search_suggest(request: Request):
-    """Job-title typeahead — same dropdown pattern as geocode. Pulls from
-    three LOCAL sources (prefix match, case-insensitive, cap 5):
-      1. Saved searches — the user's own explicit picks (highest signal)
-      2. Recent scrape queries from data/jobs_cache/*.json (what they ran)
-      3. AI-generated suggestions cached per resume (lowest signal)
-    Zero LLM calls; deterministic; instant."""
+    """Job-title typeahead — Chrome-omnibox style: merges the user's search
+    HISTORY with title suggestions in one dropdown, and history rows are tagged
+    so the template can show a clock glyph. Sources (case-insensitive, cap 6):
+      1. Saved searches            → recent=True  (clock)
+      2. Recent scrape queries      → recent=True  (clock)
+      3. AI-generated suggestions   → recent=False (only while typing)
+    On empty focus we show pure history (like the omnibox); AI suggestions join
+    only once the user starts typing (they also live in the "For you" chips).
+    Items are dicts {value, recent}. Zero LLM calls; deterministic; instant."""
     import json as _json
 
     # Query inputs have name="queries" so HTMX auto-includes them. When
@@ -399,25 +402,28 @@ async def api_search_suggest(request: Request):
     values = request.query_params.getlist("queries") or request.query_params.getlist("q")
     prefix = (values[-1] if values else "").strip().lower()[:60]
     idx = "0"
-    if len(prefix) < 1:
-        return HTMLResponse("", status_code=200)
+    CAP = 6
 
     seen: set[str] = set()
-    items: list[str] = []
+    items: list[dict] = []
 
-    def _add(candidate: str) -> None:
+    def _add(candidate: str, recent: bool) -> None:
         c = (candidate or "").strip()
-        if not c or c.lower() in seen or not c.lower().startswith(prefix):
+        if not c or c.lower() in seen:
+            return
+        # Empty prefix (focus) → no filter, show history; else prefix-match.
+        if prefix and not c.lower().startswith(prefix):
             return
         seen.add(c.lower())
-        items.append(c)
+        items.append({"value": c, "recent": recent})
 
+    # History first — saved searches, then recent scrape queries.
     for s in db.list_saved_searches():
-        _add(s.get("query") or "")
-        if len(items) >= 5:
+        _add(s.get("query") or "", True)
+        if len(items) >= CAP:
             break
 
-    if len(items) < 5:
+    if len(items) < CAP:
         for path in sorted(
             jobs_cache.CACHE_DIR.glob("*.json"),
             key=lambda p: p.stat().st_mtime,
@@ -426,26 +432,31 @@ async def api_search_suggest(request: Request):
             try:
                 data = _json.loads(path.read_text(encoding="utf-8"))
                 params = data.get("params") or {}
-                _add(params.get("query", ""))
-                if len(items) >= 5:
+                _add(params.get("query", ""), True)
+                if len(items) >= CAP:
                     break
             except Exception:
                 continue
 
-    if len(items) < 5:
+    # AI title suggestions — only while typing (on empty focus we keep it to
+    # pure history; the AI picks are surfaced separately as "For you" chips).
+    if prefix and len(items) < CAP:
         resume = db.get_current_resume()
         if resume:
             from core import settings as app_settings
             cached = db.get_cached_suggestions(int(resume["id"]), app_settings.get_output_language())
             for q in (cached or {}).get("queries", []) or []:
-                _add(q)
-                if len(items) >= 5:
+                _add(q, False)
+                if len(items) >= CAP:
                     break
+
+    if not items:
+        return HTMLResponse("", status_code=200)
 
     return templates.TemplateResponse(
         request,
         "partials/typeahead_dropdown.html",
-        {"items": items[:5], "idx": idx, "kind": "q"},
+        {"items": items[:CAP], "idx": idx, "kind": "q"},
     )
 
 
@@ -522,6 +533,16 @@ async def jobs_landing(request: Request):
     # server-rendered and toggled client-side with Alpine x-show.
     saved_jobs = _list_saved_jobs()
 
+    # Greeting name — first name from the current résumé's contact (authoritative
+    # identity field). Empty string when there's no résumé yet; the template
+    # falls back to a name-less greeting.
+    _contact = (resume.get("parsed", {}) or {}).get("contact", {}) if resume else {}
+    _full_name = (_contact.get("name") or "").strip()
+    _first = _full_name.split()[0] if _full_name else ""
+    # Résumé headers are often ALL-CAPS; normalise so the greeting reads
+    # "Eduardo" not "EDUARDO". Preserve intentional mixed-case (e.g. "McKenzie").
+    greeting_name = _first.title() if (_first.isupper() or _first.islower()) else _first
+
     return templates.TemplateResponse(
         request,
         "pages/jobs.html",
@@ -537,6 +558,7 @@ async def jobs_landing(request: Request):
             "cache_count": cache_count,
             "resume_role_label": resume_role_label,
             "saved_jobs": saved_jobs,
+            "greeting_name": greeting_name,
         },
     )
 

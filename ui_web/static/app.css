@@ -232,6 +232,97 @@ h4 {
     0 12px 30px -18px oklch(var(--p) / 0.35);
 }
 
+/* Job result cards (master-detail rail: Top matches / Saved / results page).
+   Inverted selection model: UNSELECTED cards recede as a calm grey surface;
+   the SELECTED card turns pure white and lifts, so it reads as one continuous
+   white plane with the (white) detail pane on the right — visual congruency.
+   A green accent bar on the leading edge marks the selection without a boxy
+   ring. */
+/* The whole Top matches / Saved workspace (list + detail) sits on ONE soft panel
+   so the section reads as a single grouped surface. It's a DEEPER shade of the
+   linen page in the SAME warm hue (not a cold grey — that read as ugly) so the
+   white cards + detail lift cleanly off it and everything feels congruent. */
+.results-panel {
+  background: oklch(93.4% 0.008 92);
+  border: 1px solid oklch(var(--b3) / 0.7);
+  border-radius: calc(var(--rounded-box) + 4px);
+  padding: 1rem;
+}
+
+/* Job cards — compact, borderless tiles on the warm results panel. Clear
+   hierarchy: the panel is the bordered container (larger radius); cards are
+   borderless (smaller radius), so no box-in-box. UNSELECTED rest MUTED (a
+   deeper shade of the warm hue) so they recede into the panel; the SELECTED
+   one turns pure white, lifts, and carries a green leading accent bar. */
+.job-card {
+  background: oklch(95.3% 0.005 92);          /* muted — recedes into the panel */
+  border: none;
+  border-radius: 0.6rem;
+  padding: 0.85rem 1rem;
+  box-shadow: none;
+  transition: background .18s ease, box-shadow .24s ease, transform .18s ease;
+}
+.job-card:hover {
+  background: oklch(97.6% 0.003 92);          /* brightens toward white — "about to pick" */
+  transform: translateY(-1px);                /* subtle lift = alive/interactive */
+}
+.job-card--selected,
+.job-card--selected:hover {
+  background: oklch(var(--b1));               /* pure white — the only bright tile */
+  transform: none;
+  box-shadow:
+    0 1px 0 oklch(var(--a) / 0.05),
+    0 12px 28px -18px oklch(var(--p) / 0.38);
+}
+/* Green accent bar is always present but collapsed; it GROWS in when the card
+   becomes selected, so the selection has a bit of motion. */
+.job-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: oklch(var(--p));
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform .22s ease;
+}
+.job-card--selected::before { transform: scaleY(1); }
+
+/* Detail pane entrance — soft fade + slide IN FROM THE LEFT, following the
+   card→detail flow direction (the content feels like it comes from the card
+   you clicked on the left), not a top-down drop. */
+@keyframes detailIn {
+  from { opacity: 0; transform: translateX(-14px); }
+  to   { opacity: 1; transform: none; }
+}
+.detail-in { animation: detailIn .3s cubic-bezier(.22,.61,.36,1); }
+
+/* Scroll cue between the search zone and the results — a gently bouncing
+   chevron that invites the user to keep going. Understated on purpose. */
+@keyframes cueBounce {
+  0%, 100% { transform: translateY(0);   opacity: .55; }
+  50%      { transform: translateY(4px); opacity: 1;   }
+}
+.scroll-cue__chevron {
+  font-size: 1.15rem;
+  animation: cueBounce 1.7s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scroll-cue__chevron { animation: none; }
+}
+
+/* The one-screen results section (results-screen) has inner-scrolling panes.
+   Allow scroll to CHAIN out of a pane back to the document once the pane hits
+   its edge — otherwise `overscroll-behavior: contain` (set globally on
+   .workspace-pane) traps the wheel inside a pane and you can't scroll back up
+   to the search zone with the cursor over the list/detail. */
+@media (min-width: 1024px) {
+  .results-screen .workspace-pane { overscroll-behavior: auto; }
+}
+
 /* Closed statuses (rejected/withdrawn) — denser, muted, less prominent. */
 .card-compact-closed {
   padding: 1rem 1.25rem;
@@ -991,6 +1082,46 @@ html, body {
    ───────────────────────────────────────────────────────────── */
 .typeahead-wrap {
   position: relative;
+}
+
+/* Underline mini-tabs — sub-section switch (Top matches / Saved) on the Jobs
+   landing. Lighter + smaller than the main nav underline so the hierarchy
+   reads: big nav underline up top, small section switch down here. */
+.utabs { display: inline-flex; gap: 1.5rem; }
+.utab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-bottom: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: oklch(var(--bc) / 0.5);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease;
+}
+.utab:hover { color: oklch(var(--bc) / 0.8); }
+.utab--active {
+  color: oklch(var(--bc));
+  border-bottom-color: oklch(var(--p));
+}
+.utab__count {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: oklch(var(--bc) / 0.4);
+}
+.utab--active .utab__count { color: oklch(var(--a)); }
+
+/* Airline-style connected search bar (Jobs landing). Soft focus-within ring so
+   the whole bar lights up when any segment (roles / location) is focused. */
+.jobot-searchbar {
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.jobot-searchbar:focus-within {
+  border-color: oklch(var(--p) / 0.45);
+  box-shadow: 0 0 0 3px oklch(var(--p) / 0.10);
 }
 .typeahead-dropdown {
   position: absolute;

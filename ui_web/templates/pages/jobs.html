@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Jobs — Jobot{% endblock %}
 {% block container_class %}max-w-7xl{% endblock %}
+{# Tighter top padding than the global py-16 — that 4rem of dead space above the
+   greeting was too much. See memory note: py-16 is heavy on every page. #}
+{% block main_class %}pt-8 pb-16 lg:pb-0{% endblock %}
+{# No footer on /jobs — the results split IS the end of the page (user: "results
+   should be the end of the page, no footer"). #}
+{% block footer %}{% endblock %}
 
 {% block content %}
 
@@ -38,7 +44,7 @@
 </script>
 
 <div class="mb-6 space-y-2">
-  <h1 class="text-display">{{ _('jobs.title') }}</h1>
+  <h1 class="text-display">{% if greeting_name %}{{ _('jobs.greeting', name=greeting_name) }}{% else %}{{ _('jobs.greeting_generic') }}{% endif %}</h1>
   <p class="text-body-muted">{{ _('jobs.subtitle') }}</p>
 </div>
 
@@ -92,7 +98,12 @@
     <div x-show="mode === 'search'"
          x-data="{
            ...longOp(window.__JOBOT_STAGES_MULTI, 'Search'),
-           queries: [{value: ''}],
+           /* Broad search is a chip/token field: `roles` holds committed titles
+              (rendered as removable chips + hidden name=queries inputs), `draft`
+              is the text being typed in the live input. Up to 3 roles, searched
+              together (backend /jobs/run/multi merges them). */
+           roles: [],
+           draft: '',
            locationValue: '{{ (get_setting("home_city") or "Ottawa, Ontario, Canada") | replace("'", "\\'") }}',
            /* Single string tracks which typeahead is open: '' | 'loc' | 'q-N'.
               Simpler than a reactive object with dynamic keys — no Alpine
@@ -164,36 +175,31 @@
            },
            setTypeaheadFocus(key)   { this.typeaheadFocus = key; },
            clearTypeaheadFocus()    { setTimeout(() => { this.typeaheadFocus = ''; }, 150); },
-           addQuery() { if (this.queries.length < 3) this.queries.push({value: ''}); },
-           removeQuery(idx) { if (this.queries.length > 1) this.queries.splice(idx, 1); },
-           fillFrom(text) { this.queries[0].value = text; },
+           /* Effective query count for the button label / note: committed chips
+              plus the uncommitted draft (which submits as its own query). */
+           get queryCount() {
+             return Math.min(3, this.roles.length + (this.draft.trim() ? 1 : 0));
+           },
+           addRole(text) {
+             const v = (text || '').trim();
+             if (!v || this.roles.length >= 3) return;
+             if (this.roles.some(r => r.toLowerCase() === v.toLowerCase())) {
+               this.draft = ''; this.typeaheadFocus = ''; return;
+             }
+             this.roles.push(v);
+             this.draft = '';
+             this.typeaheadFocus = '';
+           },
+           commitDraft() { if (this.draft.trim()) this.addRole(this.draft); },
+           removeRole(idx) { this.roles.splice(idx, 1); },
+           /* Backspace on an empty draft deletes the last chip. */
+           removeLast() { if (!this.draft && this.roles.length) this.roles.pop(); },
            fillTypeahead(kind, idx, value) {
              if (kind === 'loc') this.locationValue = value;
-             else                this.queries[Number(idx)].value = value;
+             else                this.addRole(value);
              this.typeaheadFocus = '';
            },
          }">
-
-      {# Quick fill — AI-only chips from the user's resume. Sparkle icon
-         is the visual marker. When the AI cache is empty on first Jobs
-         visit AND we have both a resume + API key, auto-fetch the
-         suggestions (hx-trigger=load) so the user sees relevant chips
-         without having to click Shuffle first. #}
-      {% if quick_fill_needs_fetch %}
-      {# Hidden on mobile — quick-fill chips would dominate the phone
-         viewport; typeahead autocomplete covers the discovery flow. #}
-      <div class="hidden md:flex items-center gap-2 mb-3" id="quick-fill-row"
-           hx-get="/jobs/quick-fill?force=1"
-           hx-trigger="load"
-           hx-swap="outerHTML">
-        <span class="text-xs text-body-muted inline-flex items-center gap-2">
-          <span class="loading loading-spinner loading-xs"></span>
-          Finding job titles that match your resume…
-        </span>
-      </div>
-      {% else %}
-        {% include "partials/quick_fill_row.html" %}
-      {% endif %}
 
       {# Filter htmx:before-request to ONLY the form's own submit — otherwise
          the typeahead requests on input children bubble up and trigger the
@@ -210,114 +216,150 @@
             @htmx:before-request="if ($event.target === $event.currentTarget) { start(); document.getElementById('search-feedback').innerHTML = '' }"
             @htmx:after-request="if ($event.target === $event.currentTarget) { stop($event) }">
 
-        {# Job title inputs stack vertically. `× remove` button sits inline
-           for rows after the first. Full-width typeahead per row. #}
-        <template x-for="(q, idx) in queries" :key="idx">
-          <div class="flex gap-2 items-stretch" :class="idx === 0 ? '' : 'mt-2'">
-            <div class="typeahead-wrap flex-1">
+        {# Roles chip field — type a title + Enter (or pick a suggestion) turns
+           it into a removable chip. Up to 3, searched together. Makes "search
+           several roles at once" obvious (vs the old lone input + tiny link).
+
+           Contract: each committed chip emits a hidden <input name="queries">,
+           and the live draft input is ALSO name="queries" and LAST in the DOM.
+           So (a) /api/search-suggest reads the draft as the prefix (getlist
+           last), (b) any uncommitted draft text still submits as a query
+           (server strips empties + caps at 3), (c) backend /jobs/run/multi is
+           unchanged. Draft input hides once 3 chips exist → never a 4th query. #}
+        {# ═══ CONNECTED SEARCH BAR — airline-style: roles · location · Buscar as
+           one unit; stacks on mobile. Roles is a chip/token field (type → Enter
+           or pick a suggestion → removable coral chip, up to 3). Its dropdown
+           merges search HISTORY (clock glyph) with title suggestions. Each chip
+           emits a hidden name="queries"; the draft input is also name="queries"
+           and last in the segment, so /api/search-suggest reads it as the prefix
+           and uncommitted text still submits. Backend contract unchanged. ═══ #}
+        <div class="jobot-searchbar flex flex-col md:flex-row md:items-stretch rounded-2xl border border-base-300 bg-base-100">
+
+          {# ── Roles segment (relative = anchor for the merged dropdown). No label
+             row — the descriptive placeholder carries the meaning and keeps the
+             bar short; a tiny N/3 counter rides at the end of the chip row. ── #}
+          <div class="flex-1 min-w-0 px-4 py-3 relative">
+            <div class="flex flex-wrap items-center gap-2"
+                 @click="$refs.draftInput && $refs.draftInput.focus()">
+              <template x-for="(role, idx) in roles" :key="role">
+                <span class="chip chip-accent inline-flex items-center gap-1">
+                  <span x-text="role"></span>
+                  <input type="hidden" name="queries" :value="role">
+                  <button type="button"
+                          @click.stop="removeRole(idx)"
+                          class="cursor-pointer opacity-60 hover:opacity-100"
+                          :aria-label="`{{ _('jobs.form.remove_role') }}: ${role}`">
+                    <i class="ph-thin ph-x i-3"></i>
+                  </button>
+                </span>
+              </template>
               <input type="text" name="queries"
-                     x-model="queries[idx].value"
-                     {# First-row placeholder personalises to the user's
-                        actual role when their resume has been AI-summarised.
-                        Falls back to the generic label otherwise. Mehran
-                        2026-08-25: generic "Especialista en Revit" reads
-                        as AEC-biased for non-AEC users. #}
-                     :placeholder="idx === 0 ? '{% if resume_role_label %}{{ _('jobs.form.job_placeholder_first_personal', role=resume_role_label) }}{% else %}{{ _('jobs.form.job_placeholder_first_generic') }}{% endif %}' : '{{ _('jobs.form.job_placeholder_more') }}'"
-                     required
+                     x-ref="draftInput"
+                     x-model="draft"
+                     x-show="roles.length < 3"
+                     :placeholder="roles.length === 0
+                       ? '{% if resume_role_label %}{{ _('jobs.form.job_placeholder_first_personal', role=resume_role_label) }}{% else %}{{ _('jobs.form.job_placeholder_first_generic') }}{% endif %}'
+                       : '{{ _('jobs.form.roles_draft_placeholder_more') }}'"
                      :disabled="running"
                      autocomplete="off"
                      spellcheck="false"
-                     :id="`q-input-${idx}`"
+                     id="q-input"
                      hx-get="/api/search-suggest"
                      hx-trigger="keyup changed delay:120ms, focus"
                      hx-sync="this:replace"
-                     :hx-target="`#q-drop-${idx}`"
+                     hx-target="#q-drop"
                      hx-swap="innerHTML"
-                     @focus="setTypeaheadFocus(`q-${idx}`)"
+                     @keydown.enter.prevent="commitDraft()"
+                     @keydown.backspace="removeLast()"
+                     @focus="setTypeaheadFocus('q')"
+                     {# Re-open the merged dropdown while typing even after a pick
+                        reset the focus flag (the input never blurred). #}
+                     @input="setTypeaheadFocus('q')"
                      @blur="clearTypeaheadFocus()"
-                     class="typeahead-input input input-bordered w-full">
-              <div :id="`q-drop-${idx}`"
-                   x-show="typeaheadFocus === `q-${idx}`" x-cloak
-                   class="typeahead-dropdown"></div>
+                     class="typeahead-input flex-1 min-w-[8rem] bg-transparent border-0 p-0 focus:outline-none">
+              {# Tiny counter rides at the end of the chip row, only once roles exist. #}
+              <span class="shrink-0 text-xs text-body-muted" x-show="roles.length > 0" x-cloak
+                    x-text="`${roles.length}/3`"></span>
             </div>
-            <template x-if="idx > 0">
-              <button type="button" @click="removeQuery(idx)"
-                      class="btn btn-ghost text-base-content/40 hover:text-error shrink-0"
-                      title="Remove this query"><i class="ph-thin ph-x i-4"></i></button>
-            </template>
+            {# Merged dropdown — anchored to the segment so it spans its width. #}
+            <div id="q-drop"
+                 x-show="typeaheadFocus === 'q'" x-cloak
+                 class="typeahead-dropdown"></div>
           </div>
-        </template>
 
-        {# Add-another-job link — BEFORE the location field so the mental
-           model is "list all the roles I care about → then pick where →
-           then run." User-flagged reorder from an earlier layout that put
-           this after the location. #}
-        <div class="mt-3">
-          <button type="button"
-                  @click="addQuery()"
-                  x-show="queries.length < 3 && !running"
-                  class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
-                  style="min-height: 44px;">
-            <span x-text="`+ {{ _('jobs.form.add_another_short') }} (${queries.length}/3)`"></span>
+          {# divider — vertical between segments on desktop, horizontal on mobile #}
+          <div class="hidden md:block w-px bg-base-300 self-stretch"></div>
+          <div class="md:hidden h-px bg-base-300 mx-4"></div>
+
+          {# ── Location segment ── #}
+          <div class="px-4 py-3 md:w-60 shrink-0 typeahead-wrap flex items-center gap-2">
+            <i class="ph-thin ph-map-pin i-4 shrink-0" style="color:oklch(45% 0.02 265);"></i>
+            <input type="text" name="location"
+                   x-model="locationValue"
+                   placeholder="{{ _('jobs.form.location_placeholder') }}"
+                   :disabled="running"
+                   autocomplete="off"
+                   spellcheck="false"
+                   id="loc-input"
+                   hx-get="/api/geocode"
+                   hx-trigger="keyup changed delay:150ms, focus"
+                   hx-sync="this:replace"
+                   hx-target="#loc-drop-remote"
+                   hx-swap="innerHTML"
+                   @htmx:after-swap="dedupePhoton()"
+                   @focus="setTypeaheadFocus('loc')"
+                   @blur="clearTypeaheadFocus()"
+                   class="typeahead-input w-full bg-transparent border-0 p-0 focus:outline-none">
+            <div id="loc-drop"
+                 x-show="typeaheadFocus === 'loc' && (localLocMatches.length > 0 || remoteCount > 0)"
+                 x-cloak
+                 class="typeahead-dropdown">
+              <ul x-show="localLocMatches.length > 0" class="typeahead-list">
+                <template x-for="item in localLocMatches" :key="item">
+                  <li>
+                    <button type="button" class="typeahead-item" tabindex="-1"
+                            @mousedown.prevent="fillTypeahead('loc', 0, $el.dataset.value)"
+                            :data-value="item" x-text="item"></button>
+                  </li>
+                </template>
+              </ul>
+              <div id="loc-drop-remote"></div>
+            </div>
+          </div>
+
+          {# ── Run — right cap on desktop, full-width bottom on mobile ── #}
+          <button type="submit"
+                  :disabled="running || (roles.length === 0 && !draft.trim())"
+                  class="btn btn-primary cursor-pointer rounded-none rounded-b-2xl md:rounded-b-none md:rounded-r-2xl px-7 shrink-0 md:h-auto border-0">
+            <span x-text="queryCount > 1
+                          ? `{{ _('action.run_n_searches', n='__N__') }}`.replace('__N__', queryCount)
+                          : '{{ _('action.run_search') }}'"></span>
           </button>
-          <span x-show="queries.length >= 3 && !running" class="text-xs text-body-muted">
-            Max 3 queries per run (rate-limit safety).
-          </span>
-        </div>
-
-        {# Location typeahead — its own full-width row. Applies to every
-           job title above. #}
-        <div class="mt-3 typeahead-wrap">
-          <input type="text" name="location"
-                 x-model="locationValue"
-                 placeholder="{{ _('jobs.form.location_placeholder') }}"
-                 :disabled="running"
-                 autocomplete="off"
-                 spellcheck="false"
-                 id="loc-input"
-                 hx-get="/api/geocode"
-                 hx-trigger="keyup changed delay:150ms, focus"
-                 hx-sync="this:replace"
-                 hx-target="#loc-drop-remote"
-                 hx-swap="innerHTML"
-                 @htmx:after-swap="dedupePhoton()"
-                 @focus="setTypeaheadFocus('loc')"
-                 @blur="clearTypeaheadFocus()"
-                 class="typeahead-input input input-bordered w-full">
-          {# Dual-container dropdown: Alpine renders instant local (CA) matches
-             above, HTMX renders Photon results below. Divider only shows when
-             both are non-empty. Dedupe happens client-side post-swap. #}
-          <div id="loc-drop"
-               x-show="typeaheadFocus === 'loc' && (localLocMatches.length > 0 || remoteCount > 0)"
-               x-cloak
-               class="typeahead-dropdown">
-            <ul x-show="localLocMatches.length > 0" class="typeahead-list">
-              <template x-for="item in localLocMatches" :key="item">
-                <li>
-                  <button type="button" class="typeahead-item" tabindex="-1"
-                          @mousedown.prevent="fillTypeahead('loc', 0, $el.dataset.value)"
-                          :data-value="item" x-text="item"></button>
-                </li>
-              </template>
-            </ul>
-            <div id="loc-drop-remote"></div>
-          </div>
-        </div>
-
-        {# Run search button — full-width on mobile so it's obviously the
-           primary action; auto-width from md up. #}
-        <button type="submit"
-                :disabled="running"
-                class="btn btn-primary cursor-pointer w-full md:w-auto md:min-w-[10rem] mt-4">
-          <span x-text="queries.length > 1
-                        ? `{{ _('action.run_n_searches', n='__N__') }}`.replace('__N__', queries.length)
-                        : '{{ _('action.run_search') }}'"></span>
-        </button>
-
-        <div x-show="queries.length > 1" x-cloak class="text-xs text-body-muted mt-2">
-          Sequential — each ~60s, 8s cooldown between to avoid rate-limits. Results merged into one entry.
         </div>
       </form>
+
+      {# ── FOR YOU — AI role-fit suggestions, INSIDE the card, title inline with
+         the chips (no subtitle — it's self-explanatory). Not cached (live from
+         the résumé; caching = future arch). We're inside Panel A's scope now, so
+         a clicked chip calls addRole() directly. Gated on has_resume. ── #}
+      {% if has_resume %}
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <span class="text-label inline-flex items-center gap-1.5 shrink-0">
+          <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i>{{ _('jobs.for_you.title') }}
+        </span>
+        {% if quick_fill_needs_fetch %}
+        <span id="quick-fill-row"
+              hx-get="/jobs/quick-fill?force=1"
+              hx-trigger="load"
+              hx-swap="outerHTML"
+              class="text-xs text-body-muted inline-flex items-center gap-2">
+          <span class="loading loading-spinner loading-xs"></span>{{ _('jobs.for_you.finding') }}
+        </span>
+        {% else %}
+          {% include "partials/quick_fill_row.html" %}
+        {% endif %}
+      </div>
+      {% endif %}
     </div>
 
     {# ─── PANEL B: targeted analysis (URL) ─── #}
@@ -354,39 +396,13 @@
   </div>
 </section>
 
-{# ═══ RECENT — its own row below, full width ═══ #}
-{% if recent %}
-<section class="mb-8" x-data="{ expanded: false }">
-  <div class="flex items-baseline justify-between mb-3">
-    <div class="text-label">{{ _('jobs.recent.title') }}</div>
-    {% if recent %}
-    <span class="text-xs text-base-content/50">{{ _('jobs.recent.cached', n=recent|length) }}</span>
-    {% endif %}
-  </div>
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-    {% for r in recent[:6] %}
-      {% include "partials/recent_row.html" %}
-    {% endfor %}
-  </div>
-  {% if recent | length > 6 %}
-  <div x-show="expanded" x-cloak x-collapse class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-    {% for r in recent[6:] %}
-      {% include "partials/recent_row.html" %}
-    {% endfor %}
-  </div>
-  <button @click="expanded = !expanded"
-          class="text-sm text-base-content/60 hover:text-base-content cursor-pointer pt-2 inline-flex items-center gap-1">
-    <template x-if="!expanded"><span><i class="ph-thin ph-caret-down i-3"></i> {{ _('action.show_more', n=recent|length - 6) }}</span></template>
-    <template x-if="expanded"><span><i class="ph-thin ph-caret-up i-3"></i> {{ _('action.show_less') }}</span></template>
-  </button>
-  {% endif %}
-</section>
-{% endif %}
-
-{# ═══ ZONE BREAK — visual separator between the input zone (search + recent)
-   and the results zone (tabs + master-detail). Heavier than a section gap:
-   a full-width hairline + extra top spacing signals "you're now in results." ═══ #}
-<div class="border-t border-base-300 mt-2 mb-8"></div>
+{# ═══ ZONE TRANSITION — a calm scroll cue nudging the user down into the
+   results. It scrolls out of view as they go, so it's a hint, not clutter. ═══ #}
+<div class="border-t border-base-300 mt-2"></div>
+<div class="scroll-cue flex flex-col items-center gap-1 text-body-muted mt-5 mb-6 select-none">
+  <span class="text-xs tracking-wide">{{ _('jobs.scroll_cue') }}</span>
+  <i class="ph-thin ph-caret-down scroll-cue__chevron"></i>
+</div>
 
 {# ═══ RESULTS ZONE — Option B: fixed master-detail with seg-tabs ═══
    Layout:
@@ -436,6 +452,7 @@
 </script>
 
 <section
+  class="results-screen lg:h-[calc(100dvh_-_4rem)] lg:flex lg:flex-col lg:overflow-hidden"
   @htmx:after-swap="onSavedRailSwap($event)"
   x-data="{
     mode: 'top',
@@ -449,9 +466,13 @@
     // x-show to it on BOTH rails, so these must be neutralised on the Saved tab
     // — otherwise onlyNew (is_new=0 on saved metas) hides every saved card.
     applyTopFilters() {
-      this.$store.filters.maxAgeDays = 7;
+      // No client-side age filter: the server (_list_top_matches) already scopes
+      // to recent fetches, so the old Added dropdown was redundant AND confusing
+      // (it filtered fetch age, not posting age). onlyNew defaults OFF so all top
+      // matches show (fills the list; count stays coherent).
+      this.$store.filters.maxAgeDays = null;
       this.$store.filters.hideViewed = true;
-      this.$store.filters.onlyNew = this.topMeta.some(j => j.is_new === 1);
+      this.$store.filters.onlyNew = false;
     },
     clearTopFilters() {
       this.$store.filters.maxAgeDays = null;
@@ -511,47 +532,42 @@
        [★ Top matches (N)] [♥ Saved (M)] ·········· [Added ▼] [✨ Only new] · N matches
      The filter group is pushed right (ml-auto) and only shows on the Top
      matches tab — Saved is an explicit list with no freshness dimension. #}
-  <div class="flex items-center gap-4 mb-4 flex-wrap">
-    <div class='seg-tabs' role='group' aria-label='{{ _("jobs.zone.results") }}'>
+  <div class="flex items-center gap-4 mb-4 flex-wrap lg:shrink-0">
+    {# Underline mini-tabs — smaller/lighter than the main nav underline so the
+       hierarchy reads (big nav up top, small section switch here). #}
+    <div class='utabs' role='group' aria-label='{{ _("jobs.zone.results") }}'>
       <button type='button'
               @click='switchTab("top")'
-              :class='mode === "top" ? "seg-tab seg-tab--active" : "seg-tab"'>
+              class='utab'
+              :class='mode === "top" ? "utab--active" : ""'>
         <i class='ph-thin ph-star i-4'></i>
         {{ _('jobs.tabs.top_matches') }}
         {% if top_matches %}
-        <span class='pill pill-accent ml-1'>{{ top_matches | length }}</span>
+        <span class='utab__count'>{{ top_matches | length }}</span>
         {% endif %}
       </button>
       <button type='button'
               @click='switchTab("saved")'
-              :class='mode === "saved" ? "seg-tab seg-tab--active" : "seg-tab"'>
+              class='utab'
+              :class='mode === "saved" ? "utab--active" : ""'>
         <i class='ph-fill ph-heart i-4' style='color: hsl(348 65% 55%);'></i>
         {{ _('jobs.tabs.saved') }}
         {# Reactive count — drops as the user un-saves without a page reload. #}
-        <span class='pill pill-neutral ml-1' x-show="savedMeta.length > 0" x-cloak x-text="savedMeta.length"></span>
+        <span class='utab__count' x-show="savedMeta.length > 0" x-cloak x-text="savedMeta.length"></span>
       </button>
     </div>
 
-    {# Inline filter group — right-aligned, only when the Top matches tab is active. #}
+    {# Inline filter group — right-aligned, only when the Top matches tab is active.
+       No "Added" date filter: the server already scopes Top matches to recent
+       fetches (14d), and that dropdown filtered FETCH age (confusing). #}
     <div class="flex items-center gap-4 flex-wrap ml-auto" x-show="mode === 'top'" x-cloak>
-      {# Date filter dropdown #}
-      <div class="flex items-center gap-2">
-        <label class="text-label shrink-0">{{ _('filters.added') }}</label>
-        <select class="select select-bordered select-sm cursor-pointer"
-                x-model.number="$store.filters.maxAgeDays"
-                @change="$store.filters.maxAgeDays = $event.target.value === '' ? null : Number($event.target.value)">
-          <option value="">{{ _('filters.added.all') }}</option>
-          <option value="1">{{ _('filters.added.24h') }}</option>
-          <option value="7" selected>{{ _('filters.added.7d') }}</option>
-          <option value="30">{{ _('filters.added.30d') }}</option>
-        </select>
-      </div>
-      {# Only new toggle #}
+      {# Only new toggle — same "new" marker (a dot) as the card's New pill;
+         the sparkle is reserved for AI ("For you"). #}
       <label class="flex items-center gap-2 cursor-pointer select-none"
              title="{{ _('filters.only_new.tooltip') }}">
         <input type="checkbox" x-model="$store.filters.onlyNew" class="checkbox checkbox-sm">
-        <span class="text-sm inline-flex items-center gap-1">
-          <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i> {{ _('filters.only_new') }}
+        <span class="text-sm inline-flex items-center gap-1.5">
+          <span class="inline-block w-1.5 h-1.5 rounded-full" style="background: oklch(var(--a));"></span> {{ _('filters.only_new') }}
         </span>
       </label>
       {# Showing counter + viewed-hidden toggle — quiet, muted, at the end #}
@@ -577,19 +593,20 @@
     </div>
   </div>
 
-  {# ─── Split viewport — bounded dual-scroll (approach B) ───
-     On lg+, the whole split pins under the header and fills the rest of the
-     viewport; each column (workspace-pane) scrolls internally so the body
-     doesn't grow past this block — the page "ends here". Below lg it falls
-     back to normal stacked flow (workspace-pane is lg-only in app.css). #}
-  <div class="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6 lg:sticky lg:top-20 lg:h-[calc(100dvh_-_6rem)]">
+  {# ─── Split viewport — the section is a fixed-height ONE-SCREEN flex column
+     (results-screen); this grid is the flex-1 body that fills the rest, and each
+     column (workspace-pane) scrolls internally. Because the section is the LAST
+     element on the page and exactly one screen tall, the PAGE ends here — no
+     trailing scroll, no footer — and page-scroll flows straight into it. The
+     min-h-0 chain (section → this grid → panes) is load-bearing (ADR-012):
+     without it the panes never get a bounded height and the document scrolls
+     instead. Below lg it falls back to normal stacked flow. #}
+  <div class="results-panel grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-4 lg:flex-1 lg:min-h-0">
 
     {# ── LEFT RAIL: Top matches ──
-       x-data carries `jobs` (required by job_card.html's visibleIn binding)
-       and `showAll` (local cap-8 toggle). The parent section has no x-data
-       field for showAll — keeping it on the rail avoids $parent depth issues. #}
+       x-data carries `jobs` (required by job_card.html's visibleIn binding). #}
     <div x-show="mode === 'top'"
-         x-data="{ jobs: window.__jobotTopMeta || [], showAll: false }"
+         x-data="{ jobs: window.__jobotTopMeta || [] }"
          role="listbox"
          aria-label="{{ _('jobs.tabs.top_matches') }}"
          class="min-w-0 lg:h-full workspace-pane">
@@ -604,12 +621,12 @@
         <p class="text-body-muted text-sm">{{ _('jobs.top_matches.empty') }}</p>
       </div>
       {% else %}
-      <div class="space-y-3 cascade-in">
-        {# Cap 8: first 8 cards always visible; extras hidden behind showAll toggle.
-           showAll lives on this rail's own x-data scope, so `showAll` resolves
-           correctly without needing $parent traversal. #}
+      {# All matches render — no cap. The rail scrolls internally (workspace-pane)
+         so a long list just scrolls; no "Show all N" button (that created dead
+         space + a confusing count vs the filter total). #}
+      <div class="space-y-2.5 cascade-in">
         {% for job in top_matches %}
-        <div {% if loop.index > 8 %}x-show="showAll" x-cloak{% endif %}>
+        <div>
           {% include "partials/job_card.html" %}
         </div>
         {% endfor %}
@@ -624,26 +641,14 @@
           {{ _('action.reset') }}
         </button>
       </div>
-      {# Show all link — only when total > cap of 8 #}
-      {% if top_matches | length > 8 %}
-      <div class="mt-3" x-show="!showAll">
-        <button type="button"
-                class="text-sm text-primary hover:underline cursor-pointer inline-flex items-center gap-1"
-                @click="showAll = true">
-          {{ _('jobs.show_all_n', n=top_matches | length) }}
-          <i class="ph-thin ph-arrow-right i-3"></i>
-        </button>
-      </div>
-      {% endif %}
       {% endif %}
     </div>
 
-    {# ── LEFT RAIL: Saved jobs ──
-       Same pattern: `jobs` for job_card.html's visibleIn, `showAll` for cap-8. #}
+    {# ── LEFT RAIL: Saved jobs ── `jobs` for job_card.html's visibleIn. #}
     <div id="saved-rail"
          x-show="mode === 'saved'"
          x-cloak
-         x-data="{ jobs: window.__jobotSavedMeta || [], showAll: false }"
+         x-data="{ jobs: window.__jobotSavedMeta || [] }"
          role="listbox"
          aria-label="{{ _('jobs.tabs.saved') }}"
          class="min-w-0 lg:h-full workspace-pane">
@@ -658,7 +663,7 @@
          onSavedRailSwap() rebuilds savedMeta from the swapped cards. #}
       <div id="saved-rail-content"
            x-show="savedMeta.length > 0"
-           class="space-y-3 cascade-in"
+           class="space-y-2.5 cascade-in"
            hx-get="/jobs/saved-rail"
            hx-trigger="saved-changed from:body"
            hx-swap="innerHTML">
