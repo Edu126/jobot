@@ -3,7 +3,7 @@
 {% block container_class %}max-w-7xl{% endblock %}
 {# Tighter top padding than the global py-16 — that 4rem of dead space above the
    greeting was too much. See memory note: py-16 is heavy on every page. #}
-{% block main_class %}pt-8 pb-16 lg:pb-0{% endblock %}
+{% block main_class %}pt-8 pb-16{% endblock %}
 {# No footer on /jobs — the results split IS the end of the page (user: "results
    should be the end of the page, no footer"). #}
 {% block footer %}{% endblock %}
@@ -452,7 +452,6 @@
 </script>
 
 <section
-  class="results-screen lg:h-[calc(100dvh_-_4rem)] lg:flex lg:flex-col lg:overflow-hidden"
   @htmx:after-swap="onSavedRailSwap($event)"
   x-data="{
     mode: 'top',
@@ -532,7 +531,7 @@
        [★ Top matches (N)] [♥ Saved (M)] ·········· [Added ▼] [✨ Only new] · N matches
      The filter group is pushed right (ml-auto) and only shows on the Top
      matches tab — Saved is an explicit list with no freshness dimension. #}
-  <div class="flex items-center gap-4 mb-4 flex-wrap lg:shrink-0">
+  <div class="flex items-center gap-4 mb-4 flex-wrap">
     {# Underline mini-tabs — smaller/lighter than the main nav underline so the
        hierarchy reads (big nav up top, small section switch here). #}
     <div class='utabs' role='group' aria-label='{{ _("jobs.zone.results") }}'>
@@ -593,15 +592,13 @@
     </div>
   </div>
 
-  {# ─── Split viewport — the section is a fixed-height ONE-SCREEN flex column
-     (results-screen); this grid is the flex-1 body that fills the rest, and each
-     column (workspace-pane) scrolls internally. Because the section is the LAST
-     element on the page and exactly one screen tall, the PAGE ends here — no
-     trailing scroll, no footer — and page-scroll flows straight into it. The
-     min-h-0 chain (section → this grid → panes) is load-bearing (ADR-012):
-     without it the panes never get a bounded height and the document scrolls
-     instead. Below lg it falls back to normal stacked flow. #}
-  <div class="results-panel grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-4 lg:flex-1 lg:min-h-0">
+  {# ─── Split viewport — LinkedIn-style master/detail: the LEFT list flows in
+     normal document flow and scrolls WITH the page; the RIGHT detail is sticky
+     (below) and travels alongside, scrolling internally only if a JD is long.
+     `items-start` keeps each column at its natural height so the sticky detail
+     has the full list height to travel through. No fixed-height shell, no inner
+     scroll trap — the page scroll just works. #}
+  <div class="results-panel grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-4 lg:items-start">
 
     {# ── LEFT RAIL: Top matches ──
        x-data carries `jobs` (required by job_card.html's visibleIn binding). #}
@@ -609,7 +606,7 @@
          x-data="{ jobs: window.__jobotTopMeta || [] }"
          role="listbox"
          aria-label="{{ _('jobs.tabs.top_matches') }}"
-         class="min-w-0 lg:h-full workspace-pane">
+         class="min-w-0">
       {% if not top_matches %}
       {# Empty state skeleton when no top matches exist #}
       <div class="card-quiet py-10 px-6 text-center">
@@ -621,9 +618,9 @@
         <p class="text-body-muted text-sm">{{ _('jobs.top_matches.empty') }}</p>
       </div>
       {% else %}
-      {# All matches render — no cap. The rail scrolls internally (workspace-pane)
-         so a long list just scrolls; no "Show all N" button (that created dead
-         space + a confusing count vs the filter total). #}
+      {# All matches render — no cap. The list flows with the page (no inner
+         scroll), so a long list just scrolls the document; no "Show all N"
+         button (that created dead space + a confusing count vs the filter). #}
       <div class="space-y-2.5 cascade-in">
         {% for job in top_matches %}
         <div>
@@ -651,7 +648,7 @@
          x-data="{ jobs: window.__jobotSavedMeta || [] }"
          role="listbox"
          aria-label="{{ _('jobs.tabs.saved') }}"
-         class="min-w-0 lg:h-full workspace-pane">
+         class="min-w-0">
       {# Empty state — driven by Alpine savedMeta, so it reacts live as the
          user adds/removes saved jobs (no reload). #}
       <div x-show="savedMeta.length === 0" x-cloak class="card-quiet text-center py-16">
@@ -671,11 +668,13 @@
       </div>
     </div>
 
-    {# ── RIGHT PANE: shared detail view. The aside IS the scroll container
-       (#job-detail-scroll) so selectedJob.select() can reset its scrollTop,
-       matching the results page. Height comes from the bounded grid above. #}
+    {# ── RIGHT PANE: shared detail view. Sticky so it stays in view while the
+       list scrolls with the page (LinkedIn model). It's its own scroll container
+       (#job-detail-scroll) capped at ~one viewport, so a long JD scrolls inside
+       it and selectedJob.select() can reset its scrollTop. `self-start` keeps it
+       pinned to the top of its (list-tall) grid cell so sticky has room to move. #}
     <aside id="job-detail-scroll"
-           class="hidden lg:block lg:h-full workspace-pane">
+           class="hidden lg:block lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100dvh_-_6rem)] lg:overflow-y-auto">
       <div id="job-detail-pane" class="card-quiet min-h-[300px]"
            data-empty-prompt='<div class="text-body-muted text-sm text-center py-16">{{ _('results.click_prompt') }}</div>'>
         <div class="text-body-muted text-sm text-center py-16">

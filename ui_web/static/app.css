@@ -314,13 +314,11 @@ h4 {
   .scroll-cue__chevron { animation: none; }
 }
 
-/* The one-screen results section (results-screen) has inner-scrolling panes.
-   Allow scroll to CHAIN out of a pane back to the document once the pane hits
-   its edge — otherwise `overscroll-behavior: contain` (set globally on
-   .workspace-pane) traps the wheel inside a pane and you can't scroll back up
-   to the search zone with the cursor over the list/detail. */
+/* LinkedIn-style master/detail on /jobs: the list flows with the page, the
+   detail pane (#job-detail-scroll) is sticky and caps at ~one viewport. Contain
+   its overscroll so scrolling a long JD to its edge doesn't jump the page. */
 @media (min-width: 1024px) {
-  .results-screen .workspace-pane { overscroll-behavior: auto; }
+  #job-detail-scroll { overscroll-behavior: contain; }
 }
 
 /* Closed statuses (rejected/withdrawn) — denser, muted, less prominent. */
@@ -485,13 +483,14 @@ h4 {
   }
 }
 
-/* Kill horizontal scroll globally. Any element that accidentally exceeds
-   viewport width (long strings, over-wide grids, DaisyUI defaults with
-   min-widths) would otherwise cause the whole page to be pannable,
-   which on mobile reads as "the site is expanded / blank on the right."
-   Fixed elements (nav, toast, sheets) remain viewport-anchored. */
+/* Kill horizontal scroll globally. Uses `clip` (not `hidden`): `overflow-x:
+   hidden` forces the computed `overflow-y` to `auto`, which turns <body> into a
+   scroll container and breaks `position: sticky` (it then sticks to the body's
+   scrollport, not the viewport — the /jobs detail pane wouldn't stay put).
+   `clip` prevents horizontal panning the same way WITHOUT creating a scroll
+   container, so the document scrolls on <html> and sticky works. */
 html, body {
-  overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100%;
 }
 
