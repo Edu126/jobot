@@ -351,6 +351,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.for_you.title": "For you",
         "jobs.for_you.finding": "Finding job titles that match your resume…",
         "jobs.scroll_cue": "Your matches, just below",
+        "jobs.see_matches": "See my matches",
         # Jobs page — recent + top matches
         "jobs.recent.title": "Recent searches",
         "jobs.recent.cached": "{n} cached",
@@ -836,6 +837,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "jobs.for_you.title": "Para ti",
         "jobs.for_you.finding": "Buscando puestos que encajan con tu currículum…",
         "jobs.scroll_cue": "Tus coincidencias, aquí abajo",
+        "jobs.see_matches": "Ver mis matches",
         # Recientes + top matches
         "jobs.recent.title": "Búsquedas recientes",
         "jobs.recent.cached": "{n} en caché",
