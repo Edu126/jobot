@@ -258,7 +258,7 @@
             <div class="flex flex-wrap items-center gap-2"
                  @click="$refs.draftInput && $refs.draftInput.focus()">
               <template x-for="(role, idx) in roles" :key="role">
-                <span class="chip chip-accent inline-flex items-center gap-1">
+                <span class="chip chip-suggest inline-flex items-center gap-1">
                   <span x-text="role"></span>
                   <input type="hidden" name="queries" :value="role">
                   <button type="button"
@@ -346,7 +346,7 @@
           {# ── Run — right cap on desktop, full-width bottom on mobile ── #}
           <button type="submit"
                   :disabled="running || (roles.length === 0 && !draft.trim())"
-                  class="btn btn-primary cursor-pointer rounded-none rounded-b-2xl md:rounded-b-none md:rounded-r-2xl px-7 shrink-0 md:h-auto border-0">
+                  class="btn btn-primary run-search-btn cursor-pointer rounded-none rounded-b-2xl md:rounded-b-none md:rounded-r-2xl px-7 shrink-0 md:h-auto border-0">
             <span x-text="queryCount > 1
                           ? `{{ _('action.run_n_searches', n='__N__') }}`.replace('__N__', queryCount)
                           : '{{ _('action.run_search') }}'"></span>
@@ -361,7 +361,7 @@
       {% if has_resume %}
       <div class="mt-4 flex flex-wrap items-center gap-2">
         <span class="text-label inline-flex items-center gap-1.5 shrink-0">
-          <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--a));"></i>{{ _('jobs.for_you.title') }}
+          <i class="ph-thin ph-sparkle i-4" style="color: oklch(var(--p));"></i>{{ _('jobs.for_you.title') }}
         </span>
         {% if quick_fill_needs_fetch %}
         <span id="quick-fill-row"

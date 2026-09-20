@@ -168,7 +168,7 @@
             hx-swap="innerHTML">
       {{ _('tailor.action.save_interested') }}
     </button>
-    <button class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium"
+    <button class="btn btn-sm btn-quiet font-medium"
             hx-post="/jobs/tailor/{{ job_id }}/save"
             hx-vals='{"status": "applied"}'
             hx-target="#tailor-save-status"
@@ -176,12 +176,12 @@
       {{ _('tailor.action.mark_applied') }}
     </button>
     <a href="/jobs/tailor/{{ job_id }}/download{% if run_index is defined %}?run={{ run_index }}{% endif %}"
-       class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium ml-auto cursor-pointer">
+       class="btn btn-sm btn-quiet font-medium ml-auto cursor-pointer">
       <i class="ph-thin ph-download-simple i-4"></i> {{ _('tailor.action.download_resume') }}
     </a>
     {% if tailored.cover_letter %}
     <a href="/jobs/tailor/{{ job_id }}/cover-letter{% if run_index is defined %}?run={{ run_index }}{% endif %}"
-       class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer">
+       class="btn btn-sm btn-quiet font-medium cursor-pointer">
       <i class="ph-thin ph-download-simple i-4"></i> {{ _('tailor.action.download_cover') }}
     </a>
     {% endif %}

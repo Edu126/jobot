@@ -124,7 +124,7 @@
     {% endif %}
     {% if app.job_url %}
     <a href="{{ app.job_url }}" target="_blank" rel="noopener"
-       class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
+       class="btn btn-sm btn-quiet font-medium inline-flex items-center gap-1.5">
       {% if app.job_url_direct and app.job_url_direct != app.job_url %}View on {{ app.job_site or 'board' }}
       {% else %}Open posting{% endif %}
       <i class="ph-thin ph-arrow-square-out i-4"></i>
@@ -151,8 +151,7 @@
         <button hx-post="/applications/{{ app.id }}/delete"
                 hx-target="closest article"
                 hx-swap="outerHTML"
-                class="btn btn-xs"
-                style="background: hsl(0 60% 95%); color: hsl(358 60% 45%); border-color: hsl(0 50% 82%);">
+                class="btn btn-xs btn-danger">
           Yes, delete
         </button>
         <button @click="confirming = false" class="text-xs text-base-content/60 hover:text-base-content">

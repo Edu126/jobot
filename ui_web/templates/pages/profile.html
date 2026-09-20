@@ -69,11 +69,11 @@
     {# ── Actions row — Download, Replace toggle, Older versions toggle ── #}
     <div class="flex items-center gap-2 mt-5 pt-4 border-t border-base-300/70 flex-wrap">
       <a href="/profile/resume/{{ current.id }}/download"
-         class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
+         class="btn btn-sm btn-quiet font-medium inline-flex items-center gap-1.5">
         <i class="ph-thin ph-download-simple i-4"></i>{{ _('profile.action.download') }}
       </a>
       <button @click="showReplace = !showReplace; if (showReplace) showOlder = false"
-              class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium inline-flex items-center gap-1.5">
+              class="btn btn-sm btn-quiet font-medium inline-flex items-center gap-1.5">
         <i class="ph-thin ph-arrows-clockwise i-4"></i>{{ _('profile.action.replace') }}
         <i class="ph-thin i-3" :class="showReplace ? 'ph-caret-up' : 'ph-caret-down'"></i>
       </button>
@@ -247,7 +247,7 @@
                   hx-swap="innerHTML"
                   hx-indicator="#regen-spin"
                   hx-disabled-elt="this"
-                  class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content inline-flex items-center gap-1.5">
+                  class="btn btn-sm btn-quiet inline-flex items-center gap-1.5">
             <span id="regen-spin" class="htmx-indicator loading loading-spinner loading-xs"></span>
             <i class="ph-thin ph-sparkle i-4"></i>Regenerate cleanly
           </button>
@@ -359,8 +359,7 @@
           <i class="ph-thin ph-arrow-counter-clockwise i-4"></i>{{ _('profile.danger.reset_stats') }}
         </button>
         <button type="button" @click="deleteAllModal = true; deleteAllPhrase = ''"
-                class="btn btn-sm cursor-pointer"
-                style="background: oklch(var(--er)); color: oklch(var(--erc)); border-color: oklch(var(--er));">
+                class="btn btn-sm btn-danger-solid cursor-pointer">
           <i class="ph-thin ph-trash i-4"></i>{{ _('profile.danger.delete_all') }}
         </button>
       </div>
@@ -429,9 +428,8 @@
                     hx-target="#delete-all-result"
                     hx-swap="innerHTML"
                     :disabled="!deleteAllOk()"
-                    class="btn btn-sm cursor-pointer"
-                    :class="!deleteAllOk() ? 'opacity-40 cursor-not-allowed' : ''"
-                    style="background: oklch(var(--er)); color: oklch(var(--erc)); border-color: oklch(var(--er));">
+                    class="btn btn-sm btn-danger-solid cursor-pointer"
+                    :class="!deleteAllOk() ? 'opacity-40 cursor-not-allowed' : ''">
               {{ _('profile.danger.confirm_delete') }}
             </button>
             <button type="button" @click="deleteAllModal = false"

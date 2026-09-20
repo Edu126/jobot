@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jobot · AI Accent Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<style>
+  :root{
+    --n0:100% 0 0; --n1:96.7% 0.005 95; --n2:94% 0.006 80; --n3:91% 0.014 88;
+    --n5:56% 0.010 80; --n6:40% 0.008 75; --n7:22% 0.010 265;
+    --p:35.5% 0.075 170;
+    --r-md:.5rem; --r-lg:.75rem; --r-pill:9999px;
+    --font-sans:'IBM Plex Sans',sans-serif; --font-display:'Schibsted Grotesk',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font-sans);background:oklch(var(--n1));color:oklch(var(--n7));-webkit-font-smoothing:antialiased;letter-spacing:-.003em;line-height:1.55;}
+  [x-cloak]{display:none!important;}
+  h1,h2,h3,.eyebrow{font-family:var(--font-display);}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:.72rem;}
+
+  .bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:1.4rem;flex-wrap:wrap;padding:.6rem 1.1rem;background:oklch(20% .01 265);color:#fff;}
+  .bar__brand{font-weight:600;font-size:.85rem;font-family:var(--font-display);}
+  .bar__brand span{opacity:.5;font-weight:400;}
+  .g{display:flex;align-items:center;gap:.35rem;}
+  .g__lbl{opacity:.5;text-transform:uppercase;letter-spacing:.11em;font-size:.62rem;margin-right:.25rem;}
+  .g button{padding:.28rem .7rem;border-radius:999px;border:1px solid rgba(255,255,255,.22);background:transparent;color:#fff;cursor:pointer;font-size:.74rem;font-family:inherit;display:inline-flex;align-items:center;gap:.35rem;}
+  .g button .dot{width:10px;height:10px;border-radius:50%;}
+  .g button.on{background:#fff;color:#151515;border-color:#fff;font-weight:600;}
+
+  main{max-width:940px;margin:0 auto;padding:3rem 2rem 6rem;}
+  .eyebrow{text-transform:uppercase;letter-spacing:.13em;font-size:.7rem;font-weight:600;color:oklch(var(--p));}
+  h1{font-size:2rem;font-weight:600;letter-spacing:-.025em;margin:.3rem 0 .4rem;}
+  .sub{color:oklch(var(--n6));max-width:44rem;margin:0 0 2.4rem;}
+  .sub-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.13em;color:oklch(var(--n5));font-weight:600;margin:2.4rem 0 1rem;}
+
+  .panel{background:oklch(var(--n0));border:1px solid oklch(var(--n3));border-radius:var(--r-lg);padding:1.6rem;}
+  .row{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;}
+
+  /* AI action elements — driven by --ai-solid / --ai-soft / --ai-ink */
+  .btn{padding:.7rem 1.3rem;border-radius:var(--r-md);font-weight:600;font-size:.92rem;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem;border:1px solid transparent;transition:transform .12s;}
+  .btn:hover{transform:translateY(-1px);}
+  .btn-ai{background:var(--ai-solid);color:#fff;border-color:var(--ai-solid);}
+  .btn-ai-soft{background:var(--ai-soft);color:var(--ai-ink);border-color:color-mix(in oklch, var(--ai-ink) 25%, transparent);}
+  .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .7rem;border-radius:var(--r-pill);font-size:.78rem;font-weight:600;border:1px solid;}
+  .chip-ai{background:var(--ai-soft);color:var(--ai-ink);border-color:color-mix(in oklch, var(--ai-ink) 30%, transparent);}
+  .chip-celebrate{background:oklch(72% .17 30 / .15);color:oklch(60% .17 30);border-color:oklch(72% .17 30 / .45);}
+  .chip-danger{background:oklch(95% .04 22);color:oklch(52% .18 22);border-color:oklch(52% .18 22 / .35);}
+  .chip-danger-deep{background:oklch(95% .04 18);color:oklch(46% .19 18);border-color:oklch(46% .19 18 / .4);}
+  .chip-coral{background:oklch(95% .04 45 / .8);color:oklch(52% .15 42);border-color:oklch(70% .16 45 / .45);}
+
+  .card{border:1px solid oklch(var(--n3));border-radius:var(--r-lg);padding:1.1rem;background:oklch(var(--n0));}
+  .card .h{font-family:var(--font-display);font-weight:600;font-size:1rem;display:flex;align-items:center;gap:.5rem;}
+  .card .b{font-size:.85rem;color:oklch(var(--n6));margin-top:.3rem;}
+  .swrow{display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:.6rem;}
+  .sw{display:flex;align-items:center;gap:.5rem;font-size:.78rem;color:oklch(var(--n6));}
+  .sw i{width:26px;height:26px;border-radius:7px;display:inline-block;border:1px solid oklch(var(--n3));}
+  .note{font-size:.82rem;color:oklch(var(--n6));background:oklch(var(--n2));border-radius:var(--r-md);padding:.9rem 1.1rem;margin-top:1.2rem;line-height:1.55;}
+  .hue{font-family:ui-monospace,monospace;font-size:.72rem;color:oklch(var(--n5));}
+</style>
+</head>
+<body x-data="ail()" x-cloak>
+
+  <div class="bar">
+    <div class="bar__brand">Jobot <span>· AI Accent Lab</span></div>
+    <div class="g">
+      <span class="g__lbl">AI accent</span>
+      <template x-for="c in cands" :key="c.id">
+        <button :class="ai===c.id && 'on'" @click="setAi(c.id)"><span class="dot" :style="{background:c.solid}"></span><span x-text="c.label"></span></button>
+      </template>
+    </div>
+    <div class="g" style="margin-left:auto">
+      <span class="g__lbl">Danger</span>
+      <button :class="danger==='current' && 'on'" @click="danger='current'">Current (h25)</button>
+      <button :class="danger==='deep' && 'on'" @click="danger='deep'">Deepened (h18)</button>
+    </div>
+  </div>
+
+  <main :style="aiVars()">
+    <div class="eyebrow">Design question</div>
+    <h1>Is salmon right for AI features?</h1>
+    <p class="sub">Salmon sits at <b>hue 30</b>; danger red at <b>hue 25</b> — 5° apart. In a product where red means "Rejected", a warm-red AI/celebration accent risks reading as a warning. Toggle a dedicated <b>AI accent</b> for generative actions (Tailor · Coach · Generate) and watch the <b>separation check</b> below.</p>
+
+    <div class="sub-title">Generative / AI actions in the selected accent</div>
+    <div class="panel">
+      <div class="row" style="margin-bottom:1rem">
+        <button class="btn btn-ai"><i class="ph ph-sparkle"></i>Tailor resume</button>
+        <button class="btn btn-ai-soft"><i class="ph ph-chats-circle"></i>Ask the Coach</button>
+        <button class="btn btn-ai-soft"><i class="ph ph-magic-wand"></i>Generate cover letter</button>
+        <span class="chip chip-ai"><i class="ph ph-sparkle"></i>AI</span>
+      </div>
+      <div class="hue" x-text="'--ai · ' + candMap[ai].hue"></div>
+    </div>
+
+    <div class="sub-title">Emotional separation check — does AI read distinct from danger &amp; celebration?</div>
+    <div class="panel">
+      <div class="row">
+        <span class="chip chip-ai"><i class="ph ph-sparkle"></i>AI · Tailored</span>
+        <span class="chip chip-celebrate"><i class="ph ph-confetti"></i>Offer! (salmon)</span>
+        <span :class="danger==='deep' ? 'chip chip-danger-deep' : 'chip chip-danger'"><i class="ph ph-x-circle"></i>Rejected</span>
+      </div>
+      <div class="note">
+        <b>Read left→right:</b> if the AI chip and the "Rejected" chip look like cousins, the accent is too warm/red. A cool AI accent (iris/teal) separates cleanly; the in-brand green ties AI to "Jobot working"; the warmed coral keeps warmth but pulls away from red.
+      </div>
+    </div>
+
+    <div class="sub-title">The candidates</div>
+    <div class="panel" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+      <div class="card"><div class="h"><i class="ph ph-leaf" style="color:oklch(var(--p))"></i>Green · in-brand</div><div class="b">AI = "Jobot working." Max coherence, no new color. Trade-off: generative moments don't feel special.</div></div>
+      <div class="card"><div class="h"><i class="ph ph-sparkle" style="color:oklch(55% .16 285)"></i>Iris / violet</div><div class="b">Industry convention for AI. Maximally distinct from green + red. Note: purple-adjacent — but a narrow functional accent, not a brand primary (≠ the rejected plum).</div></div>
+      <div class="card"><div class="h"><i class="ph ph-circle-half" style="color:oklch(52% .10 215)"></i>Teal · cool</div><div class="b">Reads "smart/tech", calm, clearly not danger. Sits ~40° from green — keep it bluer so it doesn't muddy.</div></div>
+      <div class="card"><div class="h"><i class="ph ph-fire" style="color:oklch(70% .16 45)"></i>Coral · warmed salmon</div><div class="b">Keeps the two-accent warmth but shifts hue 30→45 (20° off danger). Fixes the clash without a 3rd color.</div></div>
+    </div>
+
+    <div class="note" style="margin-top:1.6rem">
+      <b>My read:</b> two separate fixes. <b>(1)</b> Regardless of the AI decision, separate salmon from danger — either warm salmon to coral (h45) or deepen danger to a crimson (h18, toggle top-right). <b>(2)</b> For AI, if you want generative actions to feel <i>distinct</i>, a cool accent (<b>iris</b> or <b>teal</b>) reads "AI" and can't be confused with rejection; if you'd rather stay coherent, <b>green</b> says "Jobot is doing this." I'd avoid keeping warm-salmon <i>as the AI signal</i> specifically.
+    </div>
+  </main>
+
+<script>
+  function ail(){
+    return {
+      ai: localStorage.getItem('ail.ai') || 'iris',
+      danger: 'current',
+      cands:[
+        { id:'green', label:'Green',  solid:'oklch(35.5% .075 170)' },
+        { id:'iris',  label:'Iris',   solid:'oklch(55% .16 285)' },
+        { id:'teal',  label:'Teal',   solid:'oklch(52% .10 215)' },
+        { id:'coral', label:'Coral',  solid:'oklch(70% .16 45)' },
+      ],
+      candMap:{
+        green:{ solid:'oklch(35.5% .075 170)', soft:'oklch(94% .04 165)', ink:'oklch(38% .09 165)', hue:'hue 170 (green)' },
+        iris: { solid:'oklch(55% .16 285)',    soft:'oklch(95% .05 290)', ink:'oklch(48% .14 288)', hue:'hue 285 (iris/violet)' },
+        teal: { solid:'oklch(52% .10 215)',    soft:'oklch(95% .03 215)', ink:'oklch(45% .10 218)', hue:'hue 215 (teal)' },
+        coral:{ solid:'oklch(70% .16 45)',     soft:'oklch(95% .04 45)',  ink:'oklch(52% .15 42)',  hue:'hue 45 (coral)' },
+      },
+      aiVars(){ const c=this.candMap[this.ai]; return { '--ai-solid':c.solid, '--ai-soft':c.soft, '--ai-ink':c.ink }; },
+      setAi(id){ this.ai=id; localStorage.setItem('ail.ai',id); },
+    }
+  }
+</script>
+</body>
+</html>

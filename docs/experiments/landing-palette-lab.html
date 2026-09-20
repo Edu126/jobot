@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jobot · Landing Palette Lab</title>
+
+<!-- Type system: IBM Plex Sans (body) + Schibsted Grotesk (display) — matches ADR-046 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Phosphor icons -->
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<!-- Alpine -->
+<script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+
+<style>
+  :root{
+    --p: 35.5% 0.075 170;      /* hunter green */
+    --a: 72% 0.17 30;          /* salmon */
+    --linen: 96.7% 0.005 95;
+    --card: 100% 0 0;
+    --border: 91% 0.014 88.7;
+    --ink: 22% 0.010 265;
+    --n5: 56% 0.010 80;
+    --n6: 40% 0.008 75;
+  }
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  body{
+    margin:0;
+    font-family:'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: oklch(var(--linen));
+    color: oklch(var(--ink));
+    -webkit-font-smoothing:antialiased;
+    letter-spacing:-0.003em;
+    line-height:1.55;
+  }
+  [x-cloak]{ display:none !important; }
+  h1,h2,h3,h4,.eyebrow,.step__n,.lab-bar__brand{
+    font-family:'Schibsted Grotesk', -apple-system, sans-serif;
+  }
+
+  /* ── Lab toolbar ───────────────────────────────────────── */
+  .lab-bar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; gap:1.4rem; flex-wrap:wrap;
+    padding:.55rem 1.1rem;
+    background: oklch(20% 0.01 265); color:#fff;
+    box-shadow:0 1px 0 rgba(255,255,255,.06);
+  }
+  .lab-bar__brand{ font-weight:600; font-size:.85rem; opacity:.92; }
+  .lab-bar__brand span{ opacity:.5; font-weight:400; }
+  .lab-group{ display:flex; align-items:center; gap:.35rem; }
+  .lab-group__label{ opacity:.5; text-transform:uppercase; letter-spacing:.11em; font-size:.62rem; margin-right:.25rem; }
+  .lab-group button{
+    padding:.28rem .68rem; border-radius:999px;
+    border:1px solid rgba(255,255,255,.22); background:transparent; color:#fff;
+    cursor:pointer; font-size:.74rem; font-family:inherit; transition:all .14s ease;
+  }
+  .lab-group button:hover{ border-color:rgba(255,255,255,.5); }
+  .lab-group button.is-active{ background:#fff; color:#151515; border-color:#fff; font-weight:600; }
+  .lab-swatches{ display:flex; align-items:center; gap:.3rem; margin-left:auto; }
+  .lab-swatches__label{ opacity:.5; font-size:.62rem; text-transform:uppercase; letter-spacing:.11em; margin-right:.15rem; }
+  .lab-swatches .sw{ width:18px; height:18px; border-radius:5px; border:1px solid rgba(0,0,0,.15); }
+
+  /* ── Eyebrow / kicker ──────────────────────────────────── */
+  .eyebrow{ text-transform:uppercase; letter-spacing:.13em; font-size:.7rem; font-weight:600; }
+
+  /* ── Hero ──────────────────────────────────────────────── */
+  .hero{ padding:6.5rem 2rem 6rem; transition:background .4s ease; }
+  .hero__inner{ max-width:1080px; margin:0 auto; }
+  .hero[data-text="light"]{ color:#fff; }
+  .hero[data-text="light"] .eyebrow{ opacity:.85; }
+  .hero[data-text="dark"]{ color: oklch(var(--ink)); }
+  .hero[data-text="dark"] .eyebrow{ color: oklch(var(--p)); }
+  .hero__title{
+    font-size:clamp(2.5rem,5.2vw,4.1rem); line-height:1.02; letter-spacing:-0.032em;
+    font-weight:600; margin:.7rem 0 1.1rem;
+  }
+  .hero__sub{ font-size:1.15rem; max-width:33rem; line-height:1.5; opacity:.92; margin:0; }
+  .hero__cta{ margin-top:2.1rem; display:flex; gap:.75rem; flex-wrap:wrap; }
+
+  /* ── Buttons ───────────────────────────────────────────── */
+  .btn{
+    padding:.72rem 1.5rem; border-radius:.5rem; font-weight:600; font-size:.95rem;
+    font-family:inherit; cursor:pointer; transition:transform .15s ease, box-shadow .2s ease, background .15s ease;
+    display:inline-flex; align-items:center; gap:.5rem;
+  }
+  .btn-primary{ background: oklch(var(--p)); color:#fff; border:1px solid oklch(var(--p)); box-shadow:0 6px 18px oklch(var(--p) / .28); }
+  .btn-primary:hover{ transform:translateY(-1px); box-shadow:0 10px 24px oklch(var(--p) / .34); }
+  .btn-ghost{ background:transparent; border:1px solid currentColor; color:inherit; opacity:.9; }
+  .btn-ghost:hover{ opacity:1; transform:translateY(-1px); }
+
+  /* ── Section shell ─────────────────────────────────────── */
+  .section{ max-width:1080px; margin:0 auto; padding:5rem 2rem; }
+  .section__head{ margin-bottom:2.4rem; }
+  .section__title{ font-size:clamp(1.6rem,3vw,2.15rem); letter-spacing:-.02em; font-weight:600; margin:.5rem 0 0; max-width:26rem; }
+
+  /* ── Benefit cards (Layer 2 secondary palette) ─────────── */
+  .bene-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:1.1rem; }
+  @media(max-width:860px){ .bene-grid{ grid-template-columns:1fr 1fr; } }
+  @media(max-width:560px){ .bene-grid{ grid-template-columns:1fr; } }
+  .bene{
+    border-radius:.9rem; padding:1.6rem 1.5rem; border:1px solid transparent;
+    transition:transform .18s ease, box-shadow .26s ease, background .35s ease;
+  }
+  .bene:hover{ transform:translateY(-3px); box-shadow:0 18px 34px -22px oklch(var(--ink) / .4); }
+  .bene__icon{ font-size:1.7rem; line-height:1; margin-bottom:.9rem; }
+  .bene__title{ font-size:1.06rem; font-weight:600; letter-spacing:-.01em; margin:0 0 .4rem; }
+  .bene__body{ font-size:.9rem; line-height:1.5; color: oklch(var(--n6)); margin:0; }
+
+  /* ── How it works — Monotype-style numbered list ───────── */
+  .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:2.2rem; }
+  @media(max-width:720px){ .steps{ grid-template-columns:1fr; gap:1.6rem; } }
+  .step{ display:flex; gap:1rem; align-items:flex-start; }
+  .step__n{ font-size:1.5rem; font-weight:600; color: oklch(var(--p)); line-height:1; }
+  .step h4{ font-size:1.06rem; margin:.1rem 0 .35rem; letter-spacing:-.01em; }
+  .step p{ font-size:.9rem; color: oklch(var(--n6)); line-height:1.5; margin:0; }
+
+  /* ── Soft-gradient CTA band ────────────────────────────── */
+  .cta-band{ border-top:1px solid oklch(var(--border)); background:linear-gradient(160deg, oklch(96.7% 0.005 95) 0%, oklch(93% 0.03 150) 100%); }
+  .cta-band__inner{ max-width:1080px; margin:0 auto; padding:4.5rem 2rem; text-align:center; }
+  .cta-band__title{ font-size:clamp(1.7rem,3vw,2.3rem); letter-spacing:-.022em; font-weight:600; margin:.5rem 0 1.4rem; }
+  .cta-band .btn-primary{ margin:0 auto; }
+
+  footer{ text-align:center; padding:2rem; font-size:.78rem; color: oklch(var(--n5)); }
+</style>
+</head>
+
+<body x-data="lab()" x-cloak>
+
+  <!-- ── LAB TOOLBAR ─────────────────────────────────────── -->
+  <div class="lab-bar">
+    <div class="lab-bar__brand">Jobot <span>· Landing Lab</span></div>
+
+    <div class="lab-group">
+      <span class="lab-group__label">Palette</span>
+      <template x-for="opt in paletteOpts" :key="opt.id">
+        <button :class="palette===opt.id && 'is-active'" @click="setPalette(opt.id)" x-text="opt.label"></button>
+      </template>
+    </div>
+
+    <div class="lab-group">
+      <span class="lab-group__label">Hero gradient</span>
+      <template x-for="opt in gradientOpts" :key="opt.id">
+        <button :class="gradient===opt.id && 'is-active'" @click="setGradient(opt.id)" x-text="opt.label"></button>
+      </template>
+    </div>
+
+    <div class="lab-swatches">
+      <span class="lab-swatches__label" x-text="'Hues · ' + palettes[palette].length"></span>
+      <template x-for="name in palettes[palette]" :key="name">
+        <span class="sw" :style="{ background: hues[name].tint, borderColor: alpha(hues[name].ink, 0.35) }" :title="name"></span>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── HERO ────────────────────────────────────────────── -->
+  <header class="hero" :style="{ background: gradients[gradient].css }" :data-text="gradients[gradient].text">
+    <div class="hero__inner">
+      <div class="eyebrow">Your job search, calmer</div>
+      <h1 class="hero__title">Land the role that<br>actually fits you.</h1>
+      <p class="hero__sub">Jobot scores every match honestly, tailors your resume in a click, and shows exactly what to close before you apply — all in one calm workspace.</p>
+      <div class="hero__cta">
+        <button class="btn btn-primary"><i class="ph ph-rocket-launch"></i>Get started free</button>
+        <button class="btn btn-ghost">See how it works</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── BENEFITS (secondary palette cards) ──────────────── -->
+  <section class="section">
+    <div class="section__head">
+      <div class="eyebrow" style="color:oklch(var(--p))">Why Jobot</div>
+      <h2 class="section__title">Everything the search throws at you, handled.</h2>
+    </div>
+    <div class="bene-grid">
+      <template x-for="(b,i) in benefits" :key="i">
+        <article class="bene" :style="cardStyle(i)">
+          <div class="bene__icon" :style="{ color: hueFor(i).ink }"><i class="ph" :class="b.icon"></i></div>
+          <h3 class="bene__title" :style="{ color: hueFor(i).ink }" x-text="b.title"></h3>
+          <p class="bene__body" x-text="b.body"></p>
+        </article>
+      </template>
+    </div>
+  </section>
+
+  <!-- ── HOW IT WORKS ────────────────────────────────────── -->
+  <section class="section" style="padding-top:1rem;">
+    <div class="section__head">
+      <div class="eyebrow" style="color:oklch(var(--p))">How it works</div>
+      <h2 class="section__title">Three steps to a calmer search.</h2>
+    </div>
+    <div class="steps">
+      <div class="step"><span class="step__n">01</span><div><h4>Tell Jobot who you are</h4><p>Import your resume or build a profile in minutes. Jobot learns your voice and your goals.</p></div></div>
+      <div class="step"><span class="step__n">02</span><div><h4>Get matched, honestly</h4><p>See real fit scores, the gaps to close, and a resume tailored to each role in one click.</p></div></div>
+      <div class="step"><span class="step__n">03</span><div><h4>Apply with confidence</h4><p>Track every application from saved to offer, and always know your next best move.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ── SOFT-GRADIENT CTA BAND ──────────────────────────── -->
+  <section class="cta-band">
+    <div class="cta-band__inner">
+      <div class="eyebrow" style="color:oklch(var(--p))">Ready when you are</div>
+      <h2 class="cta-band__title">Start finding roles that fit.</h2>
+      <button class="btn btn-primary"><i class="ph ph-rocket-launch"></i>Get started free</button>
+    </div>
+  </section>
+
+  <footer>Palette Lab · toggle sets in the top bar · draft values from design-system-strategy.md §7-bis</footer>
+
+<script>
+  function lab(){
+    return {
+      palette: localStorage.getItem('lab.palette') || 'warm3',
+      gradient: localStorage.getItem('lab.gradient') || 'brand',
+
+      // Layer 2 secondary hues — tint (card bg) + ink (heading/icon)
+      hues:{
+        sage:  { tint:'oklch(95% 0.02 150)',  ink:'oklch(40% 0.06 155)' },
+        clay:  { tint:'oklch(94% 0.03 40)',   ink:'oklch(46% 0.09 40)'  },
+        honey: { tint:'oklch(95% 0.04 85)',   ink:'oklch(48% 0.07 75)'  },
+        teal:  { tint:'oklch(94% 0.02 220)',  ink:'oklch(42% 0.06 230)' },
+        plum:  { tint:'oklch(94% 0.02 330)',  ink:'oklch(44% 0.07 340)' },
+        stone: { tint:'oklch(94% 0.006 80)',  ink:'oklch(40% 0.01 70)'  },
+      },
+      palettes:{
+        warm3:   ['sage','clay','honey'],
+        earthy4: ['sage','clay','honey','stone'],
+        full6:   ['sage','clay','honey','teal','plum','stone'],
+        cool:    ['sage','teal','plum','stone'],
+      },
+      paletteOpts:[
+        { id:'warm3',   label:'Warm 3' },
+        { id:'earthy4', label:'Earthy 4' },
+        { id:'full6',   label:'Full 6' },
+        { id:'cool',    label:'Cool mix' },
+      ],
+
+      gradients:{
+        brand: { label:'Brand', css:'linear-gradient(135deg, oklch(35.5% 0.075 170) 0%, oklch(52% 0.10 120) 52%, oklch(70% 0.17 34) 100%)', text:'light' },
+        deep:  { label:'Deep',  css:'linear-gradient(135deg, oklch(26% 0.055 175) 0%, oklch(34% 0.07 152) 48%, oklch(58% 0.16 34) 100%)', text:'light' },
+        cool:  { label:'Cool',  css:'linear-gradient(135deg, oklch(33% 0.075 175) 0%, oklch(48% 0.085 205) 100%)', text:'light' },
+        soft:  { label:'Soft',  css:'linear-gradient(160deg, oklch(96.7% 0.005 95) 0%, oklch(92% 0.035 150) 100%)', text:'dark' },
+      },
+      gradientOpts:[
+        { id:'brand', label:'Brand' },
+        { id:'deep',  label:'Deep' },
+        { id:'cool',  label:'Cool' },
+        { id:'soft',  label:'Soft' },
+      ],
+
+      benefits:[
+        { icon:'ph-target',        title:'Honest fit scores',        body:'Every role scored against your real profile — no inflated 90s, just where you truly stand.' },
+        { icon:'ph-magic-wand',    title:'Resumes tailored in a click', body:'One click rewrites your resume for the exact job while keeping your voice intact.' },
+        { icon:'ph-chart-line-up', title:'See your gaps, close them', body:'A living gap map shows what is missing for a role and how to bridge it.' },
+        { icon:'ph-kanban',        title:'One calm workspace',        body:'Track every application from saved to offer — no more spreadsheet chaos.' },
+        { icon:'ph-bell-ringing',  title:'Never miss a fresh role',   body:'New matches surface the moment they are posted, filtered to what you actually want.' },
+        { icon:'ph-compass',       title:'Coaching that gets you',    body:'Guidance grounded in what recruiters actually reward, not generic advice.' },
+      ],
+
+      alpha(c,a){ return c.replace(')', ' / ' + a + ')'); },
+      hueFor(i){ const set=this.palettes[this.palette]; return this.hues[set[i % set.length]]; },
+      cardStyle(i){ const h=this.hueFor(i); return { background:h.tint, borderColor:this.alpha(h.ink,0.16) }; },
+      setPalette(p){ this.palette=p; localStorage.setItem('lab.palette',p); },
+      setGradient(g){ this.gradient=g; localStorage.setItem('lab.gradient',g); },
+    }
+  }
+</script>
+</body>
+</html>

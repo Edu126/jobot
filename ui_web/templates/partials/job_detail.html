@@ -54,28 +54,31 @@
     <div class="flex items-center gap-2 flex-wrap">
       {% if job.job_url_direct and job.job_url_direct != job.job_url %}
       <a href="{{ job.job_url_direct }}" target="_blank" rel="noopener"
-         class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
+         class="btn btn-sm btn-quiet font-medium cursor-pointer inline-flex items-center gap-1.5"
          title="Direct link to the company's career page">
         {{ _('action.apply_directly') }} <i class="ph-thin ph-arrow-square-out i-4"></i>
       </a>
       {% endif %}
       {% if job.job_url %}
       <a href="{{ job.job_url }}" target="_blank" rel="noopener"
-         class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5">
+         class="btn btn-sm btn-quiet font-medium cursor-pointer inline-flex items-center gap-1.5">
         {% if job.job_url_direct and job.job_url_direct != job.job_url %}View on {{ job.site or 'board' }}
         {% else %}{{ _('action.open_posting') }}{% endif %}
         <i class="ph-thin ph-arrow-square-out i-4"></i>
       </a>
       {% endif %}
-      <button class="btn btn-sm {% if job.job_url_direct and job.job_url_direct != job.job_url %}bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium{% else %}btn-primary{% endif %} cursor-pointer"
+      {# Tailor is ALWAYS the primary action — the natural next step after
+         reading a posting. Apply/View are demoted to quiet so there's one
+         green CTA per view, and it's always the same one. #}
+      <button class="btn btn-sm btn-primary cursor-pointer inline-flex items-center gap-1.5"
               hx-get="/jobs/tailor/{{ job.id }}"
               hx-target="#tailor-drawer-body"
               hx-swap="innerHTML"
               @click="$store.tailor.openFor('{{ job.id }}')">
-        {{ _('action.tailor') }}
+        <i class="ph-thin ph-magic-wand i-4"></i>{{ _('action.tailor') }}
       </button>
       {# Prep from here → get-or-create a bound prep session, jump into the kit. #}
-      <button class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5"
+      <button class="btn btn-sm btn-quiet font-medium cursor-pointer inline-flex items-center gap-1.5"
               hx-post="/prep/from-job/{{ job.id }}" hx-swap="none">
         <i class="ph-thin ph-target"></i>{{ _('action.prep') }}
       </button>

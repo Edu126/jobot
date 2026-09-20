@@ -61,7 +61,7 @@ html {
      Lighter + half the yellow chroma vs the earlier #F1EEE6, which read
      too "beige/dark" as a full-bleed bg while still keeping cards afloat. */
   --b1: 100% 0 0;              /* base-100 — cards, navbar (white) */
-  --b2: 96.7% 0.005 95.1;      /* base-200 — page bg (light linen #F5F4F0) */
+  --b2: 98.4% 0.0018 100;      /* base-200 — page bg: clean off-white, a hair off the white cards (was warm linen #F5F4F0 — read dirty) */
   --b3: 91.0% 0.014 88.7;      /* base-300 — quiet border #E5E1D7 */
   --bc: 20% 0.015 265;         /* base-content — near-black text */
 
@@ -85,6 +85,114 @@ html {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   design.md token layer (2026-09-18) — ADDITIVE. Tool-defined green
+   scale (Radix custom, accent #004E3D) + warm neutral ramp (Radix gray,
+   hue 89) + radius / elevation / motion scales.
+   Source of truth: /design.md §4, §6, §7, §8. Applied incrementally.
+   ───────────────────────────────────────────────────────────── */
+:root {
+  /* Green scale — 12 steps, hue 171.8 (step 9 = --p primary #004E3D) */
+  --green-1:  oklch(95.7% 0.008 171.8);
+  --green-2:  oklch(94.3% 0.015 171.8);
+  --green-3:  oklch(91.8% 0.043 171.8);
+  --green-4:  oklch(88.9% 0.068 171.8);
+  --green-5:  oklch(85.3% 0.088 171.8);
+  --green-6:  oklch(80.7% 0.104 171.8);
+  --green-7:  oklch(74.6% 0.110 171.8);
+  --green-8:  oklch(66.9% 0.110 171.8);
+  --green-9:  oklch(37.8% 0.073 171.8);
+  --green-10: oklch(44%   0.110 171.8);
+  --green-11: oklch(46%   0.110 171.8);
+  --green-12: oklch(35%   0.073 171.8);
+
+  /* Warm neutral ramp — hue 89 (fixes the old cool-hue ink) */
+  --n-0: 100%  0     0;
+  --n-1: 96.7% 0.005 89;
+  --n-2: 94.3% 0.005 89;
+  --n-3: 91.4% 0.005 89;
+  --n-4: 80.1% 0.013 89;
+  --n-5: 55.1% 0.020 89;
+  --n-6: 44.6% 0.016 89;
+  --n-7: 24.3% 0.017 89;
+
+  /* Radius set — everything maps to these five */
+  --r-sm: 0.375rem;
+  --r-md: 0.5rem;
+  --r-lg: 0.75rem;
+  --r-xl: 1rem;
+  --r-pill: 9999px;
+
+  /* Elevation — earned, warm/green-tinted */
+  --elev-1: 0 1px 2px oklch(var(--p) / .05);
+  --elev-2: 0 10px 25px -18px oklch(var(--p) / .28);
+  --elev-3: 0 24px 60px -24px oklch(var(--n-7) / .28);
+
+  /* Motion tokens */
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --ease-out: cubic-bezier(.22,.61,.36,1);
+  --ease-spring: cubic-bezier(.34,1.56,.64,1);
+  --ease-in-out: cubic-bezier(.65,.05,.36,1);
+
+  /* Verdict / semantic scale (design.md §4.5) — OKLCH, retires raw HSL.
+     tint = soft bg · ink = text/icon · solid = ring stroke · bd = border. */
+  --v-strong-tint: oklch(94% 0.04 165);  --v-strong-ink: oklch(38% 0.09 165);  --v-strong-solid: oklch(46% 0.11 165);  --v-strong-bd: oklch(38% 0.09 165 / 0.25);
+  --v-stretch-tint: oklch(93% 0.05 75);  --v-stretch-ink: oklch(44% 0.10 60);  --v-stretch-solid: oklch(58% 0.13 65);  --v-stretch-bd: oklch(44% 0.10 60 / 0.28);
+  --v-poor-tint: oklch(94% 0.04 25);     --v-poor-ink: oklch(50% 0.15 25);     --v-poor-solid: oklch(55% 0.17 25);     --v-poor-bd: oklch(50% 0.15 25 / 0.3);
+}
+
+/* Button system (design.md §9.1) — coexists with DaisyUI `.btn`.
+   Primary stays DaisyUI `.btn-primary` (already green). These add the
+   quiet (secondary) + danger variants, retiring the verbose
+   `bg-base-100 border-base-300 …` combo and the inline-styled delete
+   buttons (one of which still used raw HSL). */
+.btn-quiet {
+  background: oklch(var(--b1));
+  border-color: oklch(var(--b3));
+  color: oklch(var(--bc));
+  font-weight: 500;
+}
+.btn-quiet:hover {
+  background: oklch(var(--b2));
+  border-color: oklch(var(--b3));
+}
+/* Soft danger — tint bg + danger ink (for inline "Yes, delete" confirms) */
+.btn-danger {
+  background: oklch(var(--er) / 0.12);
+  border-color: oklch(var(--er) / 0.35);
+  color: oklch(var(--er));
+  font-weight: 600;
+}
+.btn-danger:hover {
+  background: oklch(var(--er) / 0.18);
+  border-color: oklch(var(--er) / 0.5);
+}
+/* Solid danger — the final destructive action (delete-all confirm) */
+.btn-danger-solid {
+  background: oklch(var(--er));
+  border-color: oklch(var(--er));
+  color: oklch(var(--erc));
+  font-weight: 600;
+}
+.btn-danger-solid:hover {
+  background: oklch(var(--er) / 0.9);
+  border-color: oklch(var(--er) / 0.9);
+}
+/* Run-search CTA stays visibly GREEN even when disabled (no query yet). It
+   should read as THE primary action — just dimmed + not-pressable until there's
+   a search value — instead of graying out like a dead control (DaisyUI's
+   default disabled look). */
+.run-search-btn:disabled,
+.run-search-btn[disabled] {
+  background-color: oklch(var(--p)) !important;
+  border-color: oklch(var(--p)) !important;
+  color: oklch(var(--pc)) !important;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─────────────────────────────────────────────────────────────
    Typography — a SYSTEM. Body = IBM Plex Sans, headings = Schibsted Grotesk
    (via --font-display). Hierarchy = a deliberate scale (size · weight ·
    line-height · tracking), NOT bold-vs-regular. See the .text-* ladder below.
@@ -98,14 +206,10 @@ body {
      breathes and reads warm rather than cramped. */
   letter-spacing: -0.003em;
   line-height: 1.55;
-  /* Clean linen page with a single faint green wash at bottom-right for a
-     hint of life. Dropped the top-left salmon wash — it read as an uneven
-     "peach" tint that reintroduced the warm/"YC" feel we're moving away
-     from, and muddied the clean linen. */
-  background:
-    radial-gradient(ellipse 100rem 70rem at 100% 110%, oklch(var(--p) / 0.05) 0%, transparent 60%),
-    oklch(var(--b2));
-  background-attachment: fixed;
+  /* Flat, clean off-white. The radial green "cloud" wash was REMOVED
+     (Eduardo: read dirty/uneven). The page is now just a hair off the
+     pure-white cards (--b2 ≈ 98.4% L), nothing floating over it. */
+  background: oklch(var(--b2));
   min-height: 100vh;
 }
 
@@ -213,9 +317,9 @@ h4 {
    drop-shadow uses the primary color at very low opacity so the card
    appears to "lift" gently on hover without breaking the minimal aesthetic. */
 .card-quiet:hover {
-  border-color: oklch(var(--a) / 0.28);
+  border-color: oklch(var(--p) / 0.28);
   box-shadow:
-    0 1px 0 oklch(var(--a) / 0.05),
+    0 1px 0 oklch(var(--p) / 0.05),
     0 10px 25px -18px oklch(var(--p) / 0.28);
 }
 
@@ -242,11 +346,14 @@ h4 {
    so the section reads as a single grouped surface. It's a DEEPER shade of the
    linen page in the SAME warm hue (not a cold grey — that read as ugly) so the
    white cards + detail lift cleanly off it and everything feels congruent. */
+/* Panel REMOVED (Eduardo 2026-09-20): the grey container that encapsulated the
+   cards read heavy. The workspace is now open — cards sit directly on the page.
+   Class kept (it also carries the grid layout) but visually transparent. */
 .results-panel {
-  background: oklch(93.4% 0.008 92);
-  border: 1px solid oklch(var(--b3) / 0.7);
-  border-radius: calc(var(--rounded-box) + 4px);
-  padding: 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 /* Job cards — compact, borderless tiles on the warm results panel. Clear
@@ -255,23 +362,24 @@ h4 {
    deeper shade of the warm hue) so they recede into the panel; the SELECTED
    one turns pure white, lifts, and carries a green leading accent bar. */
 .job-card {
-  background: oklch(95.3% 0.005 92);          /* muted — recedes into the panel */
-  border: none;
+  background: oklch(var(--b1));               /* white card on the open page (panel removed) */
+  border: 1px solid oklch(var(--b3));
   border-radius: 0.6rem;
   padding: 0.85rem 1rem;
-  box-shadow: none;
-  transition: background .18s ease, box-shadow .24s ease, transform .18s ease;
+  box-shadow: none;                           /* flat — no shadow soup in a 20-item list */
+  transition: border-color .18s ease, box-shadow .24s ease, transform .18s ease;
 }
 .job-card:hover {
-  background: oklch(97.6% 0.003 92);          /* brightens toward white — "about to pick" */
+  border-color: oklch(var(--p) / 0.35);       /* green hairline — "about to pick" */
   transform: translateY(-1px);                /* subtle lift = alive/interactive */
 }
 .job-card--selected,
 .job-card--selected:hover {
-  background: oklch(var(--b1));               /* pure white — the only bright tile */
+  background: oklch(var(--b1));               /* white + green edge — the picked card */
+  border-color: oklch(var(--p));
   transform: none;
   box-shadow:
-    0 1px 0 oklch(var(--a) / 0.05),
+    0 0 0 1px oklch(var(--p) / 0.45),        /* green ring so it reads as selected vs the bordered cards */
     0 12px 28px -18px oklch(var(--p) / 0.38);
 }
 /* Green accent bar is always present but collapsed; it GROWS in when the card
@@ -635,16 +743,16 @@ html, body {
 
 .score-badge-strong_fit,
 .score-badge-workable {
-  background: hsl(155 55% 93%);
-  color: hsl(165 80% 20%);
+  background: var(--v-strong-tint);
+  color: var(--v-strong-ink);
 }
 .score-badge-stretch {
-  background: hsl(35 85% 92%);
-  color: hsl(28 75% 30%);
+  background: var(--v-stretch-tint);
+  color: var(--v-stretch-ink);
 }
 .score-badge-poor_fit {
-  background: hsl(0 60% 95%);
-  color: hsl(358 60% 45%);
+  background: var(--v-poor-tint);
+  color: var(--v-poor-ink);
 }
 .score-badge-none {
   background: oklch(var(--b3));
@@ -659,12 +767,12 @@ html, body {
 .score-ring .ring-track { fill: none; stroke: oklch(var(--b3)); stroke-width: 3.5; }
 .score-ring .ring-fill  { fill: none; stroke-width: 3.5; stroke-linecap: round; transition: stroke-dasharray .5s ease-out; }
 .score-ring .score-num  { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: .95rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.score-ring-strong_fit .ring-fill, .score-ring-workable .ring-fill { stroke: hsl(165 70% 32%); }
-.score-ring-strong_fit .score-num, .score-ring-workable .score-num { color: hsl(165 80% 20%); }
-.score-ring-stretch  .ring-fill { stroke: hsl(30 80% 45%); }
-.score-ring-stretch  .score-num { color: hsl(28 75% 30%); }
-.score-ring-poor_fit .ring-fill { stroke: hsl(358 60% 50%); }
-.score-ring-poor_fit .score-num { color: hsl(358 60% 45%); }
+.score-ring-strong_fit .ring-fill, .score-ring-workable .ring-fill { stroke: var(--v-strong-solid); }
+.score-ring-strong_fit .score-num, .score-ring-workable .score-num { color: var(--v-strong-ink); }
+.score-ring-stretch  .ring-fill { stroke: var(--v-stretch-solid); }
+.score-ring-stretch  .score-num { color: var(--v-stretch-ink); }
+.score-ring-poor_fit .ring-fill { stroke: var(--v-poor-solid); }
+.score-ring-poor_fit .score-num { color: var(--v-poor-ink); }
 .score-ring-none .score-num { color: oklch(var(--bc) / .5); }
 
 /* Skill chips — small pill for matched/gaps lists. Padding bumped on
@@ -686,19 +794,27 @@ html, body {
   }
 }
 .chip-matched {
-  background: hsl(155 40% 95%);
-  color: hsl(165 60% 22%);
-  border-color: hsl(155 40% 85%);
+  background: var(--v-strong-tint);
+  color: var(--v-strong-ink);
+  border-color: var(--v-strong-bd);
 }
 .chip-gap {
-  background: hsl(35 60% 96%);
-  color: hsl(28 60% 32%);
-  border-color: hsl(35 50% 88%);
+  background: var(--v-stretch-tint);
+  color: var(--v-stretch-ink);
+  border-color: var(--v-stretch-bd);
 }
 .chip-neutral {
   background: oklch(var(--b3) / 0.5);
   color: oklch(var(--bc) / 0.7);
   border-color: oklch(var(--b3));
+}
+/* AI role suggestions (For-you) — GREEN, not salmon. Salmon is reserved for
+   top-match/celebration (≤1 per view); suggestions read as "Jobot's picks"
+   in the product's own primary green. */
+.chip-suggest {
+  background: oklch(var(--p) / 0.08);
+  color: oklch(var(--p));
+  border-color: oklch(var(--p) / 0.25);
 }
 
 /* Salmon accent variants — for top matches, recommended badges, celebrations. */
@@ -758,16 +874,9 @@ html, body {
 .quoted::before { content: '\201C'; margin-right: 0.05em; }
 .quoted::after  { content: '\201D'; margin-left: 0.05em; }
 
-/* Breathing pulse — the accent pill exhales a soft glow every 2.8s. Signals
-   "this is where the eye should land" on hero moments (curated top matches). */
-.pill-accent {
-  animation: pillBreathe 2.8s ease-in-out infinite;
-  will-change: box-shadow;
-}
-@keyframes pillBreathe {
-  0%, 100% { box-shadow: 0 0 0 0 oklch(var(--a) / 0.35); }
-  50%      { box-shadow: 0 0 0 5px oklch(var(--a) / 0); }
-}
+/* pill-accent used to breathe infinitely (pillBreathe) — REMOVED per the
+   motion rule (no infinite loops on resting UI). Top-match pills are now
+   static salmon; the reserved color alone carries the "land here" signal. */
 
 /* Section-header dot — small salmon dot before a label. Purely decorative.
    Add via class="text-label label-dot" wherever a section deserves a beat. */
@@ -777,11 +886,11 @@ html, body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: oklch(var(--a));
+  background: oklch(var(--p));
   vertical-align: middle;
   margin-right: 0.6rem;
   margin-bottom: 3px;
-  box-shadow: 0 0 10px oklch(var(--a) / 0.5);
+  box-shadow: 0 0 10px oklch(var(--p) / 0.5);
 }
 
 /* Phosphor icons render as font glyphs — size = font-size, color = color.
@@ -840,23 +949,23 @@ html, body {
   transform: translateY(-1px);
 }
 .seg-tab:hover:not(.seg-tab--active) i {
-  color: oklch(var(--a) / 0.7);
+  color: oklch(var(--p) / 0.7);
 }
 .seg-tab--active {
   background: oklch(var(--b1));
   color: oklch(var(--p));
   border-color: oklch(var(--b3));
   font-weight: 600;
-  /* Layered elevation — a soft green shadow below (depth) and a warm
-     salmon "top light" that reads as brand color. Chrome-tab lifted feel. */
+  /* Layered green elevation — soft shadow below (depth) + a faint green
+     "top light" inset for the chrome-tab lifted feel (salmon retired). */
   box-shadow:
-    0 1px 0 oklch(var(--a) / 0.20) inset,
+    0 1px 0 oklch(var(--p) / 0.20) inset,
     0 2px 3px oklch(var(--p) / 0.05),
     0 12px 20px -12px oklch(var(--p) / 0.25);
   transform: translateY(-1px);
 }
 .seg-tab--active i {
-  color: oklch(var(--a));
+  color: oklch(var(--p));
 }
 
 /* Cascade fade-in — apply .cascade-in to a container; its direct children
@@ -1074,10 +1183,10 @@ html, body {
   width: 0;
   z-index: 1000;
   background: linear-gradient(90deg,
-    oklch(var(--a)) 0%,
+    oklch(var(--p) / 0.55) 0%,
     oklch(var(--p)) 60%,
-    oklch(var(--a)) 100%);
-  box-shadow: 0 0 12px oklch(var(--a) / 0.55);
+    oklch(var(--p) / 0.55) 100%);
+  box-shadow: 0 0 12px oklch(var(--p) / 0.45);
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;
@@ -1160,7 +1269,7 @@ html, body {
   font-weight: 600;
   color: oklch(var(--bc) / 0.6);
 }
-.utab--active .utab__count { color: oklch(var(--a)); }
+.utab--active .utab__count { color: oklch(var(--p)); }
 
 /* Airline-style connected search bar (Jobs landing). Soft focus-within ring so
    the whole bar lights up when any segment (roles / location) is focused. */
@@ -1284,9 +1393,9 @@ html { scroll-behavior: smooth; }
   font-weight: 600;
 }
 .journey-rail__step--active .journey-rail__dot {
-  background: oklch(var(--a));
-  border-color: oklch(var(--a));
-  box-shadow: 0 0 0 4px oklch(var(--a) / 0.15);
+  background: oklch(var(--p));
+  border-color: oklch(var(--p));
+  box-shadow: 0 0 0 4px oklch(var(--p) / 0.15);
 }
 
 /* Kanban columns — light bg with header stripe, cards stack vertically. */
@@ -1482,16 +1591,16 @@ html { scroll-behavior: smooth; }
 }
 .score-hero__badge--strong_fit,
 .score-hero__badge--workable {
-  background: hsl(155 55% 93%);
-  color: hsl(165 80% 20%);
+  background: var(--v-strong-tint);
+  color: var(--v-strong-ink);
 }
 .score-hero__badge--stretch {
-  background: hsl(35 85% 92%);
-  color: hsl(28 75% 30%);
+  background: var(--v-stretch-tint);
+  color: var(--v-stretch-ink);
 }
 .score-hero__badge--poor_fit {
-  background: hsl(0 60% 95%);
-  color: hsl(358 60% 45%);
+  background: var(--v-poor-tint);
+  color: var(--v-poor-ink);
 }
 .score-hero__num {
   font-size: 2rem;
@@ -1534,7 +1643,7 @@ html { scroll-behavior: smooth; }
   line-height: 1.55;
   color: oklch(var(--bc) / 0.75);
   font-style: italic;
-  border-left: 2px solid oklch(var(--a) / 0.5);
+  border-left: 2px solid oklch(var(--p) / 0.5);
   padding-left: 0.75rem;
 }
 
@@ -1550,25 +1659,21 @@ html { scroll-behavior: smooth; }
   letter-spacing: 0.03em;
   border: 1px solid;
 }
-.verdict-pill--strong_fit {
-  background: hsl(155 55% 93%);
-  color: hsl(165 80% 22%);
-  border-color: hsl(155 40% 78%);
-}
+.verdict-pill--strong_fit,
 .verdict-pill--workable {
-  background: hsl(155 40% 94%);
-  color: hsl(165 65% 26%);
-  border-color: hsl(155 30% 82%);
+  background: var(--v-strong-tint);
+  color: var(--v-strong-ink);
+  border-color: var(--v-strong-bd);
 }
 .verdict-pill--stretch {
-  background: hsl(35 85% 92%);
-  color: hsl(28 75% 30%);
-  border-color: hsl(35 70% 82%);
+  background: var(--v-stretch-tint);
+  color: var(--v-stretch-ink);
+  border-color: var(--v-stretch-bd);
 }
 .verdict-pill--poor_fit {
-  background: hsl(0 60% 95%);
-  color: hsl(358 60% 42%);
-  border-color: hsl(0 50% 88%);
+  background: var(--v-poor-tint);
+  color: var(--v-poor-ink);
+  border-color: var(--v-poor-bd);
 }
 
 /* ─────────────────────────────────────────────────────────────

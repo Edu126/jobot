@@ -28,7 +28,7 @@
     </button>
   {% else %}
     <button type="button"
-            class="btn btn-sm bg-base-100 border-base-300 hover:bg-base-200 text-base-content font-medium cursor-pointer inline-flex items-center gap-1.5"
+            class="btn btn-sm btn-quiet font-medium cursor-pointer inline-flex items-center gap-1.5"
             hx-post="/jobs/mark-applied/{{ job_id }}"
             hx-target="#applied-action-{{ job_id }}"
             hx-swap="outerHTML"
