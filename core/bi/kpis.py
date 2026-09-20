@@ -8,12 +8,17 @@ report. Pure reads: events, applications, job_scores. No writes, no network.
 Definitions (from docs/product/milestones.md):
   G1  Weekly returning users — per-app weekly-active (single-tenant), with
       W1/W4 retention booleans anchored on first-ever activity.
-  G2  Applications completed / week — applied_at in the window, vs prior window.
+  G2  Résumés shipped / week — distinct jobs whose tailored artifact was
+      DOWNLOADED in the window, vs prior window (ADR-044). "Shipped" is the
+      terminal observable: "applied" happens off-platform and can't be seen, so
+      the download — the last high-intent action we own — stands in for it.
   S1  Activation — reached the first tailored artifact; whether in session 1
       (proxied as the same UTC day as first activity).
   S2  Artifact acceptance — of tailored jobs, how many were downloaded ("used").
-  S3  Score trust — do applied jobs score higher than the average job seen?
-Outcome (moat seed) — applications that got a response (moved past `applied`).
+  S3  Score trust — do SHIPPED jobs score higher than the average job seen?
+Outcome (optional, self-declared) — DEMOTED per ADR-044: applications the user
+  chose to mark as heard-back. Zero weight on the scorecard; kept for the day a
+  user volunteers it, never a Gold metric, never a fake 0.
 
 Every metric degrades honestly: not-enough-data returns None, not a fake 0.
 """
@@ -35,6 +40,10 @@ _POSITIVE_OUTCOME = ("interviewing", "offer")
 _HIGH_SCORE = 70            # the "high fit" threshold for S3 (verdict band edge)
 _MAX_RETENTION_WEEKS = 12   # bound the weekly-active sparkline
 
+# The download of a tailored résumé/cover letter — our owned analog of "applied"
+# (ADR-044). A job is "shipped" once one of these fires for it.
+_DOWNLOAD_TYPES = (ev.TAILOR_RESUME_DOWNLOAD, ev.TAILOR_CL_DOWNLOAD)
+
 
 def compute_phase0_kpis(now: Optional[datetime] = None, path: Path = db.DB_PATH) -> dict:
     """Return the Phase 0 KPI block. Shape-stable; values are numbers or None
@@ -44,7 +53,7 @@ def compute_phase0_kpis(now: Optional[datetime] = None, path: Path = db.DB_PATH)
         return {
             "computed_at": _iso(now),
             "g1_retention": _g1_retention(conn, now),
-            "g2_applications": _g2_applications(conn, now),
+            "g2_shipped": _g2_shipped(conn, now),
             "s1_activation": _s1_activation(conn),
             "s2_acceptance": _s2_acceptance(conn),
             "s3_score_trust": _s3_score_trust(conn),
@@ -96,21 +105,27 @@ def _g1_retention(conn: sqlite3.Connection, now: datetime) -> dict:
     }
 
 
-# ---------- G2 — applications completed / week ----------
+# ---------- G2 — résumés shipped / week (ADR-044) ----------
 
-def _g2_applications(conn: sqlite3.Connection, now: datetime) -> dict:
+def _g2_shipped(conn: sqlite3.Connection, now: datetime) -> dict:
+    """Distinct jobs whose tailored artifact was DOWNLOADED in the window, vs the
+    prior window. Download = "shipped" — the terminal action we can observe, in
+    place of the off-platform "applied" (ADR-044)."""
     start = now - timedelta(days=7)
     prev = start - timedelta(days=7)
+    ph = _qmarks(_DOWNLOAD_TYPES)
 
-    def applied_between(a: datetime, b: datetime) -> int:
+    def shipped_between(a: datetime, b: datetime) -> int:
         return conn.execute(
-            "SELECT COUNT(*) AS n FROM applications "
-            "WHERE applied_at IS NOT NULL AND applied_at >= ? AND applied_at < ?",
-            (_iso(a), _iso(b)),
+            f"SELECT COUNT(DISTINCT json_extract(payload_json,'$.job_id')) AS n "
+            f"FROM events WHERE type IN ({ph}) "
+            f"AND json_extract(payload_json,'$.job_id') IS NOT NULL "
+            f"AND ts_utc >= ? AND ts_utc < ?",
+            (*_DOWNLOAD_TYPES, _iso(a), _iso(b)),
         ).fetchone()["n"]
 
-    this_week = applied_between(start, now)
-    last_week = applied_between(prev, start)
+    this_week = shipped_between(start, now)
+    last_week = shipped_between(prev, start)
     return {"this_week": this_week, "last_week": last_week,
             "delta": this_week - last_week}
 
@@ -144,7 +159,7 @@ def _s1_activation(conn: sqlite3.Connection) -> dict:
 
 def _s2_acceptance(conn: sqlite3.Connection) -> dict:
     generated = _distinct_jobs(conn, (ev.TAILOR_GENERATED,))
-    downloaded = _distinct_jobs(conn, (ev.TAILOR_RESUME_DOWNLOAD, ev.TAILOR_CL_DOWNLOAD))
+    downloaded = _distinct_jobs(conn, _DOWNLOAD_TYPES)
     if not generated:
         return {"generated": 0, "downloaded": 0, "acceptance_rate": None}
     used = len(generated & downloaded)
@@ -163,33 +178,43 @@ def _distinct_jobs(conn: sqlite3.Connection, types: tuple[str, ...]) -> set[str]
     return {r["job_id"] for r in rows}
 
 
-# ---------- S3 — score trust ----------
+# ---------- S3 — score trust (anchored on shipped jobs, ADR-044) ----------
 
 def _s3_score_trust(conn: sqlite3.Connection) -> dict:
-    # Latest score per job (a job may be re-scored across résumés/versions).
-    applied_scores = [r["score"] for r in conn.execute(
-        """SELECT js.score AS score
-           FROM applications a
-           JOIN (SELECT job_id, MAX(scored_at) AS mx FROM job_scores GROUP BY job_id) last
-                ON last.job_id = a.job_id
-           JOIN job_scores js ON js.job_id = last.job_id AND js.scored_at = last.mx
-           WHERE a.applied_at IS NOT NULL""",
-    ).fetchall()]
+    """Do the jobs the user SHIPPED (downloaded a tailored artifact for) score
+    higher than the average job they saw? Re-anchored from "applied" — which we
+    can't observe — to "shipped", which we can (ADR-044)."""
     baseline = conn.execute("SELECT AVG(score) AS a FROM job_scores").fetchone()["a"]
+    shipped = _distinct_jobs(conn, _DOWNLOAD_TYPES)
 
-    if not applied_scores:
-        return {"applied_with_score": 0, "mean_applied_score": None,
-                "pct_applied_high": None, "mean_all_scored": _round(baseline)}
-    n = len(applied_scores)
+    empty = {"shipped_with_score": 0, "mean_shipped_score": None,
+             "pct_shipped_high": None, "mean_all_scored": _round(baseline)}
+    if not shipped:
+        return empty
+
+    # Latest score per shipped job (a job may be re-scored across résumés/versions).
+    ph = _qmarks(tuple(shipped))
+    shipped_scores = [r["score"] for r in conn.execute(
+        f"""SELECT js.score AS score
+            FROM (SELECT job_id, MAX(scored_at) AS mx FROM job_scores GROUP BY job_id) last
+            JOIN job_scores js ON js.job_id = last.job_id AND js.scored_at = last.mx
+            WHERE last.job_id IN ({ph})""",
+        tuple(shipped),
+    ).fetchall()]
+    if not shipped_scores:
+        return empty
+    n = len(shipped_scores)
     return {
-        "applied_with_score": n,
-        "mean_applied_score": round(sum(applied_scores) / n, 1),
-        "pct_applied_high": round(sum(1 for s in applied_scores if s >= _HIGH_SCORE) / n, 3),
+        "shipped_with_score": n,
+        "mean_shipped_score": round(sum(shipped_scores) / n, 1),
+        "pct_shipped_high": round(sum(1 for s in shipped_scores if s >= _HIGH_SCORE) / n, 3),
         "mean_all_scored": _round(baseline),
     }
 
 
-# ---------- Outcome (moat seed) ----------
+# ---------- Outcome (optional, self-declared — DEMOTED, ADR-044) ----------
+# Not a Gold metric. "Applied"/response happen off-platform; this block only
+# reflects what a user chose to mark. Kept for the day they volunteer it.
 
 def _outcome(conn: sqlite3.Connection) -> dict:
     applied = conn.execute(
@@ -238,9 +263,11 @@ def _round(v) -> Optional[float]:
 # reframed leading-signal order (REQ-031) should use LEADING_STEPS.
 FUNNEL_STEPS = ("viewed", "saved", "applied", "tailored", "heard_back")
 
-# Reframed funnel (REQ-031): first-party leading signals, then outcomes.
-# search → save → tailor → gap_viewed → prep | applied → heard_back
-LEADING_STEPS = ("search", "save", "tailor", "gap_viewed", "prep", "applied", "heard_back")
+# Reframed funnel (REQ-031 / ADR-044): first-party leading signals ending in the
+# terminal OBSERVABLE — `shipped` (tailored artifact downloaded), not the
+# off-platform `applied`. `heard_back` trails as an optional self-declared outcome.
+# search → save → tailor → gap_viewed → prep → shipped | heard_back
+LEADING_STEPS = ("search", "save", "tailor", "gap_viewed", "prep", "shipped", "heard_back")
 
 # search.* event types that count as a "search" signal.
 _SEARCH_TYPES = (
@@ -260,7 +287,7 @@ def compute_kpi_timeseries(
     """Per-bucket funnel counts, oldest bucket first (REQ-028 / REQ-031).
     `granularity` is 'week' (7-day buckets) or 'day'. Each bucket:
       {start, label, active_days,
-       search, save, tailor, gap_viewed, prep,   ← leading signals (REQ-031)
+       search, save, tailor, gap_viewed, prep, shipped,  ← leading + terminal (ADR-044)
        viewed, saved, applied, tailored, heard_back}  ← legacy columns (back-compat)
     Computed on demand from raw tables (ADR-036) — exact and retroactive."""
     now = now or datetime.utcnow()
@@ -309,6 +336,13 @@ def _bucket(conn: sqlite3.Connection, a: datetime, b: datetime, gran: str) -> di
         "SELECT COUNT(*) n FROM events WHERE type=? AND ts_utc>=? AND ts_utc<?",
         "prep_session_created", ai, bi)
 
+    # `shipped` (ADR-044) — distinct jobs whose tailored artifact was downloaded
+    # in the window. The terminal observable step, replacing off-platform `applied`.
+    dl_ph = _qmarks(_DOWNLOAD_TYPES)
+    shipped_count = one(
+        f"SELECT COUNT(DISTINCT json_extract(payload_json,'$.job_id')) n FROM events "
+        f"WHERE type IN ({dl_ph}) AND ts_utc>=? AND ts_utc<?", *_DOWNLOAD_TYPES, ai, bi)
+
     # ── Intention vs intensity (REQ-031 / ADR-039) ──
     # The counts above are INTENSITY (raw events: 8 queries in a day = 8).
     # These `_days` are INTENTION: distinct active days the user did the
@@ -325,6 +359,7 @@ def _bucket(conn: sqlite3.Connection, a: datetime, b: datetime, gran: str) -> di
     tailor_days = days_events((ev.TAILOR_GENERATED,))
     gap_days = days_events((ev.PROFILE_GAP_VIEWED,))
     prep_days = days_events(("prep_session_created",))
+    shipped_days = days_events(_DOWNLOAD_TYPES)
     save_days = one(
         "SELECT COUNT(DISTINCT substr(created_at,1,10)) n FROM applications "
         "WHERE created_at>=? AND created_at<?", ai, bi)
@@ -341,12 +376,14 @@ def _bucket(conn: sqlite3.Connection, a: datetime, b: datetime, gran: str) -> di
         "tailor": tailor_count,
         "gap_viewed": gap_count,
         "prep": prep_count,
+        "shipped": shipped_count,     # terminal observable (ADR-044)
         # ── Leading signals — intention (distinct active days) ─────
         "search_days": search_days,
         "save_days": save_days,
         "tailor_days": tailor_days,
         "gap_viewed_days": gap_days,
         "prep_days": prep_days,
+        "shipped_days": shipped_days,
         # ── Legacy / outcome columns (back-compat) ─────────────────
         "viewed": one(
             "SELECT COUNT(*) n FROM viewed_jobs WHERE viewed_at>=? AND viewed_at<?", ai, bi),

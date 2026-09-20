@@ -39,23 +39,24 @@
       {% endif %}
     </div>
 
-    {# G2 — applications completed / week #}
-    {% set g2 = kpis.g2_applications %}
+    {# G2 — résumés shipped / week (ADR-044) #}
+    {% set g2 = kpis.g2_shipped %}
     <div class="card-quiet p-4">
-      <div class="text-label">G2 · Applications / week</div>
+      <div class="text-label">G2 · Shipped / week</div>
       <div class="text-2xl font-semibold mt-1">{{ g2.this_week }}</div>
       <div class="text-sm text-body-muted mt-1">
         last week {{ g2.last_week }} ·
         {% if g2.delta > 0 %}<span class="text-success">+{{ g2.delta }}</span>
         {% elif g2.delta < 0 %}<span class="text-error">{{ g2.delta }}</span>
         {% else %}±0{% endif %}
+        <span class="opacity-70">(tailored + downloaded)</span>
       </div>
     </div>
 
-    {# Outcome — moat seed #}
+    {# Outcome — optional, self-declared; not a Gold metric (ADR-044) #}
     {% set o = kpis.outcome %}
     <div class="card-quiet p-4">
-      <div class="text-label">Outcome · Response rate</div>
+      <div class="text-label">Outcome · Response rate <span class="opacity-70">(self-declared)</span></div>
       <div class="text-2xl font-semibold mt-1">{{ pct(o.response_rate) }}</div>
       <div class="text-sm text-body-muted mt-1">
         {{ o.heard_back }} heard back / {{ o.applied }} applied · {{ o.positive }} positive
@@ -87,13 +88,13 @@
     {% set s3 = kpis.s3_score_trust %}
     <div class="card-quiet p-4">
       <div class="text-label">S3 · Score trust</div>
-      {% if s3.mean_applied_score is not none %}
-        <div class="text-2xl font-semibold mt-1">{{ s3.mean_applied_score }} avg</div>
+      {% if s3.mean_shipped_score is not none %}
+        <div class="text-2xl font-semibold mt-1">{{ s3.mean_shipped_score }} avg</div>
         <div class="text-sm text-body-muted mt-1">
-          applied vs {{ s3.mean_all_scored }} all · {{ pct(s3.pct_applied_high) }} high-fit
+          shipped vs {{ s3.mean_all_scored }} all · {{ pct(s3.pct_shipped_high) }} high-fit
         </div>
       {% else %}
-        <div class="text-body-muted mt-2">No scored applications yet.</div>
+        <div class="text-body-muted mt-2">No scored shipments yet.</div>
       {% endif %}
     </div>
 

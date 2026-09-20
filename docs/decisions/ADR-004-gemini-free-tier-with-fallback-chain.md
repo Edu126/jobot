@@ -3,6 +3,8 @@
 Date: ~2026-07 (documented retroactively 2026-08-21)
 Status: Accepted (POC) — multi-provider architecture planned
 post-validation, without affecting quality or price.
+Model-selection rationale amended by ADR-043 (free-tier quota → paid-tier
+cost); the Gemini + provider-agnostic-client decision below still stands.
 
 ## Context
 POC phase. Budget target: ~$0. LLM is used for scoring, resume

@@ -56,15 +56,16 @@ per hour of user effort*).
 **2 Gold** (if these move, we win):
 - **G1 — Weekly returning users** (W1/W4 retention). *The number we can't
   see today. No business without it.*
-- **G2 — Applications completed with jobot / week.** The behavior that
-  matters; text without a submitted application = zero value.
+- **G2 — Résumés shipped with jobot / week** (ADR-044). "Shipped" = a tailored
+  artifact *downloaded* — our owned analog of "applied", which happens
+  off-platform and can't be observed. The last high-intent action we can see.
 
 **3 support** (explain why G1/G2 move):
 - **S1 — Activation:** % reaching first tailored artifact in session 1.
 - **S2 — Artifact acceptance:** % of artifacts used with minimal edits
   (quality/trust proxy).
-- **S3 — Score trust:** do they apply to high-scored jobs? score→action
-  correlation.
+- **S3 — Score trust:** do the jobs they *ship* score higher than the average
+  job seen? score→action correlation (anchored on shipped, not applied — ADR-044).
 
 Note: the existing architecture already treats the BI/pulse loop as a
 first-class surface (`docs/architecture/vision.md` non-negotiable #5). Phase 0

@@ -3,10 +3,13 @@
 Runs without pytest — invoke directly:
     .venv/bin/python tests/test_phase0_kpis.py
 
-Seeds a temp SQLite DB with a deterministic story: activity anchored 30 days
-back, returns in week 1 and week 4, two tailors (one downloaded), three
-applications (two this week, one last week; two heard back, one positive), and
-four scored jobs. Then asserts every KPI lands on its computed value.
+Seeds a temp SQLite DB with a deterministic story (ADR-044 "shipped" model):
+activity anchored 30 days back, returns in week 1 and week 4. Four jobs tailored
+(j1..j4); three SHIPPED (tailored artifact downloaded): j1 old, j2 last week,
+j3 this week — plus j1 re-downloaded this week — so G2 shipped = 2 this week,
+1 last week. j4 tailored but never downloaded (the S2 acceptance gap). Three
+self-declared applications (two heard back, one positive) exercise the demoted
+outcome block. Then asserts every KPI lands on its computed value.
 """
 from __future__ import annotations
 
@@ -53,14 +56,23 @@ def _seed(path: Path) -> None:
 
     with db.tx(path) as conn:
         day9 = ANCHOR.replace(hour=9, minute=0, second=0, microsecond=0)
+        # Anchor day (30d ago): first touch + activation (first tailor) + j1 shipped.
         _e(conn, day9,                          ev.PAGE_VIEW, path="/profile")
-        _e(conn, day9 + timedelta(minutes=30),  ev.TAILOR_GENERATED, job_id="j1")
-        _e(conn, day9 + timedelta(minutes=35),  ev.TAILOR_GENERATED, job_id="j2")
+        _e(conn, day9 + timedelta(minutes=30),  ev.TAILOR_GENERATED, job_id="j1")   # activation
+        _e(conn, day9 + timedelta(minutes=35),  ev.TAILOR_GENERATED, job_id="j4")   # tailored, never shipped
         _e(conn, day9 + timedelta(hours=1),     ev.TAILOR_RESUME_DOWNLOAD, job_id="j1")
-        _e(conn, NOW - timedelta(days=22), ev.PAGE_VIEW, path="/jobs")   # week 1
+        _e(conn, NOW - timedelta(days=22), ev.PAGE_VIEW, path="/jobs")   # week 1 retention
+        # Last week: j2 tailored + shipped.
+        _e(conn, NOW - timedelta(days=9), ev.TAILOR_GENERATED, job_id="j2")
+        _e(conn, NOW - timedelta(days=9), ev.TAILOR_RESUME_DOWNLOAD, job_id="j2")
+        # This week: j3 tailored + shipped, and j1 re-downloaded → 2 distinct shipped.
+        _e(conn, NOW - timedelta(days=2), ev.TAILOR_GENERATED, job_id="j3")
+        _e(conn, NOW - timedelta(days=2), ev.TAILOR_RESUME_DOWNLOAD, job_id="j3")
+        _e(conn, NOW - timedelta(days=1), ev.TAILOR_RESUME_DOWNLOAD, job_id="j1")
         _e(conn, NOW - timedelta(days=1),  ev.PAGE_VIEW, path="/jobs")   # week 4 + current
-        _app(conn, "j1", "interviewing", NOW - timedelta(days=1))        # this week, positive
-        _app(conn, "j3", "rejected",     NOW - timedelta(days=2))        # this week, heard back
+        # Demoted outcome block (self-declared applications).
+        _app(conn, "j1", "interviewing", NOW - timedelta(days=1))        # positive
+        _app(conn, "j3", "rejected",     NOW - timedelta(days=2))        # heard back
         _app(conn, "j2", "applied",      NOW - timedelta(days=9))        # last week
         # a status transition event so the time-series heard_back has timing
         _e(conn, NOW - timedelta(days=1), ev.APP_STATUS_CHANGED,
@@ -94,9 +106,9 @@ def main() -> int:
     check("g1.current", g1["current_week_active"] is True, g1)
     check("g1.weeks", g1["weeks_since_anchor"] == 4, g1)
 
-    g2 = k["g2_applications"]
-    check("g2.this_week", g2["this_week"] == 2, g2)
-    check("g2.last_week", g2["last_week"] == 1, g2)
+    g2 = k["g2_shipped"]   # ADR-044: shipped (tailored + downloaded), not applied
+    check("g2.this_week", g2["this_week"] == 2, g2)   # j1 + j3 downloaded this week
+    check("g2.last_week", g2["last_week"] == 1, g2)   # j2 downloaded last week
     check("g2.delta", g2["delta"] == 1, g2)
 
     s1 = k["s1_activation"]
@@ -105,15 +117,15 @@ def main() -> int:
     check("s1.hours", _approx(s1["hours_to_activate"], 0.5), s1)
 
     s2 = k["s2_acceptance"]
-    check("s2.generated", s2["generated"] == 2, s2)
-    check("s2.downloaded", s2["downloaded"] == 1, s2)
-    check("s2.rate", _approx(s2["acceptance_rate"], 0.5), s2)
+    check("s2.generated", s2["generated"] == 4, s2)    # j1..j4 tailored
+    check("s2.downloaded", s2["downloaded"] == 3, s2)  # j1,j2,j3 shipped; j4 not
+    check("s2.rate", _approx(s2["acceptance_rate"], 0.75), s2)
 
-    s3 = k["s3_score_trust"]
-    check("s3.applied_with_score", s3["applied_with_score"] == 3, s3)
-    check("s3.mean_applied", _approx(s3["mean_applied_score"], 78.3, 0.1), s3)
-    check("s3.pct_high", _approx(s3["pct_applied_high"], 0.667, 0.01), s3)
-    check("s3.mean_all", _approx(s3["mean_all_scored"], 68.8, 0.1), s3)
+    s3 = k["s3_score_trust"]   # ADR-044: anchored on shipped jobs {j1,j2,j3}
+    check("s3.shipped_with_score", s3["shipped_with_score"] == 3, s3)
+    check("s3.mean_shipped", _approx(s3["mean_shipped_score"], 78.3, 0.1), s3)  # (85+60+90)/3
+    check("s3.pct_high", _approx(s3["pct_shipped_high"], 0.667, 0.01), s3)      # j1,j3 ≥70
+    check("s3.mean_all", _approx(s3["mean_all_scored"], 68.8, 0.1), s3)         # incl. j4=40
 
     o = k["outcome"]
     check("o.applied", o["applied"] == 3, o)
@@ -130,13 +142,16 @@ def main() -> int:
 
     check("ts.week_len", len(wk) == 8, len(wk))
     nb = wk[-1]  # newest week
-    check("ts.newest_applied", nb["applied"] == 2, nb)
+    check("ts.newest_applied", nb["applied"] == 2, nb)      # legacy col (back-compat)
+    check("ts.newest_shipped", nb["shipped"] == 2, nb)      # ADR-044 terminal: j1 + j3
+    check("ts.newest_shipped_days", nb["shipped_days"] == 2, nb)
     check("ts.newest_saved", nb["saved"] == 2, nb)
     check("ts.newest_heard", nb["heard_back"] == 1, nb)
-    check("ts.newest_tailored", nb["tailored"] == 0, nb)
+    check("ts.newest_tailored", nb["tailored"] == 1, nb)    # j3 tailored this week
     check("ts.newest_active", nb["active_days"] >= 1, nb)
     check("ts.sum_applied", sum(b["applied"] for b in wk) == 3, [b["applied"] for b in wk])
-    check("ts.sum_tailored", sum(b["tailored"] for b in wk) == 2, [b["tailored"] for b in wk])
+    check("ts.sum_shipped", sum(b["shipped"] for b in wk) == 4, [b["shipped"] for b in wk])
+    check("ts.sum_tailored", sum(b["tailored"] for b in wk) == 4, [b["tailored"] for b in wk])
     check("ts.day_len", len(day) == 21, len(day))
     check("ts.day_sum_applied", sum(b["applied"] for b in day) == 3, [b["applied"] for b in day])
 
@@ -166,7 +181,7 @@ def main() -> int:
         e = kpis.compute_phase0_kpis(now=NOW, path=path)
     check("empty.g1", e["g1_retention"]["w4_retained"] is None, e["g1_retention"])
     check("empty.s1", e["s1_activation"]["activated"] is None, e["s1_activation"])
-    check("empty.g2", e["g2_applications"]["this_week"] == 0, e["g2_applications"])
+    check("empty.g2", e["g2_shipped"]["this_week"] == 0, e["g2_shipped"])
 
     if fails:
         print("FAILURES:\n  " + "\n  ".join(fails))

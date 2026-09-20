@@ -106,6 +106,12 @@ def _pct(v) -> str:
     return "—" if v is None else f"{round(v * 100)}%"
 
 
+def _g2(k: dict) -> dict:
+    """G2 block, tolerating apps that predate ADR-044 (`g2_applications`).
+    Redeploy those apps to switch them onto the shipped definition."""
+    return k.get("g2_shipped") or k.get("g2_applications") or {"this_week": 0, "last_week": 0, "delta": 0}
+
+
 def _sparkline(weekly: list[dict]) -> str:
     """Inline SVG polyline of a per-bucket series. Normalized to the series'
     own max so it works for any metric (active-days, applied, active-users),
@@ -128,12 +134,13 @@ def _matrix(series: list[dict] | None) -> str:
     """Funnel-evolution matrix: rows = weeks (REQ-028 / REQ-031).
 
     Primary columns: leading first-party signals (search · save · tailor · gap · prep).
-    Trailing columns: self-reported outcomes (applied · heard).
+    Terminal column: shipped (tailored artifact downloaded, ADR-044).
+    Trailing column: heard (optional self-declared outcome).
     Tolerates old apps whose JSON lacks new keys — defaults to 0, never crashes."""
     if not series:
         return '<span class="muted">no time-series (redeploy this app for drill-down)</span>'
     head = "".join(f"<th>{c}</th>" for c in
-                   ("week", "search", "save", "tailor", "gap", "prep", "applied", "heard"))
+                   ("week", "search", "save", "tailor", "gap", "prep", "shipped", "heard"))
     rows = []
     for b in series:
         # Intensity (raw event counts). Default missing keys to 0 (old apps).
@@ -150,7 +157,10 @@ def _matrix(series: list[dict] | None) -> str:
         tailor_d  = b.get("tailor_days", tailor)
         gap_d     = b.get("gap_viewed_days", gap)
         prep_d    = b.get("prep_days", prep)
-        applied   = b.get("applied", 0)
+        # `shipped` is the terminal observable (ADR-044); fall back to legacy
+        # `applied` for old apps whose JSON predates the shipped column.
+        shipped   = b.get("shipped", b.get("applied", 0))
+        shipped_d = b.get("shipped_days", shipped)
         heard     = b.get("heard_back", 0)
 
         def lead(dval, rval) -> str:
@@ -160,8 +170,8 @@ def _matrix(series: list[dict] | None) -> str:
         rows.append(
             f'<tr><td class="mono">{b["label"]}</td>'
             + lead(search_d, search) + lead(save_d, save) + lead(tailor_d, tailor)
-            + lead(gap_d, gap) + lead(prep_d, prep)
-            + f'<td class="muted">{applied}</td><td class="muted">{heard}</td></tr>'
+            + lead(gap_d, gap) + lead(prep_d, prep) + lead(shipped_d, shipped)
+            + f'<td class="muted">{heard}</td></tr>'
         )
     return f'<table class="mtx"><tr>{head}</tr>{"".join(rows)}</table>'
 
@@ -170,14 +180,14 @@ def _detail(r: dict) -> str:
     """Per-user drill-down: funnel matrix + weekly/daily sparklines."""
     app, sw, sd = r["app"], r.get("series_week"), r.get("series_day")
     label = LABELS.get(app, "—")
-    applied_spark = _sparkline([{"active_days": b["applied"]} for b in sw]) if sw else "—"
+    shipped_spark = _sparkline([{"active_days": b.get("shipped", b.get("applied", 0))} for b in sw]) if sw else "—"
     daily_spark = _sparkline([{"active_days": b["active_days"]} for b in sd]) if sd else "—"
     return (
         f'<details class="udetail" data-user="{html.escape((label + " " + app).lower())}">'
         f'<summary><b>{html.escape(label)}</b> · <span class="mono">{html.escape(app)}</span></summary>'
         f'<div class="drill">'
         f'<div><div class="lbl">Funnel by week</div>{_matrix(sw)}</div>'
-        f'<div class="sparks"><div class="lbl">Applied / week</div>{applied_spark}'
+        f'<div class="sparks"><div class="lbl">Shipped / week</div>{shipped_spark}'
         f'<div class="lbl" style="margin-top:.6rem">Activity / day (21d)</div>{daily_spark}</div>'
         f'</div></details>')
 
@@ -193,7 +203,7 @@ def render(rows: list[dict], history: list[dict]) -> str:
     w1 = count(lambda k: k["g1_retention"].get("w1_retained") is True)
     w4 = count(lambda k: k["g1_retention"].get("w4_retained") is True)
     activated = count(lambda k: k["s1_activation"].get("activated") is True)
-    apps_wk = sum((r["kpis"]["g2_applications"]["this_week"] or 0) for r in ok)
+    shipped_wk = sum((_g2(r["kpis"])["this_week"] or 0) for r in ok)
     heard = sum((r["kpis"]["outcome"]["heard_back"] or 0) for r in ok)
     applied = sum((r["kpis"]["outcome"]["applied"] or 0) for r in ok)
 
@@ -202,8 +212,8 @@ def render(rows: list[dict], history: list[dict]) -> str:
         ("W1 retained", f"{w1}/{n}"),
         ("W4 retained", f"{w4}/{n}"),
         ("Activated (reached tailor)", f"{activated}/{n}"),
-        ("Applications this week", str(apps_wk)),
-        ("Heard back / applied", f"{heard}/{applied}"),
+        ("Shipped this week", str(shipped_wk)),
+        ("Heard back / applied (self-declared)", f"{heard}/{applied}"),
     ]
     card_html = "".join(
         f'<div class="card"><div class="lbl">{html.escape(l)}</div>'
@@ -221,7 +231,7 @@ def render(rows: list[dict], history: list[dict]) -> str:
             tr.append(f'<tr><td>{html.escape(label)}</td><td class="mono">{html.escape(app)}</td>'
                       f'<td colspan="9" class="no">unreachable</td></tr>')
             continue
-        g1, g2, s1, s2, s3, o = (k["g1_retention"], k["g2_applications"],
+        g1, g2, s1, s2, s3, o = (k["g1_retention"], _g2(k),
                                  k["s1_activation"], k["s2_acceptance"],
                                  k["s3_score_trust"], k["outcome"])
         d = g2["delta"]
@@ -233,7 +243,7 @@ def render(rows: list[dict], history: list[dict]) -> str:
             f'<td>{g2["this_week"]} <span class="muted">({dstr})</span></td>'
             f'<td>{_yn(s1.get("activated"))}</td>'
             f'<td>{_pct(s2.get("acceptance_rate"))}</td>'
-            f'<td>{"—" if s3.get("mean_applied_score") is None else s3["mean_applied_score"]}</td>'
+            f'<td>{(lambda v: "—" if v is None else v)(s3.get("mean_shipped_score", s3.get("mean_applied_score")))}</td>'
             f'<td>{_pct(o.get("response_rate"))}</td>'
             f'<td>{_sparkline(g1.get("weekly_active"))}</td></tr>')
 
@@ -263,8 +273,8 @@ def render(rows: list[dict], history: list[dict]) -> str:
 <div class="cards">{card_html}</div>
 <div class="trend"><span class="lbl">Trend · users active this week (across runs)</span><br>{trend}</div>
 <table>
- <tr><th>User</th><th>App</th><th>Active</th><th>W1</th><th>W4</th><th>Apps/wk</th>
-     <th>Activated</th><th>Accept</th><th>Avg score</th><th>Response</th><th>Activity</th></tr>
+ <tr><th>User</th><th>App</th><th>Active</th><th>W1</th><th>W4</th><th>Shipped/wk</th>
+     <th>Activated</th><th>Accept</th><th>Shipped score</th><th>Response</th><th>Activity</th></tr>
  {''.join(tr)}
 </table>
 
@@ -303,7 +313,7 @@ def main() -> int:
         "ts": datetime.now(timezone.utc).isoformat(),
         "n": len(ok),
         "active": sum(1 for k in ok if k["g1_retention"].get("current_week_active")),
-        "apps_wk": sum((k["g2_applications"]["this_week"] or 0) for k in ok),
+        "apps_wk": sum((_g2(k)["this_week"] or 0) for k in ok),
     }
     HISTORY.parent.mkdir(parents=True, exist_ok=True)
     with HISTORY.open("a") as f:
