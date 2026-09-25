@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ _('prep2.new.title') }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+
+{% block content %}
+<div class="space-y-8" x-data="{ source: null }">
+
+  <div>
+    <a href="/interviews" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1 mb-3">
+      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.new.back') }}
+    </a>
+    <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.new.title') }}</h1>
+    <p class="text-body-muted mt-1">{{ _('prep2.new.subtitle') }}</p>
+  </div>
+
+  {% if not has_resume %}
+    <div class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+      {{ _('prep2.new.no_resume') }}
+      <a href="/profile" class="text-primary font-medium hover:underline">{{ _('prep2.new.no_resume_cta') }}</a>
+    </div>
+  {% else %}
+
+  {# ---- A1: three ways in ---- #}
+  <div class="grid sm:grid-cols-3 gap-3" x-show="!source">
+    {# From a Jobot match #}
+    <button type="button"
+            class="card-quiet text-left p-4 flex flex-col gap-2"
+            @click="source = 'from_match'; $nextTick(() => document.getElementById('match-list')?.scrollIntoView({behavior:'smooth', block:'nearest'}))">
+      <i class="ph-thin ph-briefcase text-2xl text-primary"></i>
+      <div class="font-medium">{{ _('prep2.new.from_match') }}</div>
+      <div class="text-xs text-body-muted">{{ _('prep2.new.from_match_sub') }}</div>
+    </button>
+    {# Paste a link #}
+    <button type="button"
+            class="card-quiet text-left p-4 flex flex-col gap-2"
+            hx-get="/interviews/new/form?source=paste_link"
+            hx-target="#new-form" hx-swap="innerHTML"
+            @click="source = 'paste_link'">
+      <i class="ph-thin ph-link text-2xl text-primary"></i>
+      <div class="font-medium">{{ _('prep2.new.paste_link') }}</div>
+      <div class="text-xs text-body-muted">{{ _('prep2.new.paste_link_sub') }}</div>
+    </button>
+    {# Paste the JD #}
+    <button type="button"
+            class="card-quiet text-left p-4 flex flex-col gap-2"
+            hx-get="/interviews/new/form?source=paste_text"
+            hx-target="#new-form" hx-swap="innerHTML"
+            @click="source = 'paste_text'">
+      <i class="ph-thin ph-file-text text-2xl text-primary"></i>
+      <div class="font-medium">{{ _('prep2.new.paste_text') }}</div>
+      <div class="text-xs text-body-muted">{{ _('prep2.new.paste_text_sub') }}</div>
+    </button>
+  </div>
+
+  {# ---- from-match: pick an interviewing job ---- #}
+  <div id="match-list" x-show="source === 'from_match'" x-cloak class="space-y-3">
+    <button type="button" @click="source = null"
+            class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
+      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.new.change_entry') }}
+    </button>
+    {% if matches %}
+      <div class="space-y-2">
+        {% for m in matches %}
+        <button type="button"
+                class="card-quiet w-full text-left p-4 flex items-center justify-between gap-3"
+                hx-get="/interviews/new/form?source=from_match&job_id={{ m.job_id }}"
+                hx-target="#new-form" hx-swap="innerHTML">
+          <div class="min-w-0">
+            <div class="font-medium truncate">{{ m.job_title or '—' }}</div>
+            <div class="text-sm text-body-muted truncate">{{ m.job_company }}</div>
+          </div>
+          <i class="ph-thin ph-arrow-right text-base-content/40 shrink-0"></i>
+        </button>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-sm text-body-muted">{{ _('prep2.new.no_matches') }}</p>
+    {% endif %}
+  </div>
+
+  {# HTMX swaps the A2 details form here (paste_link / paste_text / from_match). #}
+  <div id="new-form"></div>
+
+  {% endif %}
+</div>
+{% endblock %}

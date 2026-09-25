@@ -1,0 +1,41 @@
+{# P4 talking points + questions-to-ask. Talking points tie a résumé strength to
+   a JD need; questions-to-ask are smart questions the candidate asks them. #}
+<div class="space-y-6">
+
+  <section>
+    <h3 class="text-label mb-2">{{ _('prep2.getready.talking_heading') }}</h3>
+    {% if talking_points %}
+      <div class="space-y-2">
+        {% for t in talking_points %}
+        <div class="card-quiet p-4">
+          <div class="font-medium text-sm">{{ t.message }}</div>
+          <div class="flex flex-col sm:flex-row sm:gap-4 mt-2 text-xs text-body-muted">
+            {% if t.resume_evidence %}
+              <span class="inline-flex items-start gap-1"><i class="ph-thin ph-file-text mt-0.5"></i>{{ t.resume_evidence }}</span>
+            {% endif %}
+            {% if t.jd_need %}
+              <span class="inline-flex items-start gap-1"><i class="ph-thin ph-target mt-0.5"></i>{{ t.jd_need }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-sm text-body-muted">{{ _('prep2.getready.empty_talking') }}</p>
+    {% endif %}
+  </section>
+
+  {% if questions_to_ask %}
+  <section>
+    <h3 class="text-label mb-2">{{ _('prep2.getready.ask_heading') }}</h3>
+    <ul class="space-y-1.5">
+      {% for q in questions_to_ask %}
+      <li class="flex items-start gap-2 text-sm">
+        <i class="ph-thin ph-question text-base-content/40 mt-0.5 shrink-0"></i><span>{{ q }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+</div>

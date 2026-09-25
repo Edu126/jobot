@@ -1,0 +1,105 @@
+{# A2 — the details form (Flow A2). Prefilled from a match when we have one;
+   otherwise a link or JD paste. One short screen: the posting, the round, the
+   optional context that sharpens the brief. CTA → create → generating screen. #}
+<form hx-post="/interviews/create" hx-target="#create-error" hx-swap="innerHTML"
+      x-data="{ busy: false, round: 'screening', length: 45 }"
+      @htmx:before-request="busy = true" @htmx:after-request="busy = false"
+      class="card-quiet p-5 space-y-5 mt-2">
+
+  <input type="hidden" name="source" value="{{ source }}">
+  {% if prefill.job_id %}<input type="hidden" name="job_id" value="{{ prefill.job_id }}">{% endif %}
+
+  {# ---- the posting ---- #}
+  {% if source == 'paste_link' %}
+    <div>
+      <label class="text-label block mb-1">{{ _('prep2.form.link') }}</label>
+      <input name="source_url" type="url" inputmode="url" autocomplete="off"
+             placeholder="{{ _('prep2.form.link_ph') }}"
+             class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+      <p class="text-xs text-body-muted mt-1">{{ _('prep2.form.link_hint') }}</p>
+    </div>
+  {% else %}
+    <div>
+      <label class="text-label block mb-1">{{ _('prep2.form.jd') }}</label>
+      <textarea name="jd_text" rows="{{ 4 if prefill.jd_text else 5 }}"
+                placeholder="{{ _('prep2.form.jd_ph') }}"
+                class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm resize-y">{{ prefill.jd_text }}</textarea>
+    </div>
+  {% endif %}
+
+  {# ---- company + role ---- #}
+  <div class="grid sm:grid-cols-2 gap-3">
+    <div>
+      <label class="text-label block mb-1">{{ _('prep2.form.company') }}</label>
+      <input name="company" value="{{ prefill.company }}" autocomplete="off"
+             placeholder="{{ _('prep2.form.company_ph') }}"
+             class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="text-label block mb-1">{{ _('prep2.form.role') }}</label>
+      <input name="role_title" value="{{ prefill.role_title }}" autocomplete="off"
+             placeholder="{{ _('prep2.form.role_ph') }}"
+             class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+    </div>
+  </div>
+
+  {# ---- round type (chips) ---- #}
+  <div>
+    <label class="text-label block mb-2">{{ _('prep2.form.round_type') }}</label>
+    <input type="hidden" name="round_type" :value="round">
+    <div class="flex flex-wrap gap-2">
+      {% for rt in round_types %}
+      <button type="button" @click="round = '{{ rt }}'"
+              class="chip cursor-pointer"
+              :class="round === '{{ rt }}' ? 'chip-accent' : 'chip-neutral'">
+        {{ _('prep2.round.' + rt) }}
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ---- date + length ---- #}
+  <div class="grid sm:grid-cols-2 gap-3">
+    <div>
+      <label class="text-label block mb-1">{{ _('prep2.form.date') }} <span class="text-body-muted font-normal">· {{ _('prep2.form.optional') }}</span></label>
+      <input name="interview_at" type="datetime-local"
+             class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="text-label block mb-1">{{ _('prep2.form.length') }}</label>
+      <div class="flex items-center gap-2">
+        <input name="round_length_min" type="number" min="15" max="240" step="5" x-model="length"
+               class="w-24 rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+        <span class="text-sm text-body-muted">{{ _('prep2.form.minutes') }}</span>
+      </div>
+    </div>
+  </div>
+
+  {# ---- interviewer title + recruiter notes (optional, sharpen the lens) ---- #}
+  <div>
+    <label class="text-label block mb-1">{{ _('prep2.form.interviewer') }} <span class="text-body-muted font-normal">· {{ _('prep2.form.optional') }}</span></label>
+    <input name="interviewer_title" autocomplete="off"
+           placeholder="{{ _('prep2.form.interviewer_ph') }}"
+           class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+    <p class="text-xs text-body-muted mt-1">{{ _('prep2.form.interviewer_hint') }}</p>
+  </div>
+  <div>
+    <label class="text-label block mb-1">{{ _('prep2.form.notes') }} <span class="text-body-muted font-normal">· {{ _('prep2.form.optional') }}</span></label>
+    <textarea name="recruiter_notes" rows="2"
+              placeholder="{{ _('prep2.form.notes_ph') }}"
+              class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm resize-y"></textarea>
+  </div>
+
+  {# ---- résumé note + submit ---- #}
+  <div class="flex items-center justify-between gap-3 pt-1">
+    <p class="text-xs text-body-muted">{{ _('prep2.form.resume_note') }}</p>
+    <button type="submit" :disabled="busy"
+            class="btn btn-primary btn-sm inline-flex items-center gap-1.5 shrink-0">
+      <span x-show="!busy">{{ _('prep2.form.submit') }}</span>
+      <span x-show="busy" x-cloak class="inline-flex items-center gap-1.5">
+        <i class="ph-thin ph-circle-notch animate-spin"></i>{{ _('prep2.form.submitting') }}
+      </span>
+    </button>
+  </div>
+  <div id="create-error" class="text-error text-sm"></div>
+</form>

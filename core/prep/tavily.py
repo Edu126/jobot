@@ -32,6 +32,54 @@ def api_key() -> str:
     return (os.getenv("TAVILY_API_KEY") or "").strip()
 
 
+def search_company_hits(company: str, role_title: str = "") -> list[dict]:
+    """Fetch public company snippets as per-hit dicts `{title, url, content}` —
+    the shape P1 Brief consumes so each company_snapshot point can cite the
+    exact source it came from (D3). Empty list on no key / no company / failure
+    ⇒ the brief still builds from the JD alone (research-failed path). Same data
+    boundary as search_company (GOV-007): only company + role leave the system."""
+    key = api_key()
+    company = (company or "").strip()
+    if not key or not company:
+        return []
+
+    query = (f"{company} company: what they do, culture and work environment, "
+             f"strategic focus, and recent news")
+    if role_title.strip():
+        query += f" (candidate interviewing for {role_title.strip()})"
+
+    try:
+        resp = httpx.post(
+            TAVILY_URL,
+            json={
+                "api_key": key,
+                "query": query,
+                "search_depth": "basic",
+                "max_results": MAX_RESULTS,
+            },
+            timeout=TIMEOUT_S,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return []
+
+    hits: list[dict] = []
+    for item in (data.get("results") or []):
+        if not isinstance(item, dict):
+            continue
+        content = (item.get("content") or "").strip()
+        url = (item.get("url") or "").strip()
+        if not content or not url:
+            continue
+        hits.append({
+            "title": (item.get("title") or "").strip(),
+            "url": url,
+            "content": content,
+        })
+    return hits
+
+
 def search_company(company: str, role_title: str = "") -> TavilyResult | None:
     """Fetch public snippets about a company. Returns a briefing blob + source
     URLs, or None when there's no key, no company, or the call/parse fails —

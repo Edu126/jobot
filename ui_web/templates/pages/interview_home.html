@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% import "partials/readiness.html" as rd %}
+{% block title %}{{ _('prep2.home.title') }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  {# ---- header + New Interview ---- #}
+  <div class="flex items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.home.heading') }}</h1>
+      <p class="text-body-muted mt-1">{{ _('prep2.home.subtitle') }}</p>
+    </div>
+    {% if any %}
+    <a href="/interviews/new" class="btn btn-primary btn-sm inline-flex items-center gap-1.5 shrink-0">
+      <i class="ph-thin ph-plus"></i>{{ _('prep2.home.new') }}
+    </a>
+    {% endif %}
+  </div>
+
+  {% if not has_resume %}
+    <div class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+      {{ _('prep2.new.no_resume') }}
+      <a href="/profile" class="text-primary font-medium hover:underline">{{ _('prep2.new.no_resume_cta') }}</a>
+    </div>
+  {% elif not any %}
+    {# empty state — one clear CTA #}
+    <div class="card-quiet p-10 text-center space-y-4">
+      <i class="ph-thin ph-confetti text-4xl text-base-content/40"></i>
+      <div>
+        <div class="font-medium">{{ _('prep2.home.empty_title') }}</div>
+        <p class="text-sm text-body-muted max-w-sm mx-auto mt-1">{{ _('prep2.home.empty_body') }}</p>
+      </div>
+      <a href="/interviews/new" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
+        <i class="ph-thin ph-plus"></i>{{ _('prep2.home.new') }}
+      </a>
+    </div>
+  {% else %}
+
+    {# ---- hero: the next interview ---- #}
+    {% if hero %}
+    <a href="/interviews/{{ hero.iv.id }}" class="card-quiet block p-6 space-y-4">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-xl font-semibold tracking-tight truncate">{{ hero.iv.role_title or _('prep2.gen.the_role') }}</div>
+          <div class="text-body-muted">{{ hero.iv.company }}</div>
+        </div>
+        <span class="btn btn-primary btn-sm inline-flex items-center gap-1.5 shrink-0 pointer-events-none">
+          {{ _('prep2.home.continue') }}<i class="ph-thin ph-arrow-right"></i>
+        </span>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        {% if hero.when %}
+        <span class="inline-flex items-center gap-1.5 {% if hero.is_soon %}text-error font-medium{% else %}text-body-muted{% endif %}">
+          <i class="ph-thin ph-calendar-blank"></i>{{ hero.when }}
+        </span>
+        {% endif %}
+        <span class="inline-flex items-center gap-1.5 text-body-muted">
+          <i class="ph-thin ph-medal"></i>{{ _('prep2.round.' + (hero.iv.round_type or 'screening')) }}
+        </span>
+      </div>
+
+      {{ rd.readiness(hero.readiness) }}
+    </a>
+    {% endif %}
+
+    {# ---- the rest: compact rows ---- #}
+    {% if rest %}
+    <div>
+      <h2 class="text-label mb-2">{{ _('prep2.home.upcoming') }}</h2>
+      <div class="space-y-2">
+        {% for e in rest %}
+        <a href="/interviews/{{ e.iv.id }}"
+           class="card-quiet flex items-center justify-between gap-3 p-4">
+          <div class="min-w-0">
+            <div class="font-medium truncate">{{ e.iv.role_title or _('prep2.gen.the_role') }}</div>
+            <div class="text-sm text-body-muted truncate">
+              {{ e.iv.company }}{% if e.when %} · <span class="{% if e.is_soon %}text-error{% endif %}">{{ e.when }}</span>{% endif %}
+            </div>
+          </div>
+          <div class="shrink-0">{{ rd.readiness(e.readiness, compact=True) }}</div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}

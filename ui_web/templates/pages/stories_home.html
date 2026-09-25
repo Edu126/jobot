@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ _('prep2.story.bank_title') }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+
+{% set badge_pill = {'strong': 'pill-success'} %}
+
+{% block content %}
+<div class="space-y-6" x-data="{ filter: '' }">
+
+  <div class="flex items-start justify-between gap-3">
+    <div>
+      <a href="/interviews" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1 mb-2">
+        <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.new.back') }}
+      </a>
+      <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.story.bank_title') }}</h1>
+      <p class="text-body-muted mt-1">{{ _('prep2.story.bank_subtitle') }}</p>
+    </div>
+    {% if stories %}
+    <a href="/stories/new" class="btn btn-primary btn-sm inline-flex items-center gap-1.5 shrink-0">
+      <i class="ph-thin ph-plus"></i>{{ _('prep2.story.add') }}
+    </a>
+    {% endif %}
+  </div>
+
+  {% if not has_resume %}
+    <div class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+      {{ _('prep2.new.no_resume') }}
+      <a href="/profile" class="text-primary font-medium hover:underline">{{ _('prep2.new.no_resume_cta') }}</a>
+    </div>
+  {% elif not stories %}
+    {# empty state — three ways to start (B1) #}
+    <div class="card-quiet p-8 text-center space-y-4">
+      <i class="ph-thin ph-book-open text-3xl text-base-content/40"></i>
+      <div>
+        <div class="font-medium">{{ _('prep2.story.empty_title') }}</div>
+        <p class="text-sm text-body-muted max-w-sm mx-auto mt-1">{{ _('prep2.story.empty_body') }}</p>
+      </div>
+      <div class="flex flex-wrap items-center justify-center gap-2">
+        <a href="/stories/draft" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
+          <i class="ph-thin ph-sparkle"></i>{{ _('prep2.story.draft_cta') }}
+        </a>
+        <a href="/stories/voice" class="btn btn-ghost btn-sm inline-flex items-center gap-1.5 border border-base-300">
+          <i class="ph-thin ph-microphone"></i>{{ _('prep2.story.voice_cta') }}
+        </a>
+        <a href="/stories/new" class="btn btn-ghost btn-sm inline-flex items-center gap-1.5 border border-base-300">
+          <i class="ph-thin ph-pencil-simple"></i>{{ _('prep2.story.write_cta') }}
+        </a>
+      </div>
+    </div>
+  {% else %}
+    {# quick add options row #}
+    <div class="flex flex-wrap gap-2">
+      <a href="/stories/draft" class="chip chip-neutral inline-flex items-center gap-1"><i class="ph-thin ph-sparkle"></i>{{ _('prep2.story.draft_cta') }}</a>
+      <a href="/stories/voice" class="chip chip-neutral inline-flex items-center gap-1"><i class="ph-thin ph-microphone"></i>{{ _('prep2.story.voice_cta') }}</a>
+    </div>
+
+    {# competency filter #}
+    {% if tags %}
+    <div class="flex flex-wrap gap-2">
+      <button type="button" @click="filter = ''" class="chip cursor-pointer" :class="filter === '' ? 'chip-accent' : 'chip-neutral'">{{ _('prep2.story.all') }}</button>
+      {% for t in tags %}
+      <button type="button" @click="filter = '{{ t }}'" class="chip cursor-pointer" :class="filter === '{{ t }}' ? 'chip-accent' : 'chip-neutral'">{{ t }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# story list #}
+    <div class="space-y-2">
+      {% for s in stories %}
+      <a href="/stories/{{ s.id }}/edit"
+         x-show="filter === '' || {{ s.tags | tojson }}.includes(filter)"
+         class="card-quiet block p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="font-medium truncate">{{ s.title or _('prep2.story.untitled') }}</div>
+            {% if s.result %}<div class="text-sm text-body-muted truncate mt-0.5">{{ s.result }}</div>{% endif %}
+            {% if s.tags %}
+            <div class="flex flex-wrap gap-1 mt-2">
+              {% for t in s.tags %}<span class="chip chip-neutral text-xs">{{ t }}</span>{% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          <span class="pill {{ badge_pill.get(s.strength.badge, 'pill-warn') }} text-xs shrink-0">
+            {{ _('prep2.story.badge.' + s.strength.badge) }}
+          </span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

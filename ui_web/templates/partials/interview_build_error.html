@@ -1,0 +1,24 @@
+{# Swapped into #gen-status when the build fails. Honest about which failure it
+   was; a retry re-fires the same build POST. No dead end. #}
+<div class="rounded-xl border border-base-300 bg-base-100 p-5 text-left space-y-3 mt-4">
+  <div class="flex items-center gap-2 text-sm font-medium">
+    <i class="ph-fill ph-warning-circle text-lg" style="color: oklch(var(--wa));"></i>
+    {% if reason == 'no_resume' %}
+      {{ _('prep2.gen.err_no_resume') }}
+    {% else %}
+      {{ _('prep2.gen.err_failed') }}
+    {% endif %}
+  </div>
+  <div class="flex items-center gap-3">
+    {% if reason == 'no_resume' %}
+      <a href="/profile" class="btn btn-primary btn-sm">{{ _('prep2.new.no_resume_cta') }}</a>
+    {% else %}
+      <button class="btn btn-primary btn-sm"
+              hx-post="/interviews/{{ interview_id }}/build"
+              hx-target="#gen-status" hx-swap="innerHTML">
+        {{ _('prep2.gen.retry') }}
+      </button>
+    {% endif %}
+    <a href="/interviews/new" class="text-sm text-body-muted hover:text-base-content">{{ _('prep2.gen.start_over') }}</a>
+  </div>
+</div>

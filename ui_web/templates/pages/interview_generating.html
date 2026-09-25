@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ _('prep2.gen.title') }}{% endblock %}
+{% block container_class %}max-w-3xl{% endblock %}
+
+{% block content %}
+{# A3 — the generating screen (Flow A3). A real HTMX build runs on load and
+   ends in an HX-Redirect to the Brief; the checklist ticks client-side across
+   the real stages (read → research → build) while it waits. On failure the
+   build endpoint swaps a retry state into #gen-status. #}
+<div class="min-h-[60vh] flex flex-col items-center justify-center text-center gap-8"
+     x-data="{
+        stage: 0,
+        steps: [
+          '{{ _('prep2.gen.step_read') }}',
+          '{{ _('prep2.gen.step_research') }}',
+          '{{ _('prep2.gen.step_matches') }}',
+          '{{ _('prep2.gen.step_brief') }}'
+        ],
+        init() {
+          // Advance through the early stages on a timer; the last stage holds
+          // (spinning) until the server redirects. Tuned to a typical build.
+          const at = [3000, 9000, 15000];
+          at.forEach((ms, i) => setTimeout(() => { if (this.stage < i + 1) this.stage = i + 1; }, ms));
+        }
+     }">
+
+  {# thinking indicator — a calm pulsing ring (the full orb lives in Practice) #}
+  <div class="gen-orb" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.gen.heading') }}</h1>
+    <p class="text-body-muted mt-1">
+      {{ interview.role_title or _('prep2.gen.the_role') }}{% if interview.company %} · {{ interview.company }}{% endif %}
+    </p>
+  </div>
+
+  {# the ticking checklist #}
+  <ul class="w-full max-w-sm space-y-2 text-left">
+    <template x-for="(label, i) in steps" :key="i">
+      <li class="flex items-center gap-3 text-sm">
+        <span class="inline-flex items-center justify-center w-5 h-5 shrink-0">
+          <template x-if="i < stage">
+            <i class="ph-fill ph-check-circle text-lg" style="color: oklch(var(--su));"></i>
+          </template>
+          <template x-if="i === stage">
+            <i class="ph-thin ph-circle-notch animate-spin text-lg text-primary"></i>
+          </template>
+          <template x-if="i > stage">
+            <span class="w-2 h-2 rounded-full bg-base-300"></span>
+          </template>
+        </span>
+        <span :class="i <= stage ? '' : 'text-base-content/40'" x-text="label"></span>
+      </li>
+    </template>
+  </ul>
+
+  <p class="text-xs text-body-muted">{{ _('prep2.gen.wait') }}</p>
+
+  {# the real work — runs on load, redirects to the Brief when done #}
+  <div id="gen-status"
+       hx-post="/interviews/{{ interview.id }}/build"
+       hx-trigger="load"
+       hx-target="#gen-status"
+       hx-swap="innerHTML"></div>
+</div>
+{% endblock %}

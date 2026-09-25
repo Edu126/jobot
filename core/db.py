@@ -504,6 +504,121 @@ CREATE TABLE IF NOT EXISTS prep_kits (
     created_at      TEXT NOT NULL,
     PRIMARY KEY (prep_session_id, lang, prompt_version)
 );
+
+-- interviews (ADR-047, REQ-041): the central prep object — one role + one
+-- company + one round. Replaces prep_sessions as the canonical Prep workspace
+-- (built alongside; the old kit retires at parity). SELF-CONTAINED like
+-- prep_sessions: carries the vacancy's own fields so it survives the job row
+-- disappearing; `job_id` is an OPTIONAL binding to a Jobot match (ON DELETE SET
+-- NULL). `resume_hash` is the candidate key (v17 convention). The four-step
+-- lifecycle lives in `status`. All the extra structured-interview inputs (round
+-- type/length, interviewer TITLE only per D3, recruiter notes, date) are here;
+-- generated artifacts (brief, questions, …) live in prep_artifacts, not inline.
+CREATE TABLE IF NOT EXISTS interviews (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    resume_hash       TEXT NOT NULL,
+    job_id            TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+    resume_id         INTEGER,                      -- which resume version this interview preps against
+    company           TEXT NOT NULL,
+    role_title        TEXT NOT NULL DEFAULT '',
+    jd_text           TEXT NOT NULL DEFAULT '',
+    source_url        TEXT NOT NULL DEFAULT '',      -- the posting URL (paste-a-link entry); "View job posting" + scrape source
+    interview_at      TEXT,                          -- optional ISO datetime → countdown + reminders (D2)
+    round_type        TEXT NOT NULL DEFAULT 'screening',  -- screening|behavioral|technical|case|hiring_manager|final_panel (D7)
+    round_length_min  INTEGER NOT NULL DEFAULT 45,
+    interviewer_title TEXT NOT NULL DEFAULT '',      -- TITLE only — no profiling (D3)
+    recruiter_notes   TEXT NOT NULL DEFAULT '',      -- free text, often the most valuable input (D2)
+    lang              TEXT NOT NULL DEFAULT '',
+    source            TEXT NOT NULL,                 -- from_match | pasted_link | pasted_text
+    status            TEXT NOT NULL DEFAULT 'created',  -- created|brief_ready|toolkit_ready|practiced|debriefed (D9 readiness derives from artifacts, not this)
+    created_at        TEXT NOT NULL,
+    last_opened_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_interviews_resume ON interviews(resume_hash);
+
+-- prep_artifacts (ADR-048): generic read-only cache for the P1–P4 pipeline
+-- outputs of ONE interview — brief, questions, mapping, flashcards. One blob
+-- per (interview, kind, lang, prompt_version); bump-to-regenerate, never delete
+-- (the ADR-008 / kit.py convention). CASCADE on the interview. Multi-instance
+-- artifacts (practice sessions, debriefs) get their own tables later — this
+-- store is for the single-per-interview pipeline results.
+CREATE TABLE IF NOT EXISTS prep_artifacts (
+    interview_id    INTEGER NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+    kind            TEXT NOT NULL,                  -- brief | questions | mapping | flashcards
+    lang            TEXT NOT NULL DEFAULT '',
+    prompt_version  TEXT NOT NULL DEFAULT '',
+    artifact_json   TEXT NOT NULL,
+    model           TEXT,
+    created_at      TEXT NOT NULL,
+    PRIMARY KEY (interview_id, kind, lang, prompt_version)
+);
+
+-- stories (ADR-050, REQ-041 / D4): the account-level Story Bank of STAR
+-- stories, REUSED across interviews (P3 maps them to each interview's
+-- competencies). "Account" = the candidate: keyed on `resume_hash` like
+-- interviews (ADR-050 — no account abstraction exists). Not interview-scoped
+-- and NOT in prep_artifacts (which is per-interview cache). `metric` is
+-- nullable — a story may have no number yet (the strength check flags it).
+-- `status` = draft (an AI draft pending accept, P5) | saved. `source` records
+-- origin. The strength badge is computed in CODE from these fields (deterministic,
+-- stays honest after edits — like delivery metrics), not stored.
+CREATE TABLE IF NOT EXISTS stories (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    resume_hash  TEXT NOT NULL,
+    title        TEXT NOT NULL DEFAULT '',
+    situation    TEXT NOT NULL DEFAULT '',
+    task         TEXT NOT NULL DEFAULT '',
+    action       TEXT NOT NULL DEFAULT '',
+    result       TEXT NOT NULL DEFAULT '',
+    metric       TEXT,                              -- nullable: no number yet
+    tags_json    TEXT NOT NULL DEFAULT '[]',        -- competency tags (JSON array)
+    source       TEXT NOT NULL DEFAULT 'manual',    -- ai_resume | voice | manual
+    status       TEXT NOT NULL DEFAULT 'saved',     -- draft (AI, pending accept) | saved
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_stories_resume ON stories(resume_hash);
+
+-- practice_sessions (REQ-041 / D6, ADR-049): one mock-interview session for an
+-- interview. Holds the config (mode Simulate/Study, length, focus competency),
+-- the PICKED question set (questions_json — so C3 iterates a fixed sequence),
+-- and the P9 debrief (debrief_json) once built. `status`: in_progress → building
+-- → done. Multi-instance per interview (unlike the single-artifact prep_artifacts),
+-- so it gets its own table. CASCADE on the interview.
+CREATE TABLE IF NOT EXISTS practice_sessions (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id      INTEGER NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+    mode              TEXT NOT NULL DEFAULT 'simulate',  -- simulate | study (D6)
+    length            TEXT NOT NULL DEFAULT 'standard',  -- quick | standard | full
+    voice             TEXT NOT NULL DEFAULT '',          -- Gemini Live prebuilt voice (derived from persona)
+    persona           TEXT NOT NULL DEFAULT '',          -- interviewer persona id (ADR-052) — bundles voice + style
+    focus_competency  TEXT,                              -- competency id, or NULL = all
+    status            TEXT NOT NULL DEFAULT 'in_progress',  -- in_progress | building | done
+    questions_json    TEXT NOT NULL DEFAULT '[]',        -- the ordered picked questions
+    transcript_json   TEXT,                              -- voice: the full conversation turns [{role,text}] (ADR-052)
+    debrief_json      TEXT,                              -- P9 output, set when done
+    created_at        TEXT NOT NULL,
+    completed_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_practice_sessions_interview ON practice_sessions(interview_id);
+
+-- practice_answers (REQ-041): one answer per question in a session, in order.
+-- `delivery_json` = code-computed metrics (seconds/WPM/fillers/length band);
+-- `eval_json` = the P8 evaluation, filled at build time. CASCADE on the session.
+CREATE TABLE IF NOT EXISTS practice_answers (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id     INTEGER NOT NULL REFERENCES practice_sessions(id) ON DELETE CASCADE,
+    position       INTEGER NOT NULL,
+    question_id    TEXT NOT NULL DEFAULT '',
+    question_text  TEXT NOT NULL DEFAULT '',
+    competency_id  TEXT,
+    transcript     TEXT NOT NULL DEFAULT '',
+    seconds        INTEGER NOT NULL DEFAULT 0,
+    delivery_json  TEXT,
+    eval_json      TEXT,
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_practice_answers_session ON practice_answers(session_id);
 """
 
 _SCHEMA_SQL = (
@@ -638,6 +753,24 @@ def init_db(path: Path = DB_PATH) -> None:
         # shown up top instead of a bare %. Additive nullable JSON column.
         if ps_cols and "match_brief" not in ps_cols:
             conn.execute("ALTER TABLE prep_sessions ADD COLUMN match_brief TEXT")
+
+        # REQ-041 / ADR-051: the Practice live-voice pick. practice_sessions was
+        # created (turn-based Practice) before `voice` existed, and SQLite's
+        # CREATE TABLE IF NOT EXISTS won't add it — migrate the live table.
+        pr_cols = {r["name"] for r in conn.execute("PRAGMA table_info(practice_sessions)").fetchall()}
+        if pr_cols and "voice" not in pr_cols:
+            conn.execute("ALTER TABLE practice_sessions ADD COLUMN voice TEXT NOT NULL DEFAULT ''")
+        if pr_cols and "transcript_json" not in pr_cols:  # ADR-052: voice conversation turns
+            conn.execute("ALTER TABLE practice_sessions ADD COLUMN transcript_json TEXT")
+        if pr_cols and "persona" not in pr_cols:  # ADR-052: interviewer persona id
+            conn.execute("ALTER TABLE practice_sessions ADD COLUMN persona TEXT NOT NULL DEFAULT ''")
+
+        # Defensive: interviews.source_url shipped in the same change as the CREATE
+        # so fresh deploys have it, but guard anyway (a pre-column interviews row
+        # would 500 create_interview otherwise — the practice_sessions.voice lesson).
+        iv_cols = {r["name"] for r in conn.execute("PRAGMA table_info(interviews)").fetchall()}
+        if iv_cols and "source_url" not in iv_cols:
+            conn.execute("ALTER TABLE interviews ADD COLUMN source_url TEXT NOT NULL DEFAULT ''")
 
         ras_cols = {r["name"] for r in conn.execute("PRAGMA table_info(resume_ai_summary)").fetchall()}
         if ras_cols and "domain" not in ras_cols:
@@ -2114,6 +2247,448 @@ def delete_prep_session(session_id: int, path: Path = DB_PATH) -> None:
     """Delete a session; its prep_kits rows CASCADE away."""
     with tx(path) as conn:
         conn.execute("DELETE FROM prep_sessions WHERE id = ?", (session_id,))
+
+
+# ---------- interviews (ADR-047, REQ-041): the new central prep object ----------
+
+VALID_ROUND_TYPES = (
+    "screening", "behavioral", "technical", "case", "hiring_manager", "final_panel",
+)
+
+
+def create_interview(
+    resume_hash: str,
+    company: str,
+    role_title: str,
+    jd_text: str,
+    lang: str,
+    source: str,
+    *,
+    job_id: Optional[str] = None,
+    resume_id: Optional[int] = None,
+    source_url: str = "",
+    interview_at: Optional[str] = None,
+    round_type: str = "screening",
+    round_length_min: int = 45,
+    interviewer_title: str = "",
+    recruiter_notes: str = "",
+    path: Path = DB_PATH,
+) -> int:
+    """Create an Interview (ADR-047) — the central prep object. Returns its id.
+    `source` ∈ from_match | pasted_link | pasted_text; `job_id` is the optional
+    binding to a Jobot match. `round_type` falls back to 'screening' (the D2
+    default) if an unknown value is passed — the form is trusted but not the
+    only caller. Everything the four-step lifecycle needs beyond the vacancy
+    basics is set here; the generated brief/questions live in prep_artifacts."""
+    if round_type not in VALID_ROUND_TYPES:
+        round_type = "screening"
+    now = _now()
+    with tx(path) as conn:
+        cur = conn.execute(
+            """INSERT INTO interviews
+               (resume_hash, job_id, resume_id, company, role_title, jd_text,
+                source_url, interview_at, round_type, round_length_min,
+                interviewer_title, recruiter_notes, lang, source, status,
+                created_at, last_opened_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?)""",
+            (resume_hash, job_id, resume_id, company, role_title, jd_text,
+             source_url, interview_at, round_type, round_length_min,
+             interviewer_title, recruiter_notes, lang, source, now, now),
+        )
+    return int(cur.lastrowid)
+
+
+def update_interview_fields(interview_id: int, fields: dict, path: Path = DB_PATH) -> None:
+    """Patch an interview's content fields — used when the build step scrapes a
+    pasted link and backfills jd_text / company / role_title. Only these keys are
+    writable; unknown keys (id, resume_hash, status) are ignored."""
+    allowed = {"company", "role_title", "jd_text", "source_url", "interviewer_title",
+               "recruiter_notes", "interview_at", "round_type", "round_length_min"}
+    sets, params = [], []
+    for k, v in fields.items():
+        if k in allowed:
+            sets.append(f"{k} = ?")
+            params.append(v)
+    if not sets:
+        return
+    params.append(interview_id)
+    with tx(path) as conn:
+        conn.execute(f"UPDATE interviews SET {', '.join(sets)} WHERE id = ?", params)
+
+
+def get_interview(interview_id: int, path: Path = DB_PATH) -> Optional[dict]:
+    """One interview by id, or None."""
+    with connect(path) as conn:
+        row = conn.execute(
+            "SELECT * FROM interviews WHERE id = ?", (interview_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_interview_for_job(
+    resume_hash: str, job_id: str, path: Path = DB_PATH
+) -> Optional[dict]:
+    """Existing interview for this (candidate, job) so 'Prep for this interview'
+    reuses one instead of spawning duplicates. Newest first."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT * FROM interviews
+               WHERE resume_hash = ? AND job_id = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (resume_hash, job_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_interviews(resume_hash: str, path: Path = DB_PATH) -> list[dict]:
+    """This candidate's interviews, soonest upcoming first (undated last), then
+    most-recently opened — the Home 'What's next' ordering (Screen 1)."""
+    with connect(path) as conn:
+        rows = conn.execute(
+            """SELECT * FROM interviews WHERE resume_hash = ?
+               ORDER BY
+                 CASE WHEN interview_at IS NULL OR interview_at = '' THEN 1 ELSE 0 END,
+                 interview_at ASC,
+                 COALESCE(last_opened_at, created_at) DESC""",
+            (resume_hash,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_interview_status(interview_id: int, status: str, path: Path = DB_PATH) -> None:
+    """Advance the four-step lifecycle marker (created → brief_ready → …)."""
+    with tx(path) as conn:
+        conn.execute(
+            "UPDATE interviews SET status = ? WHERE id = ?", (status, interview_id),
+        )
+
+
+def touch_interview(interview_id: int, path: Path = DB_PATH) -> None:
+    """Bump last_opened_at (recency for the Home list)."""
+    with tx(path) as conn:
+        conn.execute(
+            "UPDATE interviews SET last_opened_at = ? WHERE id = ?",
+            (_now(), interview_id),
+        )
+
+
+def delete_interview(interview_id: int, path: Path = DB_PATH) -> None:
+    """Delete an interview; its prep_artifacts rows CASCADE away."""
+    with tx(path) as conn:
+        conn.execute("DELETE FROM interviews WHERE id = ?", (interview_id,))
+
+
+# ---------- prep_artifacts (ADR-048): P1–P4 pipeline output cache ----------
+
+def get_prep_artifact(
+    interview_id: int,
+    kind: str,
+    lang: str,
+    prompt_version: str,
+    path: Path = DB_PATH,
+) -> Optional[dict]:
+    """Cached pipeline artifact for an interview, or None on a miss. Read-only
+    cache keyed (interview, kind, lang, prompt_version) — a version mismatch is
+    a miss (regenerate), never a delete. Returns {artifact, model, created_at}
+    where `artifact` is the decoded JSON (dict or list, per the prompt)."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT artifact_json, model, created_at FROM prep_artifacts
+               WHERE interview_id = ? AND kind = ? AND lang = ? AND prompt_version = ?""",
+            (interview_id, kind, lang, prompt_version),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        artifact = json.loads(row["artifact_json"])
+    except (TypeError, ValueError):
+        return None
+    return {
+        "artifact": artifact,
+        "model": row["model"] or "",
+        "created_at": row["created_at"],
+    }
+
+
+def save_prep_artifact(
+    interview_id: int,
+    kind: str,
+    lang: str,
+    prompt_version: str,
+    artifact: object,
+    model: str = "",
+    path: Path = DB_PATH,
+) -> bool:
+    """Upsert one pipeline artifact blob under the current prompt version."""
+    now = _now()
+    with tx(path) as conn:
+        conn.execute(
+            """INSERT INTO prep_artifacts (
+                interview_id, kind, lang, prompt_version, artifact_json, model, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(interview_id, kind, lang, prompt_version) DO UPDATE SET
+                artifact_json = excluded.artifact_json,
+                model = excluded.model,
+                created_at = excluded.created_at""",
+            (interview_id, kind, lang, prompt_version,
+             json.dumps(artifact, ensure_ascii=False), model, now),
+        )
+    return True
+
+
+# ---------- stories (ADR-050, REQ-041): the account-level Story Bank ----------
+
+VALID_STORY_STATUSES = ("draft", "saved")
+VALID_STORY_SOURCES = ("ai_resume", "voice", "manual")
+
+
+def _row_to_story(row) -> dict:
+    """Decode a stories row → a dict with `tags` as a real list (not the stored
+    JSON). This is the shape P3 (`prompts.format_stories`) consumes directly."""
+    d = dict(row)
+    try:
+        tags = json.loads(d.pop("tags_json", "[]") or "[]")
+    except (TypeError, ValueError):
+        tags = []
+    d["tags"] = tags if isinstance(tags, list) else []
+    return d
+
+
+def create_story(
+    resume_hash: str,
+    *,
+    title: str = "",
+    situation: str = "",
+    task: str = "",
+    action: str = "",
+    result: str = "",
+    metric: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    source: str = "manual",
+    status: str = "saved",
+    path: Path = DB_PATH,
+) -> int:
+    """Add a story to the candidate's bank (ADR-050). Returns its id. `source`
+    records origin (ai_resume | voice | manual); an AI draft awaiting accept is
+    saved with status='draft' so it can be filtered out of the confirmed bank."""
+    if source not in VALID_STORY_SOURCES:
+        source = "manual"
+    if status not in VALID_STORY_STATUSES:
+        status = "saved"
+    now = _now()
+    with tx(path) as conn:
+        cur = conn.execute(
+            """INSERT INTO stories
+               (resume_hash, title, situation, task, action, result, metric,
+                tags_json, source, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (resume_hash, title, situation, task, action, result, metric,
+             json.dumps(tags or [], ensure_ascii=False), source, status, now, now),
+        )
+    return int(cur.lastrowid)
+
+
+def get_story(story_id: int, path: Path = DB_PATH) -> Optional[dict]:
+    """One story by id (tags decoded), or None."""
+    with connect(path) as conn:
+        row = conn.execute("SELECT * FROM stories WHERE id = ?", (story_id,)).fetchone()
+    return _row_to_story(row) if row else None
+
+
+def list_stories(
+    resume_hash: str, *, status: Optional[str] = "saved", path: Path = DB_PATH,
+) -> list[dict]:
+    """The candidate's Story Bank, newest first, tags decoded. `status='saved'`
+    (default) hides AI drafts pending accept; `status=None` returns everything
+    (the accept/edit/discard review screen). P3 passes the default."""
+    q = "SELECT * FROM stories WHERE resume_hash = ?"
+    params: list = [resume_hash]
+    if status is not None:
+        q += " AND status = ?"
+        params.append(status)
+    q += " ORDER BY updated_at DESC, id DESC"
+    with connect(path) as conn:
+        rows = conn.execute(q, params).fetchall()
+    return [_row_to_story(r) for r in rows]
+
+
+def update_story(story_id: int, fields: dict, path: Path = DB_PATH) -> None:
+    """Patch a story's editable fields (STAR + title + metric + tags + status).
+    Unknown keys are ignored — the caller can't write to id/resume_hash/created_at.
+    `tags` (a list) is re-encoded to tags_json. Always bumps updated_at."""
+    allowed = {"title", "situation", "task", "action", "result", "metric", "status"}
+    sets: list[str] = []
+    params: list = []
+    for k, v in fields.items():
+        if k in allowed:
+            sets.append(f"{k} = ?")
+            params.append(v)
+    if "tags" in fields:
+        sets.append("tags_json = ?")
+        params.append(json.dumps(fields["tags"] or [], ensure_ascii=False))
+    if not sets:
+        return
+    sets.append("updated_at = ?")
+    params.append(_now())
+    params.append(story_id)
+    with tx(path) as conn:
+        conn.execute(f"UPDATE stories SET {', '.join(sets)} WHERE id = ?", params)
+
+
+def delete_story(story_id: int, path: Path = DB_PATH) -> None:
+    """Remove a story from the bank."""
+    with tx(path) as conn:
+        conn.execute("DELETE FROM stories WHERE id = ?", (story_id,))
+
+
+# ---------- practice sessions + answers (REQ-041 / D6) ----------
+
+VALID_PRACTICE_MODES = ("simulate", "study")
+
+
+def _decode(row, field: str, default):
+    try:
+        v = json.loads(row[field]) if row[field] else default
+        return v
+    except (TypeError, ValueError):
+        return default
+
+
+def create_practice_session(
+    interview_id: int,
+    *,
+    mode: str = "simulate",
+    length: str = "standard",
+    focus_competency: Optional[str] = None,
+    voice: str = "",
+    persona: str = "",
+    questions: Optional[list[dict]] = None,
+    path: Path = DB_PATH,
+) -> int:
+    """Start a session with its picked question set frozen in questions_json so
+    C3 iterates a fixed sequence. Returns the session id."""
+    if mode not in VALID_PRACTICE_MODES:
+        mode = "simulate"
+    now = _now()
+    with tx(path) as conn:
+        cur = conn.execute(
+            """INSERT INTO practice_sessions
+               (interview_id, mode, length, voice, persona, focus_competency, status,
+                questions_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'in_progress', ?, ?)""",
+            (interview_id, mode, length, voice, persona, focus_competency,
+             json.dumps(questions or [], ensure_ascii=False), now),
+        )
+    return int(cur.lastrowid)
+
+
+def get_practice_session(session_id: int, path: Path = DB_PATH) -> Optional[dict]:
+    """One session, with questions_json/debrief_json decoded to `questions`/`debrief`."""
+    with connect(path) as conn:
+        row = conn.execute(
+            "SELECT * FROM practice_sessions WHERE id = ?", (session_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["questions"] = _decode(row, "questions_json", [])
+    d["debrief"] = _decode(row, "debrief_json", None)
+    d["transcript"] = _decode(row, "transcript_json", None)
+    return d
+
+
+def save_practice_transcript(session_id: int, turns: list[dict], path: Path = DB_PATH) -> None:
+    """Store the voice conversation transcript (ADR-052 — audio never persisted,
+    only this text)."""
+    with tx(path) as conn:
+        conn.execute("UPDATE practice_sessions SET transcript_json = ? WHERE id = ?",
+                     (json.dumps(turns or [], ensure_ascii=False), session_id))
+
+
+def list_practice_sessions(interview_id: int, path: Path = DB_PATH) -> list[dict]:
+    """This interview's sessions, newest first (for the debrief history)."""
+    with connect(path) as conn:
+        rows = conn.execute(
+            """SELECT * FROM practice_sessions WHERE interview_id = ?
+               ORDER BY created_at DESC, id DESC""", (interview_id,)).fetchall()
+    out = []
+    for row in rows:
+        d = dict(row)
+        d["questions"] = _decode(row, "questions_json", [])
+        d["debrief"] = _decode(row, "debrief_json", None)
+        out.append(d)
+    return out
+
+
+def set_practice_status(session_id: int, status: str, path: Path = DB_PATH) -> None:
+    with tx(path) as conn:
+        conn.execute("UPDATE practice_sessions SET status = ? WHERE id = ?",
+                     (status, session_id))
+
+
+def save_practice_debrief(session_id: int, debrief: dict, path: Path = DB_PATH) -> None:
+    """Store the P9 debrief and mark the session done."""
+    with tx(path) as conn:
+        conn.execute(
+            """UPDATE practice_sessions
+               SET debrief_json = ?, status = 'done', completed_at = ?
+               WHERE id = ?""",
+            (json.dumps(debrief, ensure_ascii=False), _now(), session_id))
+
+
+def add_practice_answer(
+    session_id: int,
+    *,
+    position: int,
+    question_id: str,
+    question_text: str,
+    competency_id: Optional[str],
+    transcript: str,
+    seconds: int,
+    delivery: Optional[dict] = None,
+    path: Path = DB_PATH,
+) -> int:
+    """Record one answer. `eval_json` stays NULL until the build step runs P8."""
+    now = _now()
+    with tx(path) as conn:
+        cur = conn.execute(
+            """INSERT INTO practice_answers
+               (session_id, position, question_id, question_text, competency_id,
+                transcript, seconds, delivery_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (session_id, position, question_id, question_text, competency_id,
+             transcript, seconds,
+             json.dumps(delivery, ensure_ascii=False) if delivery else None, now))
+    return int(cur.lastrowid)
+
+
+def list_practice_answers(session_id: int, path: Path = DB_PATH) -> list[dict]:
+    """A session's answers in order, with delivery/eval JSON decoded."""
+    with connect(path) as conn:
+        rows = conn.execute(
+            """SELECT * FROM practice_answers WHERE session_id = ?
+               ORDER BY position ASC""", (session_id,)).fetchall()
+    out = []
+    for row in rows:
+        d = dict(row)
+        d["delivery"] = _decode(row, "delivery_json", None)
+        d["eval"] = _decode(row, "eval_json", None)
+        out.append(d)
+    return out
+
+
+def save_practice_eval(answer_id: int, evaluation: dict, path: Path = DB_PATH) -> None:
+    with tx(path) as conn:
+        conn.execute("UPDATE practice_answers SET eval_json = ? WHERE id = ?",
+                     (json.dumps(evaluation, ensure_ascii=False), answer_id))
+
+
+def count_practice_sessions(interview_id: int, path: Path = DB_PATH) -> int:
+    """How many DONE sessions this interview has — a readiness signal (D9)."""
+    with connect(path) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM practice_sessions WHERE interview_id = ? AND status = 'done'",
+            (interview_id,)).fetchone()
+    return int(row["n"]) if row else 0
 
 
 def recent_companies_and_titles(limit: int = 60, path: Path = DB_PATH) -> dict:

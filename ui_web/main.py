@@ -38,7 +38,7 @@ from core import db  # noqa: E402
 from .deps import templates  # noqa: E402
 from .middleware import configure as configure_middleware  # noqa: E402
 from .ratelimit import configure as configure_ratelimit  # noqa: E402
-from .routes import admin, applications, feedback, jobs, journey, landing, prep, profile  # noqa: E402
+from .routes import admin, applications, feedback, interviews, jobs, journey, landing, prep, profile, stories  # noqa: E402
 
 
 @asynccontextmanager
@@ -104,6 +104,8 @@ app.include_router(jobs.router)
 app.include_router(applications.router)
 app.include_router(journey.router)
 app.include_router(prep.router)
+app.include_router(interviews.router)
+app.include_router(stories.router)
 app.include_router(profile.router)
 app.include_router(feedback.router)
 app.include_router(admin.router)

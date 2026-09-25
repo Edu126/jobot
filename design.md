@@ -159,7 +159,7 @@ Big numerals wear the display face (IBM Plex bold numerals read "sad" large). On
 ## 6 · Spacing & shape
 
 - **Spacing base = 4px.** Scale: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. Section rhythm on marketing pages: 64–80px vertical; card internal 16–24px.
-- **Container widths:** `max-w-5xl` (form-heavy: Applications, Profile) · `max-w-7xl` (split-viewport: Jobs) · `max-w-3xl` (focused single-task/loaders).
+- **Container widths (one per screen — pick from this set, never ad-hoc `xl`/`2xl`/`4xl`):** `max-w-5xl` (form-heavy / **workspace**: Applications, Profile, **all of Prep — Home, New Interview, Brief, Get Ready, Story Bank, editor, Practice, Feedback**) · `max-w-7xl` (split-viewport: Jobs) · `max-w-3xl` (focused single-task / loaders / transient status: the Prep **generating** + **voice-capture** + **consent** + "building feedback" screens only). **A module is coherent when every content screen shares ONE width** — the header spans `max-w-7xl`, so a content column narrower than `5xl` reads as lost/off-centre under it. Prep learned this the hard way (was a mix of `xl`/`2xl`/`3xl` → looked incoherent, fixed 2026-09-21).
 - **Radius — the fixed set (collapse everything to these):**
 
 | Token | Value | Use |

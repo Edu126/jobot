@@ -1,0 +1,20 @@
+{# The ONE readiness widget (D9) — a band + a progress bar + a "what's missing"
+   line. NEVER a bare percentage (the pct is only the bar fill). Green = progress
+   (§5). `compact` trims it for interview rows. #}
+{% set level_pill = {'not_started': 'pill-neutral', 'getting_there': 'pill-info',
+                     'almost_ready': 'pill-success', 'ready': 'pill-success'} %}
+{% macro readiness(r, compact=False) %}
+<div class="{% if not compact %}space-y-1.5{% endif %}">
+  <div class="flex items-center gap-2">
+    <span class="pill {{ level_pill.get(r.level, 'pill-neutral') }} text-xs">{{ _('prep2.ready.level.' + r.level) }}</span>
+    {% if not compact %}
+      <span class="text-xs text-body-muted">{{ _('prep2.ready.missing.' + r.missing, n=r.missing_count) }}</span>
+    {% endif %}
+  </div>
+  {% if not compact %}
+  <div class="h-1.5 rounded-full bg-base-200 overflow-hidden">
+    <div class="h-full rounded-full bg-primary transition-all" style="width: {{ r.pct }}%"></div>
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}

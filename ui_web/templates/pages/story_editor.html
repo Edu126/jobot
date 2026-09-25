@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ _('prep2.story.editor_title') }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data>
+  <div class="flex items-center justify-between gap-3">
+    <a href="/stories" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
+      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.story.back') }}
+    </a>
+    {% if story and story.id %}
+    <button type="button"
+            class="text-sm text-error/70 hover:text-error inline-flex items-center gap-1"
+            hx-delete="/stories/{{ story.id }}"
+            hx-confirm="{{ _('prep2.story.delete_confirm') }}">
+      <i class="ph-thin ph-trash"></i>{{ _('prep2.story.delete') }}
+    </button>
+    {% endif %}
+  </div>
+
+  <h1 class="text-2xl font-semibold tracking-tight">
+    {{ _('prep2.story.edit_heading') if (story and story.id) else _('prep2.story.new_heading') }}
+  </h1>
+
+  {% include "partials/story_editor_form.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ _('prep2.story.voice_title') }}{% endblock %}
+{% block container_class %}max-w-3xl{% endblock %}
+
+{% block content %}
+<div class="space-y-6"
+     x-data="voiceCapture()" x-init="init()">
+  <div>
+    <a href="/stories" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1 mb-2">
+      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.story.back') }}
+    </a>
+    <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.story.voice_heading') }}</h1>
+    <p class="text-body-muted mt-1">{{ _('prep2.story.voice_prompt') }}</p>
+  </div>
+
+  <div id="voice-capture" class="card-quiet p-6 space-y-4">
+    {# mic button (only when supported) #}
+    <template x-if="supported">
+      <div class="flex flex-col items-center gap-3">
+        <button type="button" @click="toggle()"
+                class="w-16 h-16 rounded-full inline-flex items-center justify-center transition-colors"
+                :class="listening ? 'bg-primary text-primary-content' : 'bg-base-200 text-base-content hover:bg-base-300'"
+                :aria-pressed="listening"
+                aria-label="{{ _('prep2.story.voice_mic') }}">
+          <i class="ph-fill text-2xl" :class="listening ? 'ph-microphone' : 'ph-microphone'"></i>
+        </button>
+        <div class="text-xs text-body-muted" x-text="listening ? '{{ _('prep2.story.voice_listening') }}' : '{{ _('prep2.story.voice_tap') }}'"></div>
+      </div>
+    </template>
+
+    {# transcript (editable) — also the typing fallback #}
+    <div>
+      <label class="text-label block mb-1">{{ _('prep2.story.voice_transcript') }}</label>
+      <textarea name="transcript" x-model="transcript" rows="5"
+                placeholder="{{ _('prep2.story.voice_ta_ph') }}"
+                class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm resize-y"></textarea>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button type="button"
+              hx-post="/stories/voice" hx-target="#voice-result" hx-swap="innerHTML"
+              hx-include="[name='transcript']"
+              :disabled="!transcript.trim()"
+              class="btn btn-primary btn-sm inline-flex items-center gap-1.5"
+              @htmx:before-request="building = true" @htmx:after-request="building = false">
+        <span x-show="!building"><i class="ph-thin ph-sparkle"></i> {{ _('prep2.story.voice_convert') }}</span>
+        <span x-show="building" x-cloak class="inline-flex items-center gap-1.5">
+          <i class="ph-thin ph-circle-notch animate-spin"></i>{{ _('prep2.story.voice_converting') }}
+        </span>
+      </button>
+    </div>
+  </div>
+
+  {# the P6 STAR draft lands here as an editable form to review + save #}
+  <div id="voice-result"></div>
+</div>
+
+<script>
+  function voiceCapture() {
+    return {
+      supported: false,
+      listening: false,
+      building: false,
+      transcript: '',
+      _rec: null,
+      init() {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) { this.supported = false; return; }
+        this.supported = true;
+        const rec = new SR();
+        rec.continuous = true;
+        rec.interimResults = false;
+        rec.lang = (document.documentElement.lang || 'en');
+        rec.onresult = (e) => {
+          let chunk = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) chunk += e.results[i][0].transcript;
+          this.transcript = (this.transcript + ' ' + chunk).trim();
+        };
+        rec.onend = () => { this.listening = false; };
+        rec.onerror = () => { this.listening = false; };
+        this._rec = rec;
+      },
+      toggle() {
+        if (!this._rec) return;
+        if (this.listening) { this._rec.stop(); this.listening = false; }
+        else { try { this._rec.start(); this.listening = true; } catch (_) {} }
+      },
+    };
+  }
+</script>
+{% endblock %}

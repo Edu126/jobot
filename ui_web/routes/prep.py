@@ -53,19 +53,10 @@ def _looks_like_url(s: str) -> bool:
 
 @router.get("/prep")
 async def prep_list(request: Request):
-    resume, resume_hash, _rid, _txt = _current()
-    sessions = db.list_prep_sessions(resume_hash) if resume_hash else []
-    # A qualitative band (not a bare %) for each card — same honesty/esteem
-    # treatment as the detail context bar (REQ-025).
-    for s in sessions:
-        s["band"] = fit.band_from_score(s.get("match_score"))
-    autocomplete = db.recent_companies_and_titles()
-    return templates.TemplateResponse(
-        request,
-        "pages/prep_list.html",
-        {"active_tab": "prep", "has_resume": resume is not None, "sessions": sessions,
-         "ac_companies": autocomplete["companies"], "ac_titles": autocomplete["titles"]},
-    )
+    """The Prep tab is now the interview-prep module (ADR-047): `/prep` redirects
+    to `/interviews`. The old land-it-kit routes below stay reachable by deep link
+    but are no longer surfaced in the nav."""
+    return RedirectResponse("/interviews", status_code=307)
 
 
 @router.post("/prep/start")

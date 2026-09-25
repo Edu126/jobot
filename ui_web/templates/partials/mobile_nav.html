@@ -10,11 +10,12 @@
      style="padding-bottom: env(safe-area-inset-bottom);"
      role="navigation"
      aria-label="Main">
-  <div class="grid grid-cols-3 h-14">
+  <div class="grid grid-cols-4 h-14">
     {% for label_key, href, key, icon in [
-      ('nav.jobs',    '/jobs',    'jobs',    'ph-magnifying-glass'),
-      ('nav.journey', '/journey', 'journey', 'ph-compass'),
-      ('nav.profile', '/profile', 'profile', 'ph-user'),
+      ('nav.jobs',    '/jobs',       'jobs',    'ph-magnifying-glass'),
+      ('nav.journey', '/journey',    'journey', 'ph-compass'),
+      ('nav.prep',    '/interviews', 'prep',    'ph-microphone-stage'),
+      ('nav.profile', '/profile',    'profile', 'ph-user'),
     ] %}
     <a href="{{ href }}"
        class="flex flex-col items-center justify-center gap-0.5 transition-colors {% if active_tab == key %}font-semibold{% else %}text-base-content/60 hover:text-base-content{% endif %}"

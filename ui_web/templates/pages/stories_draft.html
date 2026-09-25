@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ _('prep2.story.draft_title') }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <div>
+    <a href="/stories" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1 mb-2">
+      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.story.back') }}
+    </a>
+    <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.story.draft_heading') }}</h1>
+    <p class="text-body-muted mt-1">{{ _('prep2.story.draft_subtitle') }}</p>
+  </div>
+
+  {% if not drafts %}
+    <div class="card-quiet p-8 text-center space-y-2">
+      <i class="ph-thin ph-cloud-slash text-2xl text-base-content/40"></i>
+      <p class="text-sm text-body-muted">{{ _('prep2.story.draft_none') }}</p>
+      <a href="/stories/new" class="btn btn-primary btn-sm mt-2">{{ _('prep2.story.write_cta') }}</a>
+    </div>
+  {% else %}
+    <div class="space-y-3">
+      {% for d in drafts %}
+      <form class="card-quiet p-4 space-y-3"
+            hx-post="/stories/draft/accept" hx-swap="outerHTML">
+        <input type="hidden" name="title" value="{{ d.title }}">
+        <input type="hidden" name="situation" value="{{ d.situation }}">
+        <input type="hidden" name="task" value="{{ d.task }}">
+        <input type="hidden" name="action" value="{{ d.action }}">
+        <input type="hidden" name="result" value="{{ d.result or '' }}">
+        <input type="hidden" name="metric" value="{{ d.metric or '' }}">
+        <input type="hidden" name="tags" value="{{ d.tags | join(',') }}">
+
+        <div class="font-medium">{{ d.title }}</div>
+        <div class="grid sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-body-muted">
+          {% if d.situation %}<div><span class="font-semibold">{{ _('prep2.story.s') }}</span> {{ d.situation }}</div>{% endif %}
+          {% if d.task %}<div><span class="font-semibold">{{ _('prep2.story.t') }}</span> {{ d.task }}</div>{% endif %}
+          {% if d.action %}<div><span class="font-semibold">{{ _('prep2.story.a') }}</span> {{ d.action }}</div>{% endif %}
+          {% if d.result %}<div><span class="font-semibold">{{ _('prep2.story.r') }}</span> {{ d.result }}</div>{% endif %}
+        </div>
+        {% if d.tags %}
+        <div class="flex flex-wrap gap-1">
+          {% for t in d.tags %}<span class="chip chip-neutral text-xs">{{ t }}</span>{% endfor %}
+        </div>
+        {% endif %}
+        {% if d.questions_for_candidate %}
+        <div class="rounded-lg bg-base-200/60 p-3 text-xs text-body-muted space-y-1">
+          {% for q in d.questions_for_candidate %}
+          <div class="flex items-start gap-1.5"><i class="ph-thin ph-question mt-0.5 shrink-0"></i>{{ q }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div class="flex items-center gap-2 pt-1">
+          <button type="submit" class="btn btn-primary btn-sm">{{ _('prep2.story.accept') }}</button>
+          <button type="button" @click="$root.remove()" class="btn btn-ghost btn-sm">{{ _('prep2.story.discard') }}</button>
+        </div>
+      </form>
+      {% endfor %}
+    </div>
+    <div class="pt-2">
+      <a href="/stories" class="text-sm text-primary hover:underline">{{ _('prep2.story.done_triaging') }}</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

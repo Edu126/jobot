@@ -1,0 +1,766 @@
+"""Interviews — the rebuilt Prep module (REQ-041, ADR-047).
+
+The Interview is the central object (one role + one company + one round). This
+router owns the New-Interview flow (Flow A) and the Brief screen (Screen 2):
+
+    GET  /interviews/new            → A1 entry choice (from a match / link / JD)
+    GET  /interviews/new/form       → A2 details form (prefilled), HTMX partial
+    POST /interviews/create         → create the Interview → generating screen
+    GET  /interviews/{id}/generating→ A3 generating screen (checklist)
+    POST /interviews/{id}/build     → run research + P1 Brief, warm the toolkit
+    GET  /interviews/{id}           → Brief (Screen 2)
+
+Built at `/interviews` alongside the old `/prep` kit, which stays live until the
+new screens reach parity (ADR-047 — no big-bang deletion). The nav still points
+at `/prep`; it flips to `/interviews` at parity.
+"""
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+
+from core import db
+from core.llm.gemini import GeminiClient, resolve_api_key
+from core.prep import brief as prep_brief
+from core.prep import flashcards as prep_flashcards
+from core.prep import mapping as prep_mapping
+from core.prep import audio_score as prep_audio_score
+from core.prep import live as prep_live
+from core.prep import pipeline
+from core.prep import practice as prep_practice
+from core.prep import questions as prep_questions
+from core.prep import readiness as prep_readiness
+from core.prep import tavily
+from core import settings as app_settings
+from core.settings import get_output_language
+
+PRACTICE_CONSENT_KEY = "prep_practice_consent"
+
+from ..deps import templates
+
+router = APIRouter(tags=["interviews"])
+
+# Keep a strong ref to background toolkit warm-up tasks so they aren't GC'd
+# mid-flight (asyncio only holds a weak reference to a bare create_task).
+_warmups: set[asyncio.Task] = set()
+
+
+def _current():
+    """(resume dict, resume_hash, resume_id, resume_text) or (None, "", 0, "")."""
+    r = db.get_current_resume()
+    if not r:
+        return None, "", 0, ""
+    return (r, r.get("text_hash") or "", int(r["id"]),
+            (r["parsed"].get("raw_text") or "").strip())
+
+
+def _make_client_factory():
+    """A factory the orchestrator calls once per pipeline stage — each stage its
+    own client so concurrent fan-out calls don't clobber `last_model_used`
+    (see pipeline.build_toolkit). Resolves the key once, up front."""
+    api_key = resolve_api_key()
+    return lambda: GeminiClient(api_key=api_key)
+
+
+# ---------- Home (Screen 1): My Interviews ----------
+
+@router.get("/interviews")
+async def interviews_home(request: Request):
+    """Home — "What's next, and am I ready?" The soonest interview is the hero;
+    the rest are compact rows. Each carries its readiness band (D9) + a when
+    display. Empty → one clear CTA."""
+    resume, resume_hash, _rid, _txt = _current()
+    rows = db.list_interviews(resume_hash) if resume_hash else []
+    lang = get_output_language()
+    enriched = [_enrich_for_home(iv, lang) for iv in rows]
+    hero = enriched[0] if enriched else None
+    rest = enriched[1:]
+    return templates.TemplateResponse(
+        request,
+        "pages/interview_home.html",
+        {"active_tab": "prep", "has_resume": resume is not None,
+         "hero": hero, "rest": rest, "any": bool(enriched)},
+    )
+
+
+def _enrich_for_home(interview: dict, lang: str) -> dict:
+    """Attach readiness + a parsed 'when' (display + soonness) for Home."""
+    readiness = prep_readiness.compute(interview, lang=interview.get("lang") or lang)
+    when, is_soon = _fmt_when(interview.get("interview_at"))
+    has_brief = prep_brief.read_cached_brief(
+        interview["id"], lang=interview.get("lang") or lang) is not None
+    return {"iv": interview, "readiness": readiness, "when": when,
+            "is_soon": is_soon, "has_brief": has_brief}
+
+
+def _fmt_when(interview_at: Optional[str]) -> tuple[str, bool]:
+    """(display string, is_soon) from a stored 'YYYY-MM-DDTHH:MM'. is_soon =
+    within 48h and future → the design's 'red = urgent' cue (§5). Empty/bad →
+    ('', False)."""
+    raw = (interview_at or "").strip()
+    if not raw:
+        return "", False
+    try:
+        dt = datetime.strptime(raw[:16], "%Y-%m-%dT%H:%M")
+    except ValueError:
+        return raw, False
+    delta = dt - datetime.now()
+    days = delta.total_seconds() / 86400
+    is_soon = 0 <= days <= 2
+    display = dt.strftime("%a, %b %-d · %-I:%M %p")
+    return display, is_soon
+
+
+# ---------- Flow A: New Interview ----------
+
+@router.get("/interviews/new")
+async def interview_new(request: Request):
+    """A1 — entry choice. Three ways in: a Jobot match (status Interviewing), a
+    pasted link, or pasted JD text. No resume → a nudge to Profile first."""
+    resume, _rh, _rid, _txt = _current()
+    matches = db.list_applications(statuses=["interviewing"]) if resume else []
+    return templates.TemplateResponse(
+        request,
+        "pages/interview_new.html",
+        {"active_tab": "prep", "has_resume": resume is not None, "matches": matches},
+    )
+
+
+@router.get("/interviews/new/form")
+async def interview_new_form(
+    request: Request,
+    source: str = "paste_text",
+    job_id: str = "",
+):
+    """A2 — the details form, prefilled. `source` ∈ from_match | paste_link |
+    paste_text; a from_match `job_id` pulls the stored JD/company/role."""
+    prefill = {"company": "", "role_title": "", "jd_text": "", "job_id": ""}
+    if source == "from_match" and job_id:
+        job = db.get_job(job_id) or {}
+        prefill = {
+            "company": job.get("company", ""),
+            "role_title": job.get("title", ""),
+            "jd_text": job.get("description", ""),
+            "job_id": job_id,
+        }
+    return templates.TemplateResponse(
+        request,
+        "partials/interview_form.html",
+        {"source": source, "prefill": prefill,
+         "round_types": db.VALID_ROUND_TYPES},
+    )
+
+
+@router.post("/interviews/create")
+async def interview_create(
+    request: Request,
+    company: str = Form(""),
+    role_title: str = Form(""),
+    jd_text: str = Form(""),
+    source_url: str = Form(""),
+    job_id: str = Form(""),
+    interview_at: str = Form(""),
+    round_type: str = Form("screening"),
+    round_length_min: str = Form("45"),
+    interviewer_title: str = Form(""),
+    recruiter_notes: str = Form(""),
+    source: str = Form("paste_text"),
+):
+    """Create the Interview row, then hand off to the generating screen. Company
+    OR a JD is the floor — without either there's nothing to build a brief from."""
+    _resume, resume_hash, resume_id, _txt = _current()
+    if not resume_hash:
+        return HTMLResponse(
+            '<div class="text-error text-sm">Upload a résumé on Profile first.</div>')
+    company = company.strip()
+    jd_text = jd_text.strip()
+    source_url = source_url.strip()
+    if not company and not jd_text and not source_url:
+        return HTMLResponse(
+            '<div class="text-error text-sm">Add a company name, a job link, or paste '
+            'the job description so we can build your prep.</div>')
+
+    src = source if source in ("from_match", "paste_link", "paste_text") else "paste_text"
+    interview_id = db.create_interview(
+        resume_hash, company, role_title.strip(), jd_text,
+        get_output_language(), src,
+        job_id=job_id.strip() or None,
+        resume_id=resume_id or None,
+        source_url=source_url,
+        interview_at=interview_at.strip() or None,
+        round_type=round_type.strip(),
+        round_length_min=_parse_int(round_length_min, 45),
+        interviewer_title=interviewer_title.strip(),
+        recruiter_notes=recruiter_notes.strip(),
+    )
+    return HTMLResponse("", headers={"HX-Redirect": f"/interviews/{interview_id}/generating"})
+
+
+@router.get("/interviews/{interview_id}/generating")
+async def interview_generating(request: Request, interview_id: int):
+    """A3 — the generating screen. A checklist ticks client-side while the
+    build POST (hx-trigger=load) runs research + P1 and redirects to the Brief."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return _redirect("/interviews/new")
+    # Already built (revisit / back button) → straight to the brief.
+    if prep_brief.read_cached_brief(interview_id) is not None:
+        return _redirect(f"/interviews/{interview_id}")
+    return templates.TemplateResponse(
+        request,
+        "pages/interview_generating.html",
+        {"active_tab": "prep", "interview": interview},
+    )
+
+
+@router.post("/interviews/{interview_id}/build")
+async def interview_build(request: Request, interview_id: int):
+    """Run the synchronous half: fetch company research (Tavily) then P1 Brief.
+    On success, warm the P2/P3/P4 fan-out in the background and redirect to the
+    Brief. On failure (quota / no résumé), render a retry state in place."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return _redirect("/interviews/new")
+    _resume, _rh, _rid, resume_text = _current()
+    if not resume_text:
+        return templates.TemplateResponse(
+            request, "partials/interview_build_error.html",
+            {"interview_id": interview_id, "reason": "no_resume"})
+
+    lang = interview.get("lang") or get_output_language()
+
+    # "Reading the job": a pasted link with no JD yet → scrape it now and
+    # backfill the interview (company/role only when the user left them blank).
+    if not (interview.get("jd_text") or "").strip() and (interview.get("source_url") or "").strip():
+        interview = await asyncio.to_thread(_scrape_into_interview, interview)
+
+    research = await asyncio.to_thread(
+        tavily.search_company_hits, interview.get("company", ""),
+        interview.get("role_title", ""))
+
+    make_client = _make_client_factory()
+    brief = await pipeline.build_brief(
+        interview, resume_text, make_client=make_client, research=research, lang=lang)
+    if brief is None:
+        return templates.TemplateResponse(
+            request, "partials/interview_build_error.html",
+            {"interview_id": interview_id, "reason": "generation_failed"})
+
+    # Warm the toolkit (P2/P3/P4) in the background so Get Ready is ready when
+    # the user arrives — best-effort; those tabs also lazy-load on a cache miss.
+    stories = db.list_stories(interview["resume_hash"], status="saved")
+    task = asyncio.create_task(pipeline.fan_out_toolkit(
+        interview, brief, resume_text, make_client=_make_client_factory(),
+        stories=stories, lang=lang))
+    _warmups.add(task)
+    task.add_done_callback(_warmups.discard)
+
+    return HTMLResponse("", headers={"HX-Redirect": f"/interviews/{interview_id}"})
+
+
+# ---------- the Brief (Screen 2) ----------
+
+@router.get("/interviews/{interview_id}")
+async def interview_brief(request: Request, interview_id: int):
+    """Brief (Screen 2). Cache-only read — a miss means it was never built, so
+    bounce to the generating screen rather than block the page on an LLM call."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return _redirect("/interviews/new")
+    brief = prep_brief.read_cached_brief(interview_id, lang=interview.get("lang") or None)
+    if brief is None:
+        return _redirect(f"/interviews/{interview_id}/generating")
+    db.touch_interview(interview_id)
+    return templates.TemplateResponse(
+        request,
+        "pages/interview_brief.html",
+        {"active_tab": "prep", "interview": interview, "brief": brief,
+         "step": "brief"},
+    )
+
+
+@router.get("/interviews/{interview_id}/get-ready")
+async def interview_get_ready(request: Request, interview_id: int):
+    """Get Ready (Screen 3) — the toolkit shell. Four tabs (Flashcards · Stories
+    · Likely Questions · Talking Points) that lazy-load their P2/P3/P4 fragments
+    (already warmed by the build, generated on a cache miss). Brief must exist —
+    a miss bounces to the generating screen."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return _redirect("/interviews/new")
+    if prep_brief.read_cached_brief(interview_id, lang=interview.get("lang") or None) is None:
+        return _redirect(f"/interviews/{interview_id}/generating")
+    db.touch_interview(interview_id)
+    return templates.TemplateResponse(
+        request,
+        "pages/interview_get_ready.html",
+        {"active_tab": "prep", "interview": interview, "step": "get_ready"},
+    )
+
+
+# ---------- Get Ready toolkit fragments (lazy-loaded per tab) ----------
+
+def _toolkit_ctx(interview_id: int):
+    """Shared prerequisites for a toolkit fragment: (interview, brief, resume_text,
+    client, lang). Returns None for the whole tuple if the interview or its brief
+    is missing (the fragment then renders an unavailable state)."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return None
+    lang = interview.get("lang") or get_output_language()
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    if brief is None:
+        return None
+    _resume, _rh, _rid, resume_text = _current()
+    client = GeminiClient(api_key=resolve_api_key())
+    return interview, brief, resume_text, client, lang
+
+
+@router.get("/interviews/{interview_id}/toolkit/questions")
+async def toolkit_questions(request: Request, interview_id: int):
+    ctx = _toolkit_ctx(interview_id)
+    if ctx is None:
+        return _toolkit_unavailable(request)
+    interview, brief, _resume_text, client, lang = ctx
+    competencies = [c.to_dict() for c in brief.competencies]
+    items = await asyncio.to_thread(
+        prep_questions.get_or_generate_questions, interview, competencies, client, lang=lang)
+    return templates.TemplateResponse(
+        request, "partials/toolkit_questions.html",
+        {"questions": items or [], "competencies": {c["id"]: c["name"] for c in competencies}},
+    )
+
+
+@router.get("/interviews/{interview_id}/toolkit/stories")
+async def toolkit_stories(request: Request, interview_id: int):
+    ctx = _toolkit_ctx(interview_id)
+    if ctx is None:
+        return _toolkit_unavailable(request)
+    interview, brief, _resume_text, client, lang = ctx
+    competencies = [c.to_dict() for c in brief.competencies]
+    stories = db.list_stories(interview["resume_hash"], status="saved")
+    mapping = await asyncio.to_thread(
+        prep_mapping.get_or_generate_mapping, interview, competencies, stories, client, lang=lang)
+    by_comp = {m.competency_id: m for m in (mapping or [])}
+    by_story = {str(s["id"]): s for s in stories}
+    return templates.TemplateResponse(
+        request, "partials/toolkit_stories.html",
+        {"interview": interview, "competencies": competencies,
+         "by_comp": by_comp, "by_story": by_story},
+    )
+
+
+@router.get("/interviews/{interview_id}/toolkit/flashcards")
+async def toolkit_flashcards(request: Request, interview_id: int):
+    kit = await _study_kit(interview_id)
+    if kit is None:
+        return _toolkit_unavailable(request)
+    return templates.TemplateResponse(
+        request, "partials/toolkit_flashcards.html", {"flashcards": kit.flashcards})
+
+
+@router.get("/interviews/{interview_id}/toolkit/talking")
+async def toolkit_talking(request: Request, interview_id: int):
+    kit = await _study_kit(interview_id)
+    if kit is None:
+        return _toolkit_unavailable(request)
+    return templates.TemplateResponse(
+        request, "partials/toolkit_talking.html",
+        {"talking_points": kit.talking_points, "questions_to_ask": kit.questions_to_ask})
+
+
+async def _study_kit(interview_id: int):
+    """P4 StudyKit for the Flashcards + Talking Points tabs — one cached artifact
+    serves both (a second tab is a cache hit, not a re-generation)."""
+    ctx = _toolkit_ctx(interview_id)
+    if ctx is None:
+        return None
+    interview, brief, resume_text, client, lang = ctx
+    return await asyncio.to_thread(
+        prep_flashcards.get_or_generate_flashcards,
+        interview, brief.to_dict_for_cache(), resume_text, client, lang=lang)
+
+
+def _toolkit_unavailable(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "partials/toolkit_unavailable.html", {})
+
+
+# ---------- Practice (Screen 4) — turn-based session (voice layer lands later) ----------
+
+@router.get("/interviews/{interview_id}/practice")
+async def practice_entry(request: Request, interview_id: int):
+    """C1 consent (once, account-level) then C2 pre-session setup. Brief must
+    exist; a miss bounces to generating."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return _redirect("/interviews/new")
+    lang = interview.get("lang") or None
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    if brief is None:
+        return _redirect(f"/interviews/{interview_id}/generating")
+    if app_settings.get(PRACTICE_CONSENT_KEY, "") != "1":
+        return templates.TemplateResponse(
+            request, "pages/practice_consent.html",
+            {"active_tab": "prep", "interview": interview, "step": "practice"})
+    return templates.TemplateResponse(
+        request, "pages/practice_setup.html",
+        {"active_tab": "prep", "interview": interview, "step": "practice",
+         "competencies": [c.to_dict() for c in brief.competencies],
+         "voice_enabled": prep_live.is_enabled(),
+         "personas": prep_live.PERSONAS, "default_persona": prep_live.DEFAULT_PERSONA})
+
+
+@router.post("/interviews/{interview_id}/practice/consent")
+async def practice_consent(request: Request, interview_id: int):
+    """C1 — record consent (account-level) and go to setup."""
+    app_settings.set(PRACTICE_CONSENT_KEY, "1")
+    return HTMLResponse("", headers={"HX-Redirect": f"/interviews/{interview_id}/practice"})
+
+
+@router.get("/interviews/practice/voice-sample/{voice}")
+async def practice_voice_sample(request: Request, voice: str):
+    """A short WAV sample of a coach voice, so the picker can preview it. Cached
+    on disk after the first generation (ADR-051)."""
+    wav = await prep_live.voice_sample_wav(voice)
+    if wav is None:
+        return HTMLResponse("", status_code=404)
+    return Response(content=wav, media_type="audio/wav",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.post("/interviews/{interview_id}/practice/start")
+async def practice_start(
+    request: Request,
+    interview_id: int,
+    mode: str = Form("simulate"),
+    length: str = Form("standard"),
+    focus: str = Form(""),
+    channel: str = Form("text"),
+    persona: str = Form(""),
+):
+    """C2 → create the session with a frozen picked question set (from cached P2),
+    then go to the runner (voice when chosen + enabled, else text)."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return _redirect("/interviews/new")
+    lang = interview.get("lang") or get_output_language()
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    if brief is None:
+        return HTMLResponse('<div class="text-error text-sm">Build the brief first.</div>')
+    competencies = [c.to_dict() for c in brief.competencies]
+    # Cached P2 questions; generate on a cold miss so Practice always has a set.
+    client = GeminiClient(api_key=resolve_api_key())
+    questions = await asyncio.to_thread(
+        prep_questions.get_or_generate_questions, interview, competencies, client, lang=lang)
+    qdicts = [q.to_dict() for q in (questions or [])]
+    if not qdicts:
+        return HTMLResponse('<div class="text-error text-sm">We couldn\'t load questions — try again.</div>')
+    picked = prep_practice.pick_session_questions(
+        qdicts, length=length, focus_competency=focus.strip() or None)
+    persona_id = persona if persona in prep_live.PERSONAS else prep_live.DEFAULT_PERSONA
+    sid = db.create_practice_session(
+        interview_id, mode=mode, length=length,
+        focus_competency=focus.strip() or None,
+        persona=persona_id, voice=prep_live.persona_meta(persona_id)["voice"],
+        questions=picked)
+    dest = "voice" if (channel == "voice" and prep_live.is_enabled()) else str(sid)
+    tail = f"{sid}/voice" if dest == "voice" else str(sid)
+    return HTMLResponse("", headers={"HX-Redirect": f"/interviews/{interview_id}/practice/{tail}"})
+
+
+@router.get("/interviews/{interview_id}/practice/{session_id}")
+async def practice_run(request: Request, interview_id: int, session_id: int):
+    """C3 — the runner. Renders the current (first unanswered) question, or the
+    'building' hand-off once every question is answered."""
+    interview = db.get_interview(interview_id)
+    session = db.get_practice_session(session_id)
+    if not interview or not session or session["interview_id"] != interview_id:
+        return _redirect(f"/interviews/{interview_id}")
+    if session["status"] == "done":
+        return _redirect(f"/interviews/{interview_id}/practice/{session_id}/feedback")
+    return templates.TemplateResponse(
+        request, "pages/practice_run.html",
+        {"active_tab": "prep", "interview": interview, "session": session,
+         "step": "practice", "turn": _current_turn(interview, session)})
+
+
+@router.get("/interviews/{interview_id}/practice/{session_id}/voice")
+async def practice_voice(request: Request, interview_id: int, session_id: int):
+    """The live-voice runner (ADR-052) — the browser connects directly to Gemini
+    Live. Falls back to the text runner if voice isn't enabled."""
+    interview = db.get_interview(interview_id)
+    session = db.get_practice_session(session_id)
+    if not interview or not session or session["interview_id"] != interview_id:
+        return _redirect(f"/interviews/{interview_id}")
+    if session["status"] == "done":
+        return _redirect(f"/interviews/{interview_id}/practice/{session_id}/feedback")
+    if not prep_live.is_enabled():
+        return _redirect(f"/interviews/{interview_id}/practice/{session_id}")
+    return templates.TemplateResponse(
+        request, "pages/practice_live.html",
+        {"active_tab": "prep", "interview": interview, "session": session,
+         "step": "practice", "live_model": prep_live.live_model()})
+
+
+@router.post("/interviews/{interview_id}/practice/{session_id}/live-token")
+async def practice_live_token(request: Request, interview_id: int, session_id: int):
+    """Mint a single-use ephemeral token so the browser can connect directly to
+    Gemini Live with our pinned config (ADR-052). 404 → the page falls back to
+    the text runner."""
+    interview = db.get_interview(interview_id)
+    session = db.get_practice_session(session_id)
+    if not interview or not session or session["interview_id"] != interview_id:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    lang = interview.get("lang") or get_output_language()
+    result = await asyncio.to_thread(
+        prep_live.create_ephemeral_token, interview, session, lang=lang)
+    if not result:
+        return JSONResponse({"error": "voice_unavailable"}, status_code=404)
+    token, context = result
+    return JSONResponse({"token": token, "model": prep_live.live_model(), "context": context})
+
+
+@router.post("/interviews/{interview_id}/practice/{session_id}/audio")
+async def practice_audio(
+    request: Request,
+    interview_id: int,
+    session_id: int,
+    audio: UploadFile = File(None),
+    turns: str = Form("[]"),
+    candidate_seconds: str = Form("0"),
+):
+    """End of a voice session: store the conversation transcript, then build the
+    debrief. Preferred path — score from the uploaded WAV (delivery + content read
+    from the ACTUAL audio; the audio is sent to Gemini transiently + never stored,
+    GOV-008). Falls back to the transcript-based debrief if there's no audio or
+    audio scoring fails. Marks done → client redirects to Feedback."""
+    interview = db.get_interview(interview_id)
+    session = db.get_practice_session(session_id)
+    if not interview or not session or session["interview_id"] != interview_id:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    feedback_url = f"/interviews/{interview_id}/practice/{session_id}/feedback"
+    if session["status"] == "done":
+        return JSONResponse({"redirect": feedback_url})
+
+    turn_list = _clean_turns(_parse_json(turns))
+    secs = _parse_int(candidate_seconds, 0)
+    db.save_practice_transcript(session_id, turn_list)
+    lang = interview.get("lang") or get_output_language()
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    competencies = [c.to_dict() for c in brief.competencies] if brief else []
+    questions = session.get("questions") or []
+
+    wav = await audio.read() if audio is not None else b""
+    debrief = None
+    if wav:
+        debrief = await asyncio.to_thread(
+            prep_audio_score.score_from_audio, wav, questions, competencies, lang=lang)
+    if debrief is None:
+        # Fallback: transcript-based debrief + code delivery over the "you" turns.
+        client = GeminiClient(api_key=resolve_api_key())
+        d = await asyncio.to_thread(
+            prep_practice.session_debrief_from_transcript,
+            turn_list, questions, competencies, client, lang=lang)
+        said = " ".join(t["text"] for t in turn_list if t["role"] == "you")
+        delivery = prep_practice.delivery_metrics(said, secs, max(secs, 1))
+        debrief = {**(d.to_dict() if d else {}), "delivery": delivery}
+    db.save_practice_debrief(session_id, debrief)
+    return JSONResponse({"redirect": feedback_url})
+
+
+def _parse_json(raw):
+    try:
+        import json as _json
+        return _json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clean_turns(raw) -> list[dict]:
+    """Keep well-formed {role: coach|you, text} turns from the client body."""
+    out: list[dict] = []
+    if not isinstance(raw, list):
+        return out
+    for it in raw:
+        if not isinstance(it, dict):
+            continue
+        role = "coach" if it.get("role") == "coach" else "you"
+        text = str(it.get("text", "")).strip()
+        if text:
+            out.append({"role": role, "text": text[:4000]})
+    return out
+
+
+@router.post("/interviews/{interview_id}/practice/{session_id}/answer")
+async def practice_answer(
+    request: Request,
+    interview_id: int,
+    session_id: int,
+    transcript: str = Form(""),
+    seconds: str = Form("0"),
+):
+    """Store one answer + code delivery metrics, then swap in the next turn (or
+    the 'building' hand-off when the session is complete)."""
+    interview = db.get_interview(interview_id)
+    session = db.get_practice_session(session_id)
+    if not interview or not session or session["interview_id"] != interview_id:
+        return HTMLResponse("")
+    answered = db.list_practice_answers(session_id)
+    questions = session.get("questions") or []
+    pos = len(answered)
+    if pos < len(questions):
+        q = questions[pos]
+        secs = _parse_int(seconds, 0)
+        target = prep_practice.target_seconds_for(q)
+        delivery = prep_practice.delivery_metrics(transcript, secs, target)
+        db.add_practice_answer(
+            session_id, position=pos, question_id=str(q.get("id", "")),
+            question_text=str(q.get("text", "")), competency_id=q.get("competency_id"),
+            transcript=transcript.strip(), seconds=secs, delivery=delivery)
+    # Re-read to decide the next turn.
+    session = db.get_practice_session(session_id)
+    turn = _current_turn(interview, session)
+    if turn is None:
+        db.set_practice_status(session_id, "building")
+        return templates.TemplateResponse(
+            request, "partials/practice_building.html",
+            {"interview": interview, "session_id": session_id})
+    return templates.TemplateResponse(
+        request, "partials/practice_turn.html",
+        {"interview": interview, "session": session, "turn": turn})
+
+
+@router.post("/interviews/{interview_id}/practice/{session_id}/build")
+async def practice_build(request: Request, interview_id: int, session_id: int):
+    """C4 — run P8 on each answer then P9 for the debrief, persist, and redirect
+    to Feedback."""
+    interview = db.get_interview(interview_id)
+    session = db.get_practice_session(session_id)
+    if not interview or not session or session["interview_id"] != interview_id:
+        return _redirect(f"/interviews/{interview_id}")
+    lang = interview.get("lang") or get_output_language()
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    comp_by_id = {c.id: c.to_dict() for c in brief.competencies} if brief else {}
+    stories = db.list_stories(interview["resume_hash"], status="saved")
+    mapping = prep_mapping.read_cached_mapping(interview_id, stories, lang=lang) or []
+    story_by_comp = {m.competency_id: next((s for s in stories if str(s["id"]) == m.story_id), None)
+                     for m in mapping if m.story_id}
+
+    client = GeminiClient(api_key=resolve_api_key())
+    # Keep the real question type per position (openers/technical have different
+    # speaking targets) instead of assuming behavioral.
+    q_by_pos = {i: q for i, q in enumerate(session.get("questions") or [])}
+    answers = db.list_practice_answers(session_id)
+    evals, deliveries = [], []
+    for a in answers:
+        src_q = q_by_pos.get(a["position"], {})
+        q = {"id": a["question_id"], "text": a["question_text"],
+             "type": src_q.get("type", "behavioral")}
+        comp = comp_by_id.get(a["competency_id"])
+        story = story_by_comp.get(a["competency_id"])
+        ev = await asyncio.to_thread(
+            prep_practice.evaluate_answer, q, comp, story, a["transcript"], client,
+            answer_seconds=a["seconds"],
+            target_seconds=prep_practice.target_seconds_for(q), lang=lang)
+        if ev is not None:
+            db.save_practice_eval(a["id"], ev.to_dict())
+            evals.append(ev.to_dict())
+        if a.get("delivery"):
+            deliveries.append(a["delivery"])
+
+    debrief = await asyncio.to_thread(
+        prep_practice.session_debrief, evals, deliveries,
+        [c.to_dict() for c in brief.competencies] if brief else [], client, lang=lang)
+    db.save_practice_debrief(session_id, debrief.to_dict() if debrief else {})
+    return HTMLResponse("", headers={"HX-Redirect": f"/interviews/{interview_id}/practice/{session_id}/feedback"})
+
+
+@router.get("/interviews/{interview_id}/practice/{session_id}/feedback")
+async def practice_feedback(request: Request, interview_id: int, session_id: int):
+    """Feedback (Screen 5) — debrief + per-answer evals + delivery strip + the
+    readiness now."""
+    interview = db.get_interview(interview_id)
+    session = db.get_practice_session(session_id)
+    if not interview or not session or session["interview_id"] != interview_id:
+        return _redirect(f"/interviews/{interview_id}")
+    if session["status"] != "done":
+        return _redirect(f"/interviews/{interview_id}/practice/{session_id}")
+    lang = interview.get("lang") or None
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    comp_names = {c.id: c.name for c in brief.competencies} if brief else {}
+    answers = db.list_practice_answers(session_id)
+    readiness = prep_readiness.compute(interview, lang=lang)
+    return templates.TemplateResponse(
+        request, "pages/practice_feedback.html",
+        {"active_tab": "prep", "interview": interview, "session": session,
+         "answers": answers, "comp_names": comp_names, "readiness": readiness,
+         "step": "feedback"})
+
+
+def _current_turn(interview: dict, session: dict) -> Optional[dict]:
+    """The current question + its study cue, or None when all are answered.
+    In Study mode the cue carries the competency's 'what good looks like' + the
+    mapped story title; Simulate hides cues (design brief §Practice)."""
+    questions = session.get("questions") or []
+    answered = len(db.list_practice_answers(session["id"]))
+    if answered >= len(questions):
+        return None
+    q = questions[answered]
+    cue = None
+    if session.get("mode") == "study":
+        lang = interview.get("lang") or None
+        brief = prep_brief.read_cached_brief(interview["id"], lang=lang)
+        comp = next((c for c in (brief.competencies if brief else [])
+                     if c.id == q.get("competency_id")), None)
+        story_title = None
+        if q.get("competency_id"):
+            stories = db.list_stories(interview["resume_hash"], status="saved")
+            mapping = prep_mapping.read_cached_mapping(interview["id"], stories, lang=lang) or []
+            m = next((m for m in mapping if m.competency_id == q.get("competency_id") and m.story_id), None)
+            if m:
+                s = next((s for s in stories if str(s["id"]) == m.story_id), None)
+                story_title = s["title"] if s else None
+        cue = {"what_good": comp.what_good_looks_like if comp else "",
+               "competency": comp.name if comp else "", "story_title": story_title}
+    return {"index": answered, "total": len(questions), "question": q, "cue": cue}
+
+
+# ---------- helpers ----------
+
+def _scrape_into_interview(interview: dict) -> dict:
+    """Scrape the pasted posting URL and backfill jd_text (+ company/role when
+    blank), persist, and return the refreshed row. On any scrape failure the
+    interview is returned unchanged — P1 still builds from company/role alone
+    (grounded-or-honest, never a fabricated JD)."""
+    from core.jobs.from_url import UrlExtractError, job_from_url  # local: heavy import
+
+    url = (interview.get("source_url") or "").strip()
+    try:
+        client = GeminiClient(api_key=resolve_api_key())
+        job = job_from_url(url, client)
+    except (UrlExtractError, Exception):  # noqa: BLE001 — degrade to JD-less brief
+        return interview
+    patch = {"jd_text": (job.get("description") or "").strip()}
+    if not (interview.get("company") or "").strip() and job.get("company"):
+        patch["company"] = job["company"].strip()
+    if not (interview.get("role_title") or "").strip() and job.get("title"):
+        patch["role_title"] = job["title"].strip()
+    if not patch["jd_text"]:
+        return interview
+    db.update_interview_fields(interview["id"], patch)
+    return db.get_interview(interview["id"]) or interview
+
+
+def _parse_int(raw: str, default: int) -> int:
+    try:
+        return int(str(raw).strip())
+    except (ValueError, TypeError):
+        return default
+
+
+def _redirect(url: str) -> RedirectResponse:
+    return RedirectResponse(url, status_code=303)

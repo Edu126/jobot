@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% import "partials/interview_stepper.html" as steps %}
+{% block title %}{{ _('prep2.step.practice') }} · {{ interview.company }}{% endblock %}
+{% block container_class %}max-w-3xl{% endblock %}
+
+{% block content %}
+{# C2 — pre-session setup. Mode / length / focus. (Mic test lands with the voice
+   layer; this round is written practice.) #}
+<div class="space-y-6">
+  <div class="space-y-4">
+    <a href="/interviews/{{ interview.id }}/get-ready" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
+      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.step.get_ready') }}
+    </a>
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.setup.heading') }}</h1>
+      <p class="text-body-muted mt-1">{{ interview.role_title or _('prep2.gen.the_role') }} · {{ interview.company }}</p>
+    </div>
+    {{ steps.stepper('practice', interview.id) }}
+  </div>
+
+  <form hx-post="/interviews/{{ interview.id }}/practice/start" hx-target="#setup-error" hx-swap="innerHTML"
+        x-data="{ mode: 'simulate', length: 'standard', channel: '{{ 'voice' if voice_enabled else 'text' }}' }" class="card-quiet p-5 space-y-5">
+
+    {# channel — only when live voice is configured #}
+    {% if voice_enabled %}
+    <div>
+      <label class="text-label block mb-2">{{ _('prep2.setup.channel') }}</label>
+      <input type="hidden" name="channel" :value="channel">
+      <div class="grid sm:grid-cols-2 gap-2">
+        {% for key, icon in [('voice','ph-microphone'), ('text','ph-keyboard')] %}
+        <button type="button" @click="channel = '{{ key }}'"
+                class="text-left rounded-lg border p-3 transition-colors"
+                :class="channel === '{{ key }}' ? 'border-primary bg-primary/5' : 'border-base-300 hover:border-base-content/30'">
+          <div class="font-medium text-sm inline-flex items-center gap-1.5"><i class="ph-thin {{ icon }}"></i>{{ _('prep2.setup.channel_' + key) }}</div>
+          <div class="text-xs text-body-muted mt-1">{{ _('prep2.setup.channel_' + key + '_sub') }}</div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <input type="hidden" name="channel" value="text">
+    {% endif %}
+
+    {# interviewer persona — only when voice channel is chosen. Each persona
+       bundles a voice + style; the card plays that voice as a preview. #}
+    {% if voice_enabled %}
+    <div x-show="channel === 'voice'" x-cloak
+         x-data="{ persona: '{{ default_persona }}', sampling: '', _audio: null,
+                   voices: { {% for pid, m in personas.items() %}'{{ pid }}':'{{ m.voice }}',{% endfor %} },
+                   pick(pid){ this.persona = pid; this.play(pid); },
+                   play(pid){
+                     if (this._audio) { this._audio.pause(); this._audio = null; }
+                     this.sampling = pid;
+                     const a = new Audio('/interviews/practice/voice-sample/' + this.voices[pid]);
+                     this._audio = a;
+                     a.onended = () => { if (this.sampling === pid) this.sampling = ''; };
+                     a.onerror = () => { if (this.sampling === pid) this.sampling = ''; };
+                     a.play().catch(() => { this.sampling = ''; }); } }">
+      <label class="text-label block mb-2">{{ _('prep2.setup.persona_pick') }} <span class="text-body-muted font-normal">· {{ _('prep2.setup.voice_preview') }}</span></label>
+      <input type="hidden" name="persona" :value="persona">
+      <div class="grid sm:grid-cols-3 gap-2">
+        {% for pid, m in personas.items() %}
+        <button type="button" @click="pick('{{ pid }}')"
+                class="text-left rounded-lg border p-3 transition-colors"
+                :class="persona === '{{ pid }}' ? 'border-primary bg-primary/5' : 'border-base-300 hover:border-base-content/30'">
+          <div class="font-medium text-sm inline-flex items-center gap-1.5">
+            <i class="ph-thin" :class="sampling === '{{ pid }}' ? 'ph-speaker-high animate-pulse' : 'ph-play'"></i>{{ m.name }}
+          </div>
+          <div class="text-xs text-body-muted mt-1">{{ m.blurb }}</div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# mode #}
+    <div>
+      <label class="text-label block mb-2">{{ _('prep2.setup.mode') }}</label>
+      <input type="hidden" name="mode" :value="mode">
+      <div class="grid sm:grid-cols-2 gap-2">
+        {% for key, icon in [('simulate','ph-eye-slash'), ('study','ph-book-open')] %}
+        <button type="button" @click="mode = '{{ key }}'"
+                class="text-left rounded-lg border p-3 transition-colors"
+                :class="mode === '{{ key }}' ? 'border-primary bg-primary/5' : 'border-base-300 hover:border-base-content/30'">
+          <div class="font-medium text-sm inline-flex items-center gap-1.5"><i class="ph-thin {{ icon }}"></i>{{ _('prep2.setup.mode_' + key) }}</div>
+          <div class="text-xs text-body-muted mt-1">{{ _('prep2.setup.mode_' + key + '_sub') }}</div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# length #}
+    <div>
+      <label class="text-label block mb-2">{{ _('prep2.setup.length') }}</label>
+      <input type="hidden" name="length" :value="length">
+      <div class="flex flex-wrap gap-2">
+        {% for key, n in [('quick',3), ('standard',5), ('full',8)] %}
+        <button type="button" @click="length = '{{ key }}'" class="chip cursor-pointer"
+                :class="length === '{{ key }}' ? 'chip-accent' : 'chip-neutral'">
+          {{ _('prep2.setup.len_' + key) }} · {{ n }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# focus #}
+    <div>
+      <label class="text-label block mb-2">{{ _('prep2.setup.focus') }}</label>
+      <select name="focus" class="select select-bordered select-sm w-full max-w-xs">
+        <option value="">{{ _('prep2.setup.focus_all') }}</option>
+        {% for c in competencies %}
+        <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="rounded-lg bg-base-200/60 p-3 text-xs text-body-muted flex items-start gap-2"
+         x-show="channel === 'text'">
+      <i class="ph-thin ph-info mt-0.5"></i>{{ _('prep2.setup.written_note') }}
+    </div>
+    <div class="rounded-lg bg-base-200/60 p-3 text-xs text-body-muted flex items-start gap-2"
+         x-show="channel === 'voice'" x-cloak>
+      <i class="ph-thin ph-microphone mt-0.5"></i>{{ _('prep2.setup.voice_note') }}
+    </div>
+
+    <div class="flex items-center gap-3 pt-1">
+      <button type="submit" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
+        {{ _('prep2.setup.start') }}<i class="ph-thin ph-arrow-right"></i>
+      </button>
+      <span id="setup-error" class="text-error text-sm"></span>
+    </div>
+  </form>
+</div>
+{% endblock %}

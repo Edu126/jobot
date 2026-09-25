@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+{% import "partials/interview_stepper.html" as steps %}
+{% block title %}{{ _('prep2.step.practice') }} · {{ interview.company }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+
+{% block content %}
+{# Live-voice runner (ADR-052). The browser connects DIRECTLY to Gemini Live via
+   the @google/genai SDK using a server-minted ephemeral token (which pins our
+   P7 prompt + voice + config). The model conducts the whole interview with
+   automatic VAD — hands-free, barge-in, live transcript. Audio never touches our
+   server (GOV-008). Falls back to the text runner on any failure. #}
+<div class="space-y-6"
+     x-data="liveRunner({
+        tokenUrl: '/interviews/{{ interview.id }}/practice/{{ session.id }}/live-token',
+        audioUrl: '/interviews/{{ interview.id }}/practice/{{ session.id }}/audio',
+        feedbackUrl: '/interviews/{{ interview.id }}/practice/{{ session.id }}/feedback',
+        textUrl: '/interviews/{{ interview.id }}/practice/{{ session.id }}',
+        model: '{{ live_model }}'
+     })">
+
+  <div class="space-y-4">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h1 class="text-xl font-semibold tracking-tight">{{ interview.role_title or _('prep2.gen.the_role') }}</h1>
+        <p class="text-body-muted text-sm">{{ interview.company }} · {{ _('prep2.setup.mode_' + session.mode) }}</p>
+      </div>
+      <span class="pill pill-neutral text-xs inline-flex items-center gap-1">
+        <span class="pill-dot live"></span>{{ _('prep2.run.ai_coach') }}
+      </span>
+    </div>
+    {{ steps.stepper('practice', interview.id) }}
+  </div>
+
+  {# failure → text runner #}
+  <div x-show="failed" x-cloak class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm">
+    <div class="flex items-center gap-2 mb-2"><i class="ph-fill ph-warning-circle text-lg" style="color: oklch(var(--wa));"></i><span x-text="failMsg"></span></div>
+    <a :href="textUrl" class="btn btn-primary btn-sm">{{ _('prep2.live.use_text') }}</a>
+  </div>
+
+  {# start gate — a real gesture unlocks audio + mic #}
+  <div x-show="!started && !failed" x-cloak class="card-quiet p-8 text-center space-y-4">
+    <i class="ph-thin ph-microphone-stage text-4xl text-primary"></i>
+    <div>
+      <div class="font-medium">{{ _('prep2.live.ready_title') }}</div>
+      <p class="text-sm text-body-muted max-w-sm mx-auto mt-1">{{ _('prep2.live.ready_body') }}</p>
+    </div>
+    <button type="button" @click="begin()" :disabled="connecting"
+            class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
+      <i class="ph-thin" :class="connecting ? 'ph-circle-notch animate-spin' : 'ph-play'"></i>
+      <span x-text="connecting ? '{{ _('prep2.live.connecting') }}' : '{{ _('prep2.live.begin') }}'"></span>
+    </button>
+  </div>
+
+  {# building-feedback overlay — shown while the WAV uploads + is scored (takes a
+     few seconds); staged messages so the wait feels alive #}
+  <div x-show="building" x-cloak class="min-h-[60vh] flex flex-col items-center justify-center text-center gap-6">
+    <div class="gen-orb" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div>
+      <div class="text-lg font-semibold">{{ _('prep2.build.title') }}</div>
+      <p class="text-body-muted text-sm mt-1" x-text="buildMsg"></p>
+    </div>
+  </div>
+
+  {# ---- session: orb (left) · live conversation (right) ---- #}
+  <div x-show="started && !failed && !building" x-cloak
+       class="grid lg:grid-cols-[20rem_1fr] gap-6 items-stretch">
+
+    {# left: orb + state + mic VU + controls #}
+    <div class="flex flex-col items-center gap-4 py-2">
+      <div class="voice-orb-wrap" aria-hidden="true"><canvas x-ref="orb" class="voice-orb"></canvas></div>
+      <div class="text-sm text-body-muted text-center" x-text="stateLabel"></div>
+      <div class="flex items-center gap-2 text-xs" :class="micLive ? 'text-primary' : 'text-base-content/40'">
+        <i class="ph-fill" :class="micLive ? 'ph-microphone' : 'ph-microphone-slash'"></i>
+        <div class="w-24 h-1.5 rounded-full bg-base-200 overflow-hidden">
+          <div class="h-full bg-primary transition-[width] duration-75" :style="`width:${Math.min(100, level*180)}%`"></div>
+        </div>
+        <span x-text="micLive ? '{{ _('prep2.live.mic_on') }}' : '{{ _('prep2.live.muted_lbl') }}'"></span>
+      </div>
+      <div class="flex items-center gap-2 mt-auto pt-2">
+        <button type="button" @click="toggleMute()" class="btn btn-ghost btn-sm border border-base-300 inline-flex items-center gap-1.5">
+          <i class="ph-thin" :class="muted ? 'ph-microphone-slash' : 'ph-microphone'"></i>
+          <span x-text="muted ? '{{ _('prep2.live.unmute') }}' : '{{ _('prep2.live.mute') }}'"></span>
+        </button>
+        <button type="button" @click="endSession()" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
+          <i class="ph-thin ph-flag-checkered"></i>{{ _('prep2.live.end') }}
+        </button>
+      </div>
+    </div>
+
+    {# right: live conversation — its own scroll (shorter on mobile) #}
+    <div class="rounded-xl border border-base-300 bg-base-100 p-4 h-[46vh] lg:h-[60vh] overflow-y-auto" x-ref="captions">
+      <div class="space-y-2">
+        <template x-for="(c, i) in turns" :key="i">
+          <div class="flex" :class="c.role === 'coach' ? 'justify-start' : 'justify-end'">
+            <div class="max-w-[85%] rounded-2xl px-3.5 py-2 text-sm"
+                 :class="c.role === 'coach' ? 'bg-base-200 text-base-content' : 'bg-primary text-primary-content'">
+              <span x-text="c.text"></span>
+            </div>
+          </div>
+        </template>
+        <div x-show="turns.length === 0" class="text-center text-sm text-body-muted py-6">{{ _('prep2.live.waiting') }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Dual-voice orb: real AnalyserNode energy — green wave = the candidate (my
+  // voice), soft-salmon wave = the coach. Calm idle breathing; reduced-motion static.
+  function voiceOrb() {
+    const GREEN = '0,78,61';        // hunter-green — the candidate
+    const SALMON = '224,150,130';   // softened, personal salmon — the coach
+    return {
+      ctx: null, canvas: null, dpr: 1, size: 0, running: false, raf: 0,
+      micA: null, coachA: null, coachGain: null, _mBuf: null, _cBuf: null, _fBuf: null,
+      micEnv: 0, coachEnv: 0, phase: 0, _onResize: null,
+      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+
+      init(capCtx, playCtx, micSource, canvasEl) {
+        this.canvas = canvasEl; this.ctx = canvasEl.getContext('2d');
+        this.micA = capCtx.createAnalyser();
+        this.micA.fftSize = 1024; this.micA.smoothingTimeConstant = 0.82;
+        try { micSource.connect(this.micA); } catch (_) {}
+        this.coachGain = playCtx.createGain();
+        this.coachA = playCtx.createAnalyser();
+        this.coachA.fftSize = 1024; this.coachA.smoothingTimeConstant = 0.82;
+        this.coachGain.connect(this.coachA); this.coachA.connect(playCtx.destination);
+        this._mBuf = new Uint8Array(this.micA.fftSize);
+        this._cBuf = new Uint8Array(this.coachA.fftSize);
+        this._fBuf = new Uint8Array(this.coachA.frequencyBinCount);
+        this._resize();
+        this._onResize = () => this._resize(); addEventListener('resize', this._onResize);
+        this.running = true;
+        if (this.reduced) { this._render(0.14, 0.10); return; }
+        this.raf = requestAnimationFrame(() => this.frame());
+      },
+      playbackNode() { return this.coachGain; },
+      _resize() {
+        const r = this.canvas.getBoundingClientRect();
+        this.dpr = Math.min(2, window.devicePixelRatio || 1);
+        this.canvas.width = Math.max(1, r.width * this.dpr);
+        this.canvas.height = Math.max(1, r.height * this.dpr);
+        this.size = r.width;
+      },
+      _rms(a, buf) { a.getByteTimeDomainData(buf); let s = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; } return Math.min(1, Math.sqrt(s / buf.length) * 1.8); },
+      frame() {
+        if (!this.running) return;
+        const mic = this._rms(this.micA, this._mBuf);
+        const coach = this._rms(this.coachA, this._cBuf);
+        this.micEnv += (mic - this.micEnv) * 0.22;
+        this.coachEnv += (coach - this.coachEnv) * 0.22;
+        this.phase += 0.006;
+        this._render(this.micEnv, this.coachEnv);
+        this.raf = requestAnimationFrame(() => this.frame());
+      },
+      _render(micEnv, coachEnv) {
+        const ctx = this.ctx; if (!ctx) return;
+        const S = this.size, c = S / 2, base = S * 0.22;
+        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        ctx.clearRect(0, 0, S, S);
+        const breathe = 0.04 * Math.sin(this.phase * 2.2);
+        const coreR = base * (0.55 + breathe + micEnv * 0.15);
+        const g = ctx.createRadialGradient(c, c, coreR * 0.2, c, c, coreR);
+        g.addColorStop(0, `rgba(${GREEN},0.95)`); g.addColorStop(1, `rgba(${GREEN},0.82)`);
+        ctx.beginPath(); ctx.arc(c, c, coreR, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+        this._ring(c, base * 1.16 * (1 + breathe), coachEnv, SALMON, this.phase, +1);
+        this._ring(c, base * (1.0 + breathe), micEnv, GREEN, this.phase, -1);
+      },
+      _ring(c, radius, env, rgb, phase, dir) {
+        const ctx = this.ctx, N = 90;
+        this.coachA.getByteFrequencyData(this._fBuf);
+        ctx.beginPath();
+        for (let i = 0; i <= N; i++) {
+          const a = (i / N) * Math.PI * 2;
+          const bi = Math.floor(Math.abs(Math.cos(a)) * 22) + 1;
+          const f = (this._fBuf[bi] || 0) / 255;
+          const wob = (0.05 + env * 0.85) * (0.45 * f + 0.55 * Math.sin(a * 3 + phase * dir * 6));
+          const r = radius * (1 + wob);
+          const x = c + Math.cos(a + phase * dir) * r, y = c + Math.sin(a + phase * dir) * r;
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = `rgba(${rgb},${0.22 + env * 0.6})`;
+        ctx.lineWidth = 1.5 + env * 4;
+        ctx.stroke();
+        ctx.fillStyle = `rgba(${rgb},${0.04 + env * 0.10})`;
+        ctx.fill();
+      },
+      stop() {
+        this.running = false;
+        if (this.raf) cancelAnimationFrame(this.raf);
+        if (this._onResize) removeEventListener('resize', this._onResize);
+        try { this.micA && this.micA.disconnect(); } catch (_) {}
+        try { this.coachGain && this.coachGain.disconnect(); this.coachA && this.coachA.disconnect(); } catch (_) {}
+      },
+    };
+  }
+
+  function liveRunner(cfg) {
+    return {
+      ...cfg,
+      started: false, connecting: false, ending: false, building: false, buildMsg: '',
+      state: 'connecting', turns: [], muted: false, micLive: false, level: 0,
+      failed: false, failMsg: '',
+      _silenceStart: 0, _nudged: false, _inactivityTimer: null,
+      _cap: null, _play: null, _recNode: null, _micSource: null, _stream: null,
+      _session: null, _players: [], _playHead: 0, _speakingMs: 0,
+      _lvl: 0, _micHoldUntil: 0,
+      _ctx: '',                        // context turn (from /live-token)
+      coachSpeaking: false, micReady: false, _coachTimer: null,  // echo gating + grace
+      _pcm: [], _pcmLen: 0,            // recorded user PCM16 (for audio scoring)
+      _resumeHandle: null, _reconnecting: false,  // session resumption
+      _orb: null,                                  // dual-voice wave visualization
+
+      get stateLabel() {
+        return {
+          connecting: '{{ _('prep2.live.connecting') }}',
+          speaking: '{{ _('prep2.live.speaking') }}',
+          listening: '{{ _('prep2.live.listening') }}',
+          ending: '{{ _('prep2.build.title') }}'
+        }[this.state] || '';
+      },
+
+      async begin() {
+        this.connecting = true;
+        console.log('[live] begin');
+        // 1) ephemeral token + the context turn (server pins model/persona/voice)
+        let token;
+        try {
+          const r = await fetch(this.tokenUrl, { method: 'POST' });
+          if (!r.ok) throw new Error('token ' + r.status);
+          const j = await r.json();
+          token = j.token; this._ctx = j.context || '';
+        } catch (e) { console.error('[live] token', e); return this.fail('{{ _('prep2.live.conn_failed') }}'); }
+
+        // 2) audio: capture @16k, playback @24k (two contexts, resumed by this gesture)
+        try {
+          this._cap = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+          this._play = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+          await this._cap.resume(); await this._play.resume();
+          // Clean capture: cancel the coach echo + suppress background noise so
+          // the VAD doesn't false-trigger on room noise / the speaker.
+          this._stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+          await this._cap.audioWorklet.addModule(this._recorderModuleUrl());
+        } catch (e) { console.error('[live] audio', e); return this.fail('{{ _('prep2.live.mic_denied') }}'); }
+
+        // 3) connect DIRECTLY to Gemini Live
+        if (!await this._connect(token)) return;
+        this.started = true; this.connecting = false;
+        this.startMic();
+        // orb needs the canvas laid out (x-show just flipped display) → next tick
+        this.$nextTick(() => { try { this._orb = voiceOrb(); this._orb.init(this._cap, this._play, this._micSource, this.$refs.orb); } catch (e) { console.error('[live] orb', e); } });
+        this._resetSilence();
+        this._startInactivityWatch();
+        this.state = 'speaking';
+        // Inject the context + questions (kept out of the pinned prompt to avoid
+        // the >4000-char silent hang); the model then greets and conducts.
+        try { this._session.sendClientContent({ turns: this._ctx, turnComplete: true }); } catch (_) {}
+      },
+
+      async _connect(token, resumeHandle) {
+        try {
+          const { GoogleGenAI } = await import('https://esm.sh/@google/genai@1');
+          const ai = new GoogleGenAI({ apiKey: token, httpOptions: { apiVersion: 'v1alpha' } });
+          const config = resumeHandle ? { sessionResumption: { handle: resumeHandle } } : {};
+          this._session = await ai.live.connect({
+            model: this.model, config,
+            callbacks: {
+              onopen: () => console.log('[live] session open'),
+              onmessage: (m) => this.onMessage(m),
+              onerror: (e) => { console.error('[live] session error', e); this.fail('{{ _('prep2.live.conn_failed') }}'); },
+              onclose: () => this._onClose(),
+            },
+          });
+          return true;
+        } catch (e) { console.error('[live] connect', e); this.fail('{{ _('prep2.live.conn_failed') }}'); return false; }
+      },
+
+      _onClose() {
+        console.log('[live] session closed');
+        if (this.ending || this._reconnecting) return;      // guard the GoAway+close double-fire
+        if (this.started && this._resumeHandle) return this.reconnect();
+        if (this.started) this.endSession();
+      },
+
+      async reconnect() {
+        this._reconnecting = true; console.log('[live] reconnecting…');
+        try {
+          const r = await fetch(this.tokenUrl, { method: 'POST' });
+          if (!r.ok) throw new Error('token ' + r.status);
+          const j = await r.json();
+          if (!await this._connect(j.token, this._resumeHandle)) throw new Error('reconnect failed');
+          this._reconnecting = false;
+        } catch (e) { console.error('[live] reconnect failed', e); this._reconnecting = false; this.endSession(); }
+      },
+
+      // ---- mic capture → PCM16 16k → Gemini (continuous; VAD handles turns) ----
+      startMic() {
+        this._micSource = this._cap.createMediaStreamSource(this._stream);
+        this._recNode = new AudioWorkletNode(this._cap, 'pcm-recorder');
+        this._recNode.port.onmessage = (ev) => {
+          const { pcm, rms } = ev.data;
+          this._lvl = this._lvl * 0.85 + rms * 0.15;
+          this.level = this._lvl;
+          if (this._lvl > 0.02) this._micHoldUntil = performance.now() + 300;
+          // Gate: don't send/record until the coach has spoken (grace period) and
+          // never while the coach is speaking (echo defence, half-duplex) or muted.
+          const sending = this.micReady && !this.coachSpeaking && !this.muted && this._session;
+          this.micLive = !!sending && performance.now() < this._micHoldUntil;
+          if (this.micLive) { this._speakingMs += 8; this._resetSilence(); }  // ~128 samples @16k per frame
+          if (!sending) return;
+          // record the user's audio for scoring (cap ~12 min) + stream to Gemini
+          if (this._pcmLen < 16000 * 60 * 12) { this._pcm.push(new Int16Array(pcm).slice()); this._pcmLen += pcm.byteLength / 2; }
+          try { this._session.sendRealtimeInput({ audio: { data: this._b64(pcm), mimeType: 'audio/pcm;rate=16000' } }); } catch (_) {}
+        };
+        const sink = this._cap.createGain(); sink.gain.value = 0;   // no mic monitoring
+        this._micSource.connect(this._recNode); this._recNode.connect(sink); sink.connect(this._cap.destination);
+      },
+
+      onMessage(m) {
+        // capture the session-resumption handle for transparent reconnection
+        const sr = m.sessionResumptionUpdate;
+        if (sr && sr.resumable && sr.newHandle) this._resumeHandle = sr.newHandle;
+        const sc = m.serverContent;
+        if (!sc) return;
+        if (sc.interrupted) { this.clearPlayback(); this._coachOffNow(); }
+        const mt = sc.modelTurn;
+        if (mt && mt.parts) {
+          for (const p of mt.parts) {
+            const d = p.inlineData && p.inlineData.data;
+            if (d) { this.micReady = true; this._coachOn(); this.state = 'speaking'; this.enqueue(d); }
+          }
+        }
+        if (sc.outputTranscription && sc.outputTranscription.text) this.pushTurn('coach', sc.outputTranscription.text);
+        if (sc.inputTranscription && sc.inputTranscription.text) this.pushTurn('you', sc.inputTranscription.text);
+        if (sc.turnComplete) { this.state = 'listening'; this._coachOffSoon(); }  // resume mic 300ms after
+      },
+
+      // coach-speaking gate (echo defence): on while audio flows; off 300ms after
+      // the coach's turn completes; off immediately on a barge-in.
+      _coachOn() { if (this._coachTimer) { clearTimeout(this._coachTimer); this._coachTimer = null; } this.coachSpeaking = true; this._resetSilence(); },
+
+      // ---- inactivity: nudge at ~50s of silence, end ~20s later (user's ask) ----
+      _resetSilence() { this._silenceStart = performance.now(); this._nudged = false; },
+      _startInactivityWatch() {
+        this._inactivityTimer = setInterval(() => {
+          if (!this.started || this.ending || this.building || this.coachSpeaking) return;
+          const idle = (performance.now() - this._silenceStart) / 1000;
+          if (!this._nudged && idle > 50) {
+            this._nudged = true; this._silenceStart = performance.now();
+            try { this._session.sendClientContent({ turns: '(The candidate has been silent for a while. Gently check if they are still there.)', turnComplete: true }); } catch (_) {}
+          } else if (this._nudged && idle > 20) {
+            this.endSession();  // still nothing → wrap up
+          }
+        }, 1000);
+      },
+      _coachOffSoon() { if (this._coachTimer) clearTimeout(this._coachTimer); this._coachTimer = setTimeout(() => { this.coachSpeaking = false; this._coachTimer = null; }, 300); },
+      _coachOffNow() { if (this._coachTimer) { clearTimeout(this._coachTimer); this._coachTimer = null; } this.coachSpeaking = false; },
+
+      pushTurn(role, text) {
+        const last = this.turns[this.turns.length - 1];
+        if (last && last.role === role) last.text += text; else this.turns.push({ role, text });
+        this.$nextTick(() => { const el = this.$refs.captions; if (el) el.scrollTop = el.scrollHeight; });
+      },
+
+      // ---- playback: queued PCM24 with barge-in clear ----
+      enqueue(b64) {
+        const pcm = this._fromB64(b64);
+        const view = new Int16Array(pcm);
+        const f = new Float32Array(view.length);
+        for (let i = 0; i < view.length; i++) f[i] = view[i] / 0x8000;
+        const buf = this._play.createBuffer(1, f.length, 24000);
+        buf.getChannelData(0).set(f);
+        const dest = (this._orb && this._orb.playbackNode()) || this._play.destination;
+        const src = this._play.createBufferSource(); src.buffer = buf; src.connect(dest);
+        const now = this._play.currentTime + 0.06;
+        this._playHead = Math.max(this._playHead, now);
+        src.start(this._playHead); this._playHead += buf.duration;
+        this._players.push(src);
+        src.onended = () => { this._players = this._players.filter(s => s !== src); };
+      },
+      clearPlayback() {
+        for (const s of this._players) { try { s.stop(); } catch (_) {} }
+        this._players = []; this._playHead = 0;
+      },
+
+      toggleMute() { this.muted = !this.muted; if (this.muted) this.micLive = false; },
+
+      async endSession() {
+        if (this.ending) return;
+        this.ending = true; this.state = 'ending';
+        if (this._inactivityTimer) { clearInterval(this._inactivityTimer); this._inactivityTimer = null; }
+        this.clearPlayback();
+        try { if (this._session) this._session.close(); } catch (_) {}
+        this.stopMic();
+        // building overlay + staged messages so the scoring wait feels alive
+        this.building = true;
+        const msgs = ['{{ _('prep2.build.step_upload') }}', '{{ _('prep2.build.step_delivery') }}',
+                      '{{ _('prep2.build.step_review') }}', '{{ _('prep2.build.step_write') }}'];
+        let mi = 0; this.buildMsg = msgs[0];
+        const ticker = setInterval(() => { mi = Math.min(mi + 1, msgs.length - 1); this.buildMsg = msgs[mi]; }, 2500);
+        // Upload the recorded answers (WAV) + transcript for scoring-from-audio.
+        const fd = new FormData();
+        fd.append('turns', JSON.stringify(this.turns));
+        fd.append('candidate_seconds', String(Math.round(this._speakingMs / 1000)));
+        const wav = this._buildWav();
+        if (wav) fd.append('audio', wav, 'answers.wav');
+        try { await fetch(this.audioUrl, { method: 'POST', body: fd }); } catch (_) {}
+        clearInterval(ticker);
+        window.location = this.feedbackUrl;
+      },
+
+      _buildWav() {
+        if (!this._pcmLen) return null;
+        const bytes = this._pcmLen * 2;
+        const buf = new ArrayBuffer(44 + bytes); const dv = new DataView(buf);
+        const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+        w(0, 'RIFF'); dv.setUint32(4, 36 + bytes, true); w(8, 'WAVE'); w(12, 'fmt ');
+        dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+        dv.setUint32(24, 16000, true); dv.setUint32(28, 32000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+        w(36, 'data'); dv.setUint32(40, bytes, true);
+        let off = 44;
+        for (const chunk of this._pcm) { for (let i = 0; i < chunk.length; i++) { dv.setInt16(off, chunk[i], true); off += 2; } }
+        this._pcm = [];
+        return new Blob([buf], { type: 'audio/wav' });
+      },
+
+      stopMic() {
+        try { if (this._orb) this._orb.stop(); } catch (_) {}
+        try { if (this._recNode) this._recNode.disconnect(); } catch (_) {}
+        try { if (this._micSource) this._micSource.disconnect(); } catch (_) {}
+        try { if (this._stream) this._stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      },
+
+      fail(msg) { this.ending = true; this.failed = true; this.connecting = false; this.failMsg = msg; this.stopMic(); try { if (this._session) this._session.close(); } catch (_) {} },
+
+      // ---- helpers ----
+      _recorderModuleUrl() {
+        const code = `
+          class PcmRecorder extends AudioWorkletProcessor {
+            process(inputs) {
+              const ch = inputs[0] && inputs[0][0];
+              if (!ch) return true;
+              const out = new Int16Array(ch.length); let sum = 0;
+              for (let i = 0; i < ch.length; i++) { let s = Math.max(-1, Math.min(1, ch[i])); out[i] = s < 0 ? s * 0x8000 : s * 0x7fff; sum += s * s; }
+              this.port.postMessage({ pcm: out.buffer, rms: Math.sqrt(sum / ch.length) }, [out.buffer]);
+              return true;
+            }
+          }
+          registerProcessor('pcm-recorder', PcmRecorder);`;
+        return URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+      },
+      _b64(buf) {
+        let s = ''; const b = new Uint8Array(buf);
+        for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+        return btoa(s);
+      },
+      _fromB64(b64) {
+        const bin = atob(b64); const len = bin.length; const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+        return bytes.buffer;
+      },
+    };
+  }
+</script>
+{% endblock %}

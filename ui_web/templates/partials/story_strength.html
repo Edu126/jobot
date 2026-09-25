@@ -1,0 +1,22 @@
+{# Code-computed strength badge + plain-language flags (D4). Refreshed live in
+   the editor as the STAR fields change. Green when strong; amber nudges
+   otherwise — never red (a weak story isn't an error). #}
+{% set badge_pill = {'strong': 'pill-success'} %}
+<div id="story-strength">
+  <div class="flex items-center gap-2">
+    <span class="pill {{ badge_pill.get(strength.badge, 'pill-warn') }} text-xs">
+      {{ _('prep2.story.badge.' + strength.badge) }}
+    </span>
+  </div>
+  {% if strength.flags %}
+  <ul class="mt-2 space-y-1">
+    {% for f in strength.flags %}
+    <li class="flex items-start gap-1.5 text-xs text-body-muted">
+      <i class="ph-thin ph-warning-circle mt-0.5 shrink-0"></i>{{ _('prep2.story.flag.' + f) }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="mt-2 text-xs text-body-muted">{{ _('prep2.story.strong_hint') }}</p>
+  {% endif %}
+</div>

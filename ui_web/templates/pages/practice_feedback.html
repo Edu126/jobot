@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% import "partials/interview_stepper.html" as steps %}
+{% import "partials/readiness.html" as rd %}
+{% block title %}{{ _('prep2.step.feedback') }} · {{ interview.company }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+
+{% set band_pill = {'strong': 'pill-success', 'solid': 'pill-info', 'needs_work': 'pill-warn'} %}
+{% set debrief = session.debrief or {} %}
+
+{% block content %}
+<div class="space-y-6" x-data="{ showTranscript: true }">
+
+  {# header + stepper #}
+  <div class="space-y-4">
+    <a href="/interviews/{{ interview.id }}" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
+      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.brief.back') }}
+    </a>
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.feedback.heading') }}</h1>
+      <p class="text-body-muted">{{ interview.role_title or _('prep2.gen.the_role') }} · {{ interview.company }}</p>
+    </div>
+    {{ steps.stepper('feedback', interview.id) }}
+  </div>
+
+  {# ---- coach takeaway ---- #}
+  {% if debrief.takeaway %}
+  <div class="card-quiet p-5 flex items-start gap-3">
+    <i class="ph-thin ph-chat-teardrop-text text-2xl text-primary shrink-0"></i>
+    <div>
+      <div class="text-label mb-1">{{ _('prep2.feedback.takeaway') }}</div>
+      <p class="text-sm leading-relaxed">{{ debrief.takeaway }}</p>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- competency bands + delivery strip ---- #}
+  <div class="grid md:grid-cols-2 gap-4">
+    <section class="card-quiet p-4">
+      <h2 class="text-label mb-3">{{ _('prep2.feedback.by_competency') }}</h2>
+      {% if debrief.competency_bands %}
+      <div class="space-y-2">
+        {% for b in debrief.competency_bands %}
+        <div class="flex items-center justify-between gap-2 text-sm">
+          <span>{{ comp_names.get(b.competency_id, b.competency_id) }}</span>
+          <span class="pill {{ band_pill.get(b.band, 'pill-neutral') }} text-xs">{{ _('prep2.band.' + b.band) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<p class="text-sm text-body-muted">—</p>{% endif %}
+    </section>
+
+    {# delivery strip — real numbers (§4). Voice: one delivery blob over the
+       whole conversation (debrief.delivery); typed: averaged over answers. #}
+    <section class="card-quiet p-4">
+      <h2 class="text-label mb-3">{{ _('prep2.feedback.delivery') }}</h2>
+      {% if session.transcript and debrief.delivery %}
+        {% set dv = debrief.delivery %}
+        <div class="grid grid-cols-3 gap-3 text-center">
+          <div><div class="text-xl font-semibold">{{ dv.wpm }}</div><div class="text-xs text-body-muted">{{ _('prep2.feedback.wpm') }}</div></div>
+          <div><div class="text-xl font-semibold">{{ dv.filler_count }}</div><div class="text-xs text-body-muted">{{ _('prep2.feedback.fillers') }}</div></div>
+          <div><div class="text-xl font-semibold capitalize">{{ dv.pace or dv.length_band or '—' }}</div><div class="text-xs text-body-muted">{{ _('prep2.feedback.pace') }}</div></div>
+        </div>
+        {% if dv.confidence and dv.confidence != 'unknown' %}
+          <div class="text-xs text-body-muted text-center mt-2">{{ _('prep2.feedback.confidence') }}: <span class="capitalize">{{ dv.confidence }}</span></div>
+        {% endif %}
+      {% else %}
+        {% set ns = namespace(wpm=0, fillers=0, n=0) %}
+        {% for a in answers %}{% if a.delivery %}{% set ns.wpm = ns.wpm + a.delivery.wpm %}{% set ns.fillers = ns.fillers + a.delivery.filler_count %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}
+        <div class="grid grid-cols-3 gap-3 text-center">
+          <div><div class="text-xl font-semibold">{{ (ns.wpm / ns.n) | round | int if ns.n else 0 }}</div><div class="text-xs text-body-muted">{{ _('prep2.feedback.wpm') }}</div></div>
+          <div><div class="text-xl font-semibold">{{ ns.fillers }}</div><div class="text-xs text-body-muted">{{ _('prep2.feedback.fillers') }}</div></div>
+          <div><div class="text-xl font-semibold">{{ ns.n }}</div><div class="text-xs text-body-muted">{{ _('prep2.feedback.answers') }}</div></div>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
+  {# ---- top actions + readiness + CTA ---- #}
+  <div class="grid md:grid-cols-2 gap-4">
+    {% if debrief.top_actions %}
+    <section class="card-quiet p-4">
+      <h2 class="text-label mb-3">{{ _('prep2.feedback.top_actions') }}</h2>
+      <ol class="space-y-2">
+        {% for a in debrief.top_actions %}
+        <li class="flex items-start gap-2 text-sm">
+          <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs shrink-0">{{ loop.index }}</span>{{ a }}
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+    <section class="card-quiet p-4 flex flex-col justify-between gap-3">
+      <div>
+        <h2 class="text-label mb-2">{{ _('prep2.feedback.readiness_now') }}</h2>
+        {{ rd.readiness(readiness) }}
+      </div>
+      <a href="/interviews/{{ interview.id }}/practice" class="btn btn-primary btn-sm inline-flex items-center gap-1.5 self-start">
+        <i class="ph-thin ph-arrows-clockwise"></i>{{ _('prep2.feedback.again') }}
+      </a>
+    </section>
+  </div>
+
+  {# ---- transcript + per-answer feedback ---- #}
+  <div>
+    <button type="button" @click="showTranscript = !showTranscript"
+            class="text-label inline-flex items-center gap-1.5 hover:text-base-content">
+      <i class="ph-thin" :class="showTranscript ? 'ph-caret-down' : 'ph-caret-right'"></i>{{ _('prep2.feedback.transcript') }}
+    </button>
+    <div x-show="showTranscript" x-cloak class="space-y-3 mt-3">
+      {# voice: the conversation as bubbles (no per-answer P8) #}
+      {% if session.transcript %}
+      <div class="card-quiet p-4 space-y-2">
+        {% for t in session.transcript %}
+        <div class="flex {{ 'justify-start' if t.role == 'coach' else 'justify-end' }}">
+          <div class="max-w-[80%] rounded-2xl px-3.5 py-2 text-sm {{ 'bg-base-200' if t.role == 'coach' else 'bg-primary text-primary-content' }}">{{ t.text }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {# typed: per-answer cards with P8 feedback #}
+      {% for a in answers %}
+      {% set ev = a.eval %}
+      <div class="card-quiet p-4 space-y-2">
+        <div class="flex items-start justify-between gap-2">
+          <div class="font-medium text-sm">{{ a.question_text }}</div>
+          {% if ev and ev.overall %}
+          <span class="pill {{ band_pill.get(ev.overall, 'pill-neutral') }} text-xs shrink-0">{{ _('prep2.band.' + ev.overall) }}</span>
+          {% endif %}
+        </div>
+        <p class="text-sm text-body-muted whitespace-pre-wrap">{{ a.transcript or _('prep2.feedback.no_answer') }}</p>
+        {% if a.delivery %}
+        <div class="text-xs text-base-content/50 flex flex-wrap gap-3">
+          <span>{{ a.delivery.seconds }}s</span><span>{{ a.delivery.wpm }} {{ _('prep2.feedback.wpm') }}</span>
+          <span>{{ a.delivery.filler_count }} {{ _('prep2.feedback.fillers') }}</span>
+          <span>{{ _('prep2.feedback.length_' + a.delivery.length_band) }}</span>
+        </div>
+        {% endif %}
+        {% if ev %}
+          {% if ev.what_worked and ev.what_worked.quote %}
+          <div class="text-xs" style="color: oklch(var(--su));"><i class="ph-thin ph-check"></i> {{ ev.what_worked.why or ev.what_worked.quote }}</div>
+          {% endif %}
+          {% if ev.fix %}
+          <div class="text-xs text-primary"><i class="ph-thin ph-wrench"></i> {{ ev.fix }}</div>
+          {% endif %}
+          {% if ev.stronger_version %}
+          <details class="text-xs">
+            <summary class="cursor-pointer text-body-muted hover:text-base-content">{{ _('prep2.feedback.stronger') }}</summary>
+            <p class="mt-1 pl-3 border-l-2 border-primary/30 text-body-muted leading-relaxed">{{ ev.stronger_version }}</p>
+          </details>
+          {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

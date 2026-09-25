@@ -1,0 +1,48 @@
+{# One practice turn (C3). Swapped into #practice-turn on each answer. Self-
+   contained Alpine timer (re-inits per swap). Study mode shows the STAR cue;
+   Simulate hides it (design brief §Practice). #}
+<div x-data="{ secs: 0, t: null }"
+     x-init="t = setInterval(() => secs++, 1000)"
+     class="space-y-4">
+
+  {# progress + competency #}
+  <div class="flex items-center justify-between gap-3 text-sm">
+    <span class="text-body-muted">{{ _('prep2.run.question') }} {{ turn.index + 1 }} / {{ turn.total }}</span>
+    <span class="font-mono text-body-muted"><i class="ph-thin ph-timer"></i> <span x-text="secs + 's'"></span></span>
+  </div>
+
+  {# the question #}
+  <div class="card-quiet p-5">
+    <div class="text-lg font-medium leading-snug">{{ turn.question.text }}</div>
+  </div>
+
+  {# study cue (only in Study mode) #}
+  {% if turn.cue %}
+  <div class="rounded-xl border border-base-300 bg-base-200/40 p-4 space-y-1.5 text-sm">
+    <div class="text-label">{{ _('prep2.run.cue') }}</div>
+    {% if turn.cue.competency %}<div class="text-body-muted"><span class="font-medium">{{ turn.cue.competency }}</span> — {{ turn.cue.what_good }}</div>{% endif %}
+    {% if turn.cue.story_title %}
+      <div class="inline-flex items-center gap-1.5 text-primary"><i class="ph-thin ph-book-open"></i>{{ _('prep2.run.use_story') }} {{ turn.cue.story_title }}</div>
+    {% endif %}
+    <div class="text-xs text-base-content/50">{{ _('prep2.run.star_hint') }}</div>
+  </div>
+  {% endif %}
+
+  {# answer #}
+  <form hx-post="/interviews/{{ interview.id }}/practice/{{ session.id }}/answer"
+        hx-target="#practice-turn" hx-swap="innerHTML"
+        @htmx:before-request="clearInterval(t)">
+    <input type="hidden" name="seconds" :value="secs">
+    <label class="text-label block mb-1">{{ _('prep2.run.your_answer') }}</label>
+    <textarea name="transcript" rows="6" autofocus
+              placeholder="{{ _('prep2.run.answer_ph') }}"
+              class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm resize-y"></textarea>
+    <div class="flex items-center justify-between gap-3 mt-3">
+      <p class="text-xs text-body-muted">{{ _('prep2.run.no_scores') }}</p>
+      <button type="submit" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
+        {% if turn.index + 1 == turn.total %}{{ _('prep2.run.finish') }}{% else %}{{ _('prep2.run.next') }}{% endif %}
+        <i class="ph-thin ph-arrow-right"></i>
+      </button>
+    </div>
+  </form>
+</div>

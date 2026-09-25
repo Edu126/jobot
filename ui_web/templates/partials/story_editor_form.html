@@ -1,0 +1,91 @@
+{# Shared story editor form (B4). Used by the full editor page and embedded in
+   the voice flow. `story` is a dict (edit / voice draft) or None (new).
+   `source` seeds the origin; `embedded` trims nothing here but lets callers
+   style around it. STAR fields drive a live code-side strength check. #}
+{% set s = story or {} %}
+{% set is_edit = s.get('id') is not none and s.get('id') %}
+<form hx-post="{{ '/stories/' ~ s.get('id') if is_edit else '/stories' }}"
+      hx-target="#story-error" hx-swap="innerHTML"
+      x-data="{ tags: {{ (s.get('tags') or []) | tojson }},
+                toggle(t){ this.tags.includes(t) ? this.tags = this.tags.filter(x=>x!==t) : this.tags.push(t) } }"
+      class="grid md:grid-cols-3 gap-6">
+
+  {% if not is_edit %}<input type="hidden" name="source" value="{{ source or 'manual' }}">{% endif %}
+  <input type="hidden" name="tags" :value="tags.join(',')">
+
+  {# ---- fields ---- #}
+  <div class="md:col-span-2 space-y-4">
+    <div>
+      <label class="text-label block mb-1">{{ _('prep2.story.title') }}</label>
+      <input name="title" value="{{ s.get('title','') }}" autocomplete="off"
+             placeholder="{{ _('prep2.story.title_ph') }}"
+             class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+    </div>
+
+    {% if s.get('follow_up_question') %}
+    <div class="rounded-lg bg-base-200/60 p-3 text-xs text-body-muted flex items-start gap-2">
+      <i class="ph-thin ph-question mt-0.5"></i>
+      <span>{{ _('prep2.story.follow_up') }} {{ s.follow_up_question }}</span>
+    </div>
+    {% endif %}
+
+    {% for field, label_key, ph_key, rows in [
+        ('situation','prep2.story.situation','prep2.story.situation_ph',2),
+        ('task','prep2.story.task','prep2.story.task_ph',2),
+        ('action','prep2.story.action','prep2.story.action_ph',3),
+        ('result','prep2.story.result','prep2.story.result_ph',2)] %}
+    <div>
+      <label class="text-label block mb-1">{{ _(label_key) }}</label>
+      <textarea name="{{ field }}" rows="{{ rows }}"
+                placeholder="{{ _(ph_key) }}"
+                {% if field in ('action','result') %}
+                hx-post="/stories/strength" hx-trigger="keyup changed delay:500ms"
+                hx-target="#story-strength" hx-swap="outerHTML"
+                hx-include="[name='action'],[name='result'],[name='metric']"
+                {% endif %}
+                class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm resize-y">{{ s.get(field,'') }}</textarea>
+    </div>
+    {% endfor %}
+
+    <div>
+      <label class="text-label block mb-1">{{ _('prep2.story.metric') }} <span class="text-body-muted font-normal">· {{ _('prep2.form.optional') }}</span></label>
+      <input name="metric" value="{{ s.get('metric','') }}" autocomplete="off"
+             placeholder="{{ _('prep2.story.metric_ph') }}"
+             hx-post="/stories/strength" hx-trigger="keyup changed delay:500ms"
+             hx-target="#story-strength" hx-swap="outerHTML"
+             hx-include="[name='action'],[name='result'],[name='metric']"
+             class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm">
+    </div>
+
+    <div>
+      <label class="text-label block mb-2">{{ _('prep2.story.tags') }}</label>
+      <div class="flex flex-wrap gap-2">
+        {% for t in all_tags %}
+        <button type="button" @click="toggle('{{ t }}')"
+                class="chip cursor-pointer"
+                :class="tags.includes('{{ t }}') ? 'chip-accent' : 'chip-neutral'">{{ t }}</button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 pt-2">
+      <button type="submit" class="btn btn-primary btn-sm">{{ _('prep2.story.save') }}</button>
+      {% if not embedded %}
+      <a href="/stories" class="text-sm text-body-muted hover:text-base-content">{{ _('prep2.story.cancel') }}</a>
+      {% endif %}
+      <span id="story-error" class="text-error text-sm"></span>
+    </div>
+  </div>
+
+  {# ---- strength side panel ---- #}
+  <aside class="md:col-span-1">
+    <div class="card-quiet p-4 sticky top-20">
+      <div class="text-label mb-2">{{ _('prep2.story.strength') }}</div>
+      {% if s.get('strength') %}
+        {% with strength = s.strength %}{% include "partials/story_strength.html" %}{% endwith %}
+      {% else %}
+        <div id="story-strength"><p class="text-xs text-body-muted">{{ _('prep2.story.strength_empty') }}</p></div>
+      {% endif %}
+    </div>
+  </aside>
+</form>

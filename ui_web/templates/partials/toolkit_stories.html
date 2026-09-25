@@ -1,0 +1,33 @@
+{# P3 story mapping — one row per competency, with its best-fit story or a
+   "No story yet" gap (§3 / D4-B5). Story actions land with the Story Bank
+   (next phase); the gap is shown as a nudge, never a block. #}
+<div class="space-y-2">
+  {% for c in competencies %}
+    {% set m = by_comp.get(c.id) %}
+    {% set story = by_story.get(m.story_id) if (m and m.story_id) else None %}
+    <div class="card-quiet p-4">
+      <div class="text-label mb-1">{{ c.name }}</div>
+      {% if story %}
+        <div class="font-medium text-sm inline-flex items-center gap-1.5">
+          <i class="ph-thin ph-book-open text-primary"></i>{{ story.title }}
+        </div>
+        {% if m.why_it_fits %}<p class="text-xs text-body-muted mt-1">{{ m.why_it_fits }}</p>{% endif %}
+        {% if m.angle_for_this_role %}
+          <p class="text-xs text-primary mt-1 inline-flex items-start gap-1">
+            <i class="ph-thin ph-arrow-bend-down-right mt-0.5"></i>{{ m.angle_for_this_role }}
+          </p>
+        {% endif %}
+      {% else %}
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="pill pill-warn text-xs">{{ _('prep2.getready.no_story') }}</span>
+          <a href="/stories" class="text-xs text-primary hover:underline inline-flex items-center gap-1">
+            <i class="ph-thin ph-book-open"></i>{{ _('prep2.getready.pick_story') }}
+          </a>
+          <a href="/stories/new" class="text-xs text-primary hover:underline inline-flex items-center gap-1">
+            <i class="ph-thin ph-plus"></i>{{ _('prep2.getready.create_story') }}
+          </a>
+        </div>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>

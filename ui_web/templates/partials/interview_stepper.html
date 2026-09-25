@@ -1,0 +1,34 @@
+{# The ONE Prep stepper (design brief §1 + §2 — same names everywhere, no locked
+   steps). `current` ∈ brief | get_ready | practice | feedback. Steps before the
+   current read as done (check), the current is highlighted, later ones are muted
+   but NOT locked — they're nudges, never blocks (§6). `iid` lets done/current
+   steps link; unbuilt later steps render as plain text for now. #}
+{% macro stepper(current, iid=None) %}
+{% set steps = [('brief', _('prep2.step.brief')), ('get_ready', _('prep2.step.get_ready')),
+                ('practice', _('prep2.step.practice')), ('feedback', _('prep2.step.feedback'))] %}
+{% set order = ['brief', 'get_ready', 'practice', 'feedback'] %}
+{% set cur_i = order.index(current) %}
+<nav class="flex items-center gap-2 text-sm" aria-label="{{ _('prep2.step.aria') }}">
+  {% for key, label in steps %}
+    {% set i = loop.index0 %}
+    {% set state = 'done' if i < cur_i else ('current' if i == cur_i else 'upcoming') %}
+    <div class="flex items-center gap-2">
+      <span class="inline-flex items-center gap-1.5
+                   {% if state == 'current' %}font-semibold text-primary
+                   {% elif state == 'done' %}text-base-content/70
+                   {% else %}text-base-content/40{% endif %}">
+        <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs
+                     {% if state == 'current' %}bg-primary text-primary-content
+                     {% elif state == 'done' %}bg-base-300 text-base-content/70
+                     {% else %}border border-base-300{% endif %}">
+          {% if state == 'done' %}<i class="ph-bold ph-check text-[0.7rem]"></i>{% else %}{{ i + 1 }}{% endif %}
+        </span>
+        {{ label }}
+      </span>
+    </div>
+    {% if not loop.last %}
+      <span class="w-6 h-px {% if i < cur_i %}bg-base-300{% else %}bg-base-200{% endif %}"></span>
+    {% endif %}
+  {% endfor %}
+</nav>
+{% endmacro %}
