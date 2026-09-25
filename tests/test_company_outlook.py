@@ -26,6 +26,13 @@ from core.prep import company_outlook as co  # noqa: E402
 from core.prep import tavily  # noqa: E402
 
 
+def teardown_function(function):
+    """Under pytest, restore the tavily.search_company patch after each test so
+    it never leaks into other modules (e.g. test_tavily.py). No pytest import
+    needed — pytest calls this by name; the __main__ path restores separately."""
+    tavily.search_company = _REAL_SEARCH  # type: ignore
+
+
 def _assert(cond: bool, msg: str) -> None:
     if not cond:
         raise AssertionError(msg)
