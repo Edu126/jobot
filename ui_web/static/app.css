@@ -60,9 +60,9 @@ html {
        page  = light linen #F5F4F0 (cool tint)  → --b2
      Lighter + half the yellow chroma vs the earlier #F1EEE6, which read
      too "beige/dark" as a full-bleed bg while still keeping cards afloat. */
-  --b1: 100% 0 0;              /* base-100 — cards, navbar (white) */
-  --b2: 98.4% 0.0018 100;      /* base-200 — page bg: clean off-white, a hair off the white cards (was warm linen #F5F4F0 — read dirty) */
-  --b3: 91.0% 0.014 88.7;      /* base-300 — quiet border #E5E1D7 */
+  --b1: 100% 0 0;              /* base-100 — cards, navbar, PAGE (pure white, app-like) */
+  --b2: 98% 0 0;               /* base-200 — SUBTLE FILLS only (chips, coach bubble, meter track). Neutral, no warm hue (Eduardo: cream "editorial" read eewww). Page is --b1 now, not this. */
+  --b3: 91.5% 0 0;             /* base-300 — quiet hairline border, neutral grey (was warm beige #E5E1D7 → read cream) */
   --bc: 20% 0.015 265;         /* base-content — near-black text */
 
   --in: 55% 0.17 240;          /* info blue */
@@ -206,10 +206,11 @@ body {
      breathes and reads warm rather than cramped. */
   letter-spacing: -0.003em;
   line-height: 1.55;
-  /* Flat, clean off-white. The radial green "cloud" wash was REMOVED
-     (Eduardo: read dirty/uneven). The page is now just a hair off the
-     pure-white cards (--b2 ≈ 98.4% L), nothing floating over it. */
-  background: oklch(var(--b2));
+  /* Pure white, app-like (Eduardo 2026-09-25: the off-white page read as
+     "cream / editorial AI app" — esp. on mobile where it fills the whole
+     viewport). Page = --b1 (white); cards separate by hairline border + soft
+     shadow, not by a page tint. Subtle component fills still use --b2. */
+  background: oklch(var(--b1));
   min-height: 100vh;
 }
 
