@@ -139,6 +139,25 @@ get recomputed on next read).
   [ADR-008](../decisions/ADR-008-prompt-conventions.md) apply
   everywhere, inline or not.
 
+## Provider portability (vendor lock-in)
+
+We're Gemini-only and staying that way through beta — but ~90% of calls are already
+portable, so a future swap stays cheap. Keep it that way:
+
+- **Text/JSON (portable):** every generation call goes through
+  `core.llm.gemini.GeminiClient.generate_json(prompt) -> dict` and catches `GeminiError`
+  / `QuotaExhaustedError`. Prompts are vendor-neutral. A second provider only needs an
+  adapter with the same method surface — routes wouldn't change. **Do not** import the
+  `google.genai` SDK directly from routes/features; go through `GeminiClient`.
+- **Model names live in one place:** `DEFAULT_MODEL_CHAIN` + `AUDIO_SCORE_MODEL` in
+  `core/llm/gemini.py`. Don't hardcode model ids elsewhere.
+- **Live voice is intentionally Gemini-only** (ADR-052): browser↔Gemini direct,
+  ephemeral tokens, automatic VAD — no cross-vendor equivalent. It's **env-gated
+  (`GEMINI_LIVE_MODEL`) with a text fallback**, so the app is 100% functional without it.
+  A provider migration would rebuild this path separately; that's accepted.
+- **Deferred:** a provider factory / `LLM_PROVIDER` env / second adapter — revisit only
+  on a pricing change or a real second-provider need, not before.
+
 ## Adding a new site
 
 1. Add a row to the Inventory table above.

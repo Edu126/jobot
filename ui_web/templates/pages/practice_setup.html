@@ -41,34 +41,42 @@
     <input type="hidden" name="channel" value="text">
     {% endif %}
 
-    {# interviewer persona — only when voice channel is chosen. Each persona
-       bundles a voice + style; the card plays that voice as a preview. #}
+    {# voice + personality — TWO decoupled dropdowns, only on the voice channel.
+       Voice = timbre (click ▸ to hear it, auto-previews on change); personality =
+       the interviewer's manner (drives the P7 prompt). #}
     {% if voice_enabled %}
     <div x-show="channel === 'voice'" x-cloak
-         x-data="{ persona: '{{ default_persona }}', sampling: '', _audio: null,
-                   voices: { {% for pid, m in personas.items() %}'{{ pid }}':'{{ m.voice }}',{% endfor %} },
-                   pick(pid){ this.persona = pid; this.play(pid); },
-                   play(pid){
+         x-data="{ voice: '{{ default_voice }}', personality: '{{ default_personality }}', sampling: false, _audio: null,
+                   play(){
                      if (this._audio) { this._audio.pause(); this._audio = null; }
-                     this.sampling = pid;
-                     const a = new Audio('/interviews/practice/voice-sample/' + this.voices[pid]);
+                     this.sampling = true;
+                     const a = new Audio('/interviews/practice/voice-sample/' + this.voice);
                      this._audio = a;
-                     a.onended = () => { if (this.sampling === pid) this.sampling = ''; };
-                     a.onerror = () => { if (this.sampling === pid) this.sampling = ''; };
-                     a.play().catch(() => { this.sampling = ''; }); } }">
-      <label class="text-label block mb-2">{{ _('prep2.setup.persona_pick') }} <span class="text-body-muted font-normal">· {{ _('prep2.setup.voice_preview') }}</span></label>
-      <input type="hidden" name="persona" :value="persona">
-      <div class="grid sm:grid-cols-3 gap-2">
-        {% for pid, m in personas.items() %}
-        <button type="button" @click="pick('{{ pid }}')"
-                class="text-left rounded-lg border p-3 transition-colors"
-                :class="persona === '{{ pid }}' ? 'border-primary bg-primary/5' : 'border-base-300 hover:border-base-content/30'">
-          <div class="font-medium text-sm inline-flex items-center gap-1.5">
-            <i class="ph-thin" :class="sampling === '{{ pid }}' ? 'ph-speaker-high animate-pulse' : 'ph-play'"></i>{{ m.name }}
-          </div>
-          <div class="text-xs text-body-muted mt-1">{{ m.blurb }}</div>
-        </button>
-        {% endfor %}
+                     a.onended = () => { this.sampling = false; };
+                     a.onerror = () => { this.sampling = false; };
+                     a.play().catch(() => { this.sampling = false; }); } }"
+         class="grid sm:grid-cols-2 gap-3">
+      <div>
+        <label class="text-label block mb-2">{{ _('prep2.setup.voice_pick') }}</label>
+        <div class="flex items-center gap-2">
+          <select name="voice" x-model="voice" @change="play()" class="select select-bordered select-sm w-full">
+            {% for vid, m in voices.items() %}
+            <option value="{{ vid }}">{{ m[1] }} · {{ m[0] }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" @click="play()" title="{{ _('prep2.setup.voice_preview') }}"
+                  class="btn btn-ghost btn-sm border border-base-300 shrink-0">
+            <i class="ph-thin" :class="sampling ? 'ph-speaker-high animate-pulse' : 'ph-play'"></i>
+          </button>
+        </div>
+      </div>
+      <div>
+        <label class="text-label block mb-2">{{ _('prep2.setup.personality_pick') }}</label>
+        <select name="personality" x-model="personality" class="select select-bordered select-sm w-full">
+          {% for pid, m in personalities.items() %}
+          <option value="{{ pid }}">{{ m.label }} — {{ m.blurb }}</option>
+          {% endfor %}
+        </select>
       </div>
     </div>
     {% endif %}

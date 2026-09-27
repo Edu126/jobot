@@ -411,7 +411,8 @@ async def practice_entry(request: Request, interview_id: int):
         {"active_tab": "prep", "interview": interview, "step": "practice",
          "competencies": [c.to_dict() for c in brief.competencies],
          "voice_enabled": prep_live.is_enabled(),
-         "personas": prep_live.PERSONAS, "default_persona": prep_live.DEFAULT_PERSONA})
+         "voices": prep_live.VOICES, "default_voice": prep_live.DEFAULT_VOICE,
+         "personalities": prep_live.PERSONALITIES, "default_personality": prep_live.DEFAULT_PERSONALITY})
 
 
 @router.post("/interviews/{interview_id}/practice/consent")
@@ -440,7 +441,8 @@ async def practice_start(
     length: str = Form("standard"),
     focus: str = Form(""),
     channel: str = Form("text"),
-    persona: str = Form(""),
+    voice: str = Form(""),
+    personality: str = Form(""),
 ):
     """C2 → create the session with a frozen picked question set (from cached P2),
     then go to the runner (voice when chosen + enabled, else text)."""
@@ -461,11 +463,13 @@ async def practice_start(
         return HTMLResponse('<div class="text-error text-sm">We couldn\'t load questions — try again.</div>')
     picked = prep_practice.pick_session_questions(
         qdicts, length=length, focus_competency=focus.strip() or None)
-    persona_id = persona if persona in prep_live.PERSONAS else prep_live.DEFAULT_PERSONA
+    # Voice + personality are decoupled: `persona` column stores the personality id.
+    personality_id = personality if personality in prep_live.PERSONALITIES else prep_live.DEFAULT_PERSONALITY
+    voice_id = voice if voice in prep_live.VOICES else prep_live.DEFAULT_VOICE
     sid = db.create_practice_session(
         interview_id, mode=mode, length=length,
         focus_competency=focus.strip() or None,
-        persona=persona_id, voice=prep_live.persona_meta(persona_id)["voice"],
+        persona=personality_id, voice=voice_id,
         questions=picked)
     dest = "voice" if (channel == "voice" and prep_live.is_enabled()) else str(sid)
     tail = f"{sid}/voice" if dest == "voice" else str(sid)
@@ -530,6 +534,7 @@ async def practice_audio(
     interview_id: int,
     session_id: int,
     audio: UploadFile = File(None),
+    coach_audio: UploadFile = File(None),
     turns: str = Form("[]"),
     candidate_seconds: str = Form("0"),
 ):
@@ -555,6 +560,11 @@ async def practice_audio(
     questions = session.get("questions") or []
 
     wav = await audio.read() if audio is not None else b""
+    coach_wav = await coach_audio.read() if coach_audio is not None else b""
+    # -edu-only debug persistence (ADR-055): keep the RAW coach WAV + candidate WAV so
+    # Eduardo can A/B fidelity vs Google's playground and I can measure pacing. Off in prod.
+    if prep_live.save_audio_enabled():
+        _persist_practice_audio(session_id, coach_wav, wav)
     debrief = None
     if wav:
         debrief = await asyncio.to_thread(
@@ -566,10 +576,56 @@ async def practice_audio(
             prep_practice.session_debrief_from_transcript,
             turn_list, questions, competencies, client, lang=lang)
         said = " ".join(t["text"] for t in turn_list if t["role"] == "you")
-        delivery = prep_practice.delivery_metrics(said, secs, max(secs, 1))
+        # Target = the whole session's expected talk time (sum of per-question
+        # targets), not max(secs) — which made length_band always "on_target".
+        target = sum(prep_practice.target_seconds_for(q) for q in questions) or prep_practice.DEFAULT_TARGET
+        delivery = prep_practice.delivery_metrics(said, secs, target)
         debrief = {**(d.to_dict() if d else {}), "delivery": delivery}
     db.save_practice_debrief(session_id, debrief)
     return JSONResponse({"redirect": feedback_url})
+
+
+def _persist_practice_audio(session_id: int, coach_wav: bytes, candidate_wav: bytes) -> None:
+    """Write the raw coach WAV + candidate WAV to the -edu volume (ADR-055). Best-effort:
+    never let a debug save break the session end."""
+    import datetime as _dt
+    try:
+        d = prep_live.saved_audio_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        if coach_wav:
+            (d / f"s{session_id}-{ts}-coach.wav").write_bytes(coach_wav)
+        if candidate_wav:
+            (d / f"s{session_id}-{ts}-candidate.wav").write_bytes(candidate_wav)
+    except Exception:  # noqa: BLE001 — debug-only persistence, never fatal
+        pass
+
+
+@router.get("/interviews/practice/audio")
+async def practice_audio_list(request: Request):
+    """List saved practice audio (ADR-055, -edu debug). 404 when the flag is off."""
+    if not prep_live.save_audio_enabled():
+        return HTMLResponse("", status_code=404)
+    d = prep_live.saved_audio_dir()
+    files = sorted((f.name for f in d.glob("*.wav")), reverse=True) if d.exists() else []
+    links = "".join(
+        f'<li><a href="/interviews/practice/audio/{f}">{f}</a> '
+        f'({(d / f).stat().st_size // 1024} KB)</li>' for f in files)
+    return HTMLResponse(f"<h1>Saved practice audio</h1><ul>{links or '<li>none yet</li>'}</ul>")
+
+
+@router.get("/interviews/practice/audio/{filename}")
+async def practice_audio_download(request: Request, filename: str):
+    """Serve one saved WAV (ADR-055, -edu debug). Name-sanitized; flag-gated."""
+    if not prep_live.save_audio_enabled():
+        return HTMLResponse("", status_code=404)
+    from pathlib import Path as _P
+    safe = _P(filename).name  # strip any path traversal
+    fp = prep_live.saved_audio_dir() / safe
+    if safe != filename or not fp.is_file() or fp.suffix != ".wav":
+        return HTMLResponse("", status_code=404)
+    return Response(content=fp.read_bytes(), media_type="audio/wav",
+                    headers={"Content-Disposition": f'attachment; filename="{safe}"'})
 
 
 def _parse_json(raw):

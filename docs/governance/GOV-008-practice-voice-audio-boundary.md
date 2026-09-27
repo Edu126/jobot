@@ -21,6 +21,10 @@ browser as audio.
   transient request. `practice_sessions.transcript_json` stores the **text**
   transcript and `debrief_json` the derived debrief/delivery numbers. That is all
   that persists.
+- **Exception (debug, -edu only) — [ADR-055](../decisions/ADR-055-edu-audio-persistence-debug.md):**
+  when `JOBOT_SAVE_AUDIO=1` (set ONLY on the -edu staging box), the raw coach WAV +
+  candidate WAV are written to the volume for fidelity A/B and pacing metrics. Opt-in,
+  deletable, and **never enabled in production**, so this guarantee holds for real users.
 - **New egress (ADR-053):** the candidate's answer audio now transits our server
   transiently for scoring (upload → Gemini File API → delete). Consent copy still
   holds ("audio isn't stored"); revisit if we ever want to retain audio.

@@ -49,6 +49,11 @@ DEFAULT_MODEL_CHAIN = [
 
 DEFAULT_MODEL = DEFAULT_MODEL_CHAIN[0]   # backward-compat single-model callers
 
+# Audio scoring needs a model with audio input (the flash-lite chain is text-only), so
+# it lives here beside the chain — the ONE home for every Gemini model name. Overridable
+# via GEMINI_AUDIO_MODEL. (Referenced by core/prep/audio_score.py.)
+AUDIO_SCORE_MODEL = os.getenv("GEMINI_AUDIO_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+
 
 class GeminiError(RuntimeError):
     """Raised for any Gemini-call failure that the UI should display."""

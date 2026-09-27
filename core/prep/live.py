@@ -33,36 +33,45 @@ OUTPUT_RATE = 24000
 _TOKEN_EXPIRE_MIN = 30
 _TOKEN_SESSION_START_MIN = 2
 
-# Curated prebuilt voices offered in the UI (Gemini TTS/Live voice names). The
-# docs don't label gender; these are the widely-perceived male/female picks.
-# {value: (label_gender, characteristic)} — the route/template read VOICES.
+# VOICE and PERSONALITY are DECOUPLED (Eduardo 2026-09-25): the old bundled
+# "persona" hard-coded a voice+personality together, which was wrong. Now the UI
+# offers two separate dropdowns — pick a voice (timbre only) AND a personality.
+
+# The 5 most human-sounding Gemini prebuilt voices (from the 30-voice set), timbre
+# only — no personality baked in. Chosen for warm/natural/conversational character
+# over the bright/firm/excitable ones that read synthetic. {value: (gender, timbre)}.
+# Gender is *perceived* (Google doesn't label it); Eduardo auditions via the ▸ preview.
 VOICES = {
-    "Kore": ("female", "Firm"),
-    "Aoede": ("female", "Breezy"),
-    "Puck": ("male", "Upbeat"),
-    "Charon": ("male", "Informative"),
+    "Sulafat": ("female", "Warm"),
+    "Callirrhoe": ("female", "Easy-going"),
+    "Achird": ("male", "Friendly"),
+    "Enceladus": ("male", "Breathy"),
+    "Charon": ("male", "Deep"),
 }
-DEFAULT_VOICE = "Kore"
+DEFAULT_VOICE = "Sulafat"
 
-# Interviewer personas (shown as a dropdown in setup). Each bundles a name, a
-# voice, and an interviewing style folded into the P7 core prompt. `voice` must
-# be one of VOICES (drives the token's speech config + the preview).
-PERSONAS = {
-    "maya": {"name": "Maya", "voice": "Aoede",
-             "blurb": "Friendly HR screener",
-             "style": "warm, friendly and encouraging — an HR screener who puts the candidate at ease"},
-    "david": {"name": "David", "voice": "Charon",
-              "blurb": "Direct hiring manager",
-              "style": "direct, concise and probing — a hiring manager who pushes for specifics and results"},
-    "sam": {"name": "Sam", "voice": "Puck",
-            "blurb": "Supportive mentor",
-            "style": "patient and supportive — a mentor who gives the candidate space to think"},
+# Interviewer PERSONALITIES (the second dropdown). Personality only — no voice,
+# no name. Each `style` is folded into the P7 core prompt (interviewer_system_prompt).
+# Neutral is the default. Kept to four; all hard-coded here.
+PERSONALITIES = {
+    "neutral": {"label": "Neutral",
+                "blurb": "Even and professional",
+                "style": "even, professional and impartial — you neither warm up nor push hard; you ask, listen, and move on matter-of-factly"},
+    "friendly": {"label": "Friendly",
+                 "blurb": "Warm, puts you at ease",
+                 "style": "warm and encouraging — you put the candidate at ease with a relaxed, supportive manner, while still keeping the interview on track"},
+    "sharp": {"label": "Sharp",
+              "blurb": "Probing, wants specifics",
+              "style": "sharp and probing — you press for specifics, numbers and outcomes and follow up on anything vague; concise and businesslike, never hostile"},
+    "harsh": {"label": "Harsh",
+              "blurb": "Tough, high bar",
+              "style": "tough and skeptical — you set a high bar and challenge weak answers directly without handing out reassurance; demanding but always professional and fair, never rude or personal"},
 }
-DEFAULT_PERSONA = "maya"
+DEFAULT_PERSONALITY = "neutral"
 
 
-def persona_meta(persona_id: str) -> dict:
-    return PERSONAS.get(persona_id, PERSONAS[DEFAULT_PERSONA])
+def personality_meta(personality_id: str) -> dict:
+    return PERSONALITIES.get(personality_id, PERSONALITIES[DEFAULT_PERSONALITY])
 
 
 _SAMPLE_LINE = "Hi, I'm your interview coach. Let's get you ready — take a breath, and we'll begin."
@@ -140,6 +149,28 @@ def live_model() -> str:
     return (os.getenv("GEMINI_LIVE_MODEL") or "").strip()
 
 
+def save_audio_enabled() -> bool:
+    """-edu-only debug toggle (default off): persist practice audio to the volume so
+    Eduardo can A/B the raw coach audio vs Google's playground and I can measure pacing.
+    Breaks GOV-008's "audio is never stored" — SCOPED to -edu via `JOBOT_SAVE_AUDIO=1`,
+    opt-in per session, deletable, never in prod (ADR-055)."""
+    return (os.getenv("JOBOT_SAVE_AUDIO") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def saved_audio_dir():
+    """Where persisted practice audio lives (the Fly volume on -edu)."""
+    from core.db import DB_PATH
+    return DB_PATH.parent / "practice_audio"
+
+
+def affective_dialog_enabled() -> bool:
+    """A/B toggle (default off): when on, the native-audio model adapts tone/rhythm to
+    the candidate's voice. Set `GEMINI_AFFECTIVE_DIALOG=1` on -edu to test whether the
+    coach sounds more natural — Gemini Live has no explicit pause control, so this is the
+    only server-side naturalness lever. Off by default; flip via `fly secrets set`."""
+    return (os.getenv("GEMINI_AFFECTIVE_DIALOG") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def is_enabled() -> bool:
     """Voice is available only when a Live model is configured AND we have a key."""
     return bool(live_model()) and bool(resolve_api_key())
@@ -150,26 +181,28 @@ def is_enabled() -> bool:
 LIVE_LANG = "en"
 
 
-def _config(interview: dict, lang: str, persona_id: str = DEFAULT_PERSONA):
+def _config(interview: dict, lang: str, personality_id: str = DEFAULT_PERSONALITY,
+            voice: str = DEFAULT_VOICE):
     """Build the LiveConnectConfig pinned into the ephemeral token: the SHORT P7
-    core prompt (persona identity + behaviour + tone — context/questions injected
-    separately to avoid the >~4000-char silent hang), the persona's voice,
-    both-side transcription, VAD tuned so echo/background noise doesn't flicker
-    the turn, and session resumption so a ~10-min GoAway can be resumed."""
+    core prompt (personality behaviour + tone — context/questions injected
+    separately to avoid the >~4000-char silent hang), the CHOSEN voice (decoupled
+    from personality), both-side transcription, VAD tuned so echo/background noise
+    doesn't flicker the turn, and session resumption so a ~10-min GoAway resumes."""
     from google.genai import types as t
-    p = persona_meta(persona_id)
-    voice_name = p["voice"] if p["voice"] in VOICES else DEFAULT_VOICE
+    pers = personality_meta(personality_id)
+    voice_name = voice if voice in VOICES else DEFAULT_VOICE
     return t.LiveConnectConfig(
         response_modalities=["AUDIO"],
         system_instruction=t.Content(parts=[t.Part(
             text=interviewer_system_prompt(interview, lang=LIVE_LANG,
-                                           coach_name=p["name"], style=p["style"]))]),
+                                           style=pers["style"]))]),
         input_audio_transcription=t.AudioTranscriptionConfig(),
         output_audio_transcription=t.AudioTranscriptionConfig(),
         speech_config=t.SpeechConfig(
             voice_config=t.VoiceConfig(
                 prebuilt_voice_config=t.PrebuiltVoiceConfig(voice_name=voice_name))),
         temperature=0.7,
+        enable_affective_dialog=affective_dialog_enabled(),
         realtime_input_config=t.RealtimeInputConfig(
             automatic_activity_detection=t.AutomaticActivityDetection(
                 start_of_speech_sensitivity=t.StartSensitivity.START_SENSITIVITY_LOW,
@@ -233,9 +266,10 @@ def create_ephemeral_token(interview: dict, session_row: dict, *, lang: str):
     import google.genai as genai
     from google.genai import types as t
 
-    persona_id = session_row.get("persona") or DEFAULT_PERSONA
+    personality_id = session_row.get("persona") or DEFAULT_PERSONALITY  # `persona` col now holds the personality id
+    voice = session_row.get("voice") or DEFAULT_VOICE
     brief_dict, candidate_persona, _cues = _load_context(interview, lang)
-    cfg = _config(interview, lang, persona_id)
+    cfg = _config(interview, lang, personality_id, voice)
     context = interviewer_context_turn(interview, questions, brief=brief_dict,
                                        persona=candidate_persona)
     now = datetime.datetime.now(tz=datetime.timezone.utc)
@@ -250,6 +284,6 @@ def create_ephemeral_token(interview: dict, session_row: dict, *, lang: str):
     except Exception as exc:  # noqa: BLE001 — mint failure → client falls back to text
         _log("token_mint_failed:", type(exc).__name__, str(exc)[:200])
         return None
-    _log(f"token minted model={live_model()} persona={persona_id} "
+    _log(f"token minted model={live_model()} personality={personality_id} voice={voice} "
          f"ctx(brief={bool(brief_dict)},persona={bool(candidate_persona)})")
     return token.name, context

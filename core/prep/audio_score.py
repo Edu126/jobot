@@ -18,15 +18,14 @@ import os
 import tempfile
 from typing import Optional
 
-from core.llm.gemini import resolve_api_key
+# Audio-capable model for scoring (accepts audio + JSON) — centralized in gemini.py
+# beside DEFAULT_MODEL_CHAIN so every model name has one home. Distinct from the Live
+# model; a normal generate_content call.
+from core.llm.gemini import AUDIO_SCORE_MODEL, resolve_api_key
 from core.settings import get_output_language, language_instruction
 
 from . import prompts as P
 from .practice import _parse_debrief
-
-# Audio-capable model for scoring (verified to accept audio + JSON). Distinct
-# from the Live model; a normal generate_content call.
-AUDIO_SCORE_MODEL = os.getenv("GEMINI_AUDIO_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
 
 def score_from_audio(
