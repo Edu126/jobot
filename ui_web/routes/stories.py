@@ -162,6 +162,22 @@ async def stories_draft(request: Request):
     )
 
 
+@router.get("/stories/suggested")
+async def stories_suggested(request: Request):
+    """HTMX partial for the empty-state Story Bank: AI-drafted STAR stories from
+    the résumé, lazy-loaded so the bank never looks empty (Flow B1). Same P5
+    generator as /stories/draft; returns just the draft cards."""
+    _resume, _rh, _rid, resume_text = _current()
+    drafts = []
+    if resume_text:
+        client = GeminiClient(api_key=resolve_api_key())
+        drafts = await asyncio.to_thread(
+            story_bank.draft_stories_from_resume, resume_text, client,
+            lang=get_output_language())
+    return templates.TemplateResponse(
+        request, "partials/story_drafts.html", {"drafts": drafts})
+
+
 @router.post("/stories/draft/accept")
 async def stories_draft_accept(
     request: Request,

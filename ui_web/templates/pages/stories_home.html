@@ -28,17 +28,26 @@
       <a href="/profile" class="text-primary font-medium hover:underline">{{ _('prep2.new.no_resume_cta') }}</a>
     </div>
   {% elif not stories %}
-    {# empty state — three ways to start (B1) #}
-    <div class="card-quiet p-8 text-center space-y-4">
-      <i class="ph-thin ph-book-open text-3xl text-base-content/40"></i>
+    {# empty state — lead with AI-suggested STAR drafts from the résumé so the bank
+       never feels empty (Eduardo: "si no hay nada preparado, se siente mal"), then
+       the manual ways to start below. Drafts lazy-load so the page paints first. #}
+    <div class="space-y-5">
       <div>
-        <div class="font-medium">{{ _('prep2.story.empty_title') }}</div>
-        <p class="text-sm text-body-muted max-w-sm mx-auto mt-1">{{ _('prep2.story.empty_body') }}</p>
+        <div class="font-medium flex items-center gap-1.5">
+          <i class="ph-thin ph-sparkle text-primary"></i>{{ _('prep2.story.suggested_title') }}
+        </div>
+        <p class="text-sm text-body-muted mt-0.5">{{ _('prep2.story.suggested_body') }}</p>
       </div>
-      <div class="flex flex-wrap items-center justify-center gap-2">
-        <a href="/stories/draft" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
-          <i class="ph-thin ph-sparkle"></i>{{ _('prep2.story.draft_cta') }}
-        </a>
+
+      <div hx-get="/stories/suggested" hx-trigger="load" hx-swap="innerHTML">
+        <div class="card-quiet p-8 text-center space-y-3">
+          <i class="ph-thin ph-circle-notch animate-spin text-2xl text-primary"></i>
+          <p class="text-sm text-body-muted">{{ _('prep2.story.suggested_loading') }}</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-center gap-2 pt-3 border-t border-base-300">
+        <span class="w-full text-center text-xs uppercase tracking-wide text-base-content/40 mb-1">{{ _('prep2.story.or_start') }}</span>
         <a href="/stories/voice" class="btn btn-ghost btn-sm inline-flex items-center gap-1.5 border border-base-300">
           <i class="ph-thin ph-microphone"></i>{{ _('prep2.story.voice_cta') }}
         </a>
