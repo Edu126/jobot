@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jobot · Companion — floating head</title>
+<style>
+  :root{--green:0 78 61; --ink:28 30 28; --line:0 0 0 / .08; --muted:#5b6560;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:#fff;color:rgb(var(--ink));line-height:1.5;-webkit-font-smoothing:antialiased}
+  header{padding:26px 24px 6px;max-width:960px;margin:0 auto}
+  h1{font-size:25px;margin:0 0 4px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:14px;max-width:70ch}
+  .bar{position:sticky;top:0;z-index:5;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);
+       border-bottom:1px solid rgb(var(--line));padding:12px 24px;margin-top:12px}
+  .bar .row{max-width:960px;margin:0 auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .bar .row+.row{margin-top:8px}
+  button.ctl{font:inherit;font-size:13px;font-weight:600;border:1px solid rgb(var(--line));background:#fff;
+       color:rgb(var(--ink));border-radius:10px;padding:8px 13px;cursor:pointer;transition:.15s}
+  button.ctl:hover{border-color:rgb(var(--green) / .4)}
+  button.ctl.on{background:rgb(var(--green));color:#fff;border-color:rgb(var(--green))}
+  .hint{color:var(--muted);font-size:12px;margin-left:4px}
+  main{max-width:960px;margin:0 auto;padding:20px 24px 60px}
+  .stage{position:relative;aspect-ratio:1/1;max-width:480px;margin:0 auto;border-radius:22px;overflow:hidden;
+         background:radial-gradient(120% 100% at 50% 32%, #f4f6f9 0%, #e4e8ee 100%);border:1px solid rgb(var(--line))}
+  .stage canvas{position:absolute;inset:0;width:100%;height:100%}
+  .statelabel{position:absolute;left:14px;top:12px;font-size:12px;font-weight:700;letter-spacing:.08em;
+              color:rgb(var(--green));background:rgb(var(--green) / .08);padding:3px 10px;border-radius:999px}
+  .pip{position:absolute;right:12px;bottom:12px;width:26%;aspect-ratio:4/3;border-radius:10px;overflow:hidden;
+       background:#1c1e1c;border:2px solid rgba(255,255,255,.9);box-shadow:0 6px 16px rgba(0,0,0,.28);
+       display:flex;align-items:center;justify-content:center}
+  .pip video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  .pip .ph{color:#8a938d;font-size:10px}.pip .tag{position:absolute;left:5px;bottom:4px;font-size:9px;color:#fff;background:rgba(0,0,0,.45);padding:1px 5px;border-radius:5px}
+  .desc{max-width:480px;margin:14px auto 0;font-size:13px;color:var(--muted);min-height:34px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Companion — floating head</h1>
+  <p class="sub">Just the head, floating. No body, no arms. Soft matte finish, dark visor, glowing Baymax dots,
+  no mouth. The 5 states live in the eyes + a gentle tilt + a speaking halo.</p>
+</header>
+
+<div class="bar">
+  <div class="row" id="stateRow">
+    <button class="ctl on" data-st="idle">Idle</button>
+    <button class="ctl" data-st="listening">Listening</button>
+    <button class="ctl" data-st="thinking">Thinking</button>
+    <button class="ctl" data-st="curious">Curious / follow-up</button>
+    <button class="ctl" data-st="speaking">Speaking</button>
+    <button class="ctl" id="btnAuto">▶ Auto demo</button>
+  </div>
+  <div class="row">
+    <button class="ctl on" id="btnBody">Body: cream</button>
+    <button class="ctl on" id="btnEye">Eyes: green</button>
+    <button class="ctl" id="btnCam">📷 Camera (PiP)</button>
+  </div>
+</div>
+
+<main>
+  <div class="stage">
+    <span class="statelabel" id="lbl">IDLE</span>
+    <canvas id="cv"></canvas>
+    <div class="pip"><span class="ph">camera off</span><span class="tag">You</span></div>
+  </div>
+  <p class="desc" id="desc"></p>
+</main>
+
+<script>
+const BODY={white:{c0:'255,255,255',c1:'214,221,230',hi:'255,255,255'},
+            cream:{c0:'255,253,247',c1:'232,224,208',hi:'255,250,240'},
+            green:{c0:'236,246,241',c1:'150,190,173',hi:'244,255,249'}};
+const EYE={blue:'90,190,255',green:'70,210,150',salmon:'255,150,120'};
+let bodyName='cream',eyeName='green';
+
+const STATES={
+  idle:      {tilt:0.00,float:1.0,eyeDx:0.36,eyeVy:0.02,eyeSize:0.105,glow:0.45,halo:0,blinkRate:1.0,gaze:'drift',
+              desc:'IDLE — quietly present. Slow float, occasional soft blink.'},
+  listening: {tilt:0.00,float:1.0,eyeDx:0.36,eyeVy:-0.02,eyeSize:0.120,glow:0.7,halo:0,blinkRate:1.2,gaze:'follow',
+              desc:'LISTENING — eyes a touch wider and brighter, gaze softly follows your voice.'},
+  thinking:  {tilt:0.05,float:0.3,eyeDx:0.30,eyeVy:-0.10,eyeSize:0.090,glow:0.5,halo:0,blinkRate:0.6,gaze:'up',
+              desc:'THINKING — very still; eyes drift up and to the side, processing.'},
+  curious:   {tilt:0.12,float:0.8,eyeDx:0.28,eyeVy:0.00,eyeSize:0.125,glow:0.8,halo:0,blinkRate:1.0,gaze:'lock',
+              desc:'CURIOUS / FOLLOW-UP — head tilts, eyes focus and draw closer.'},
+  speaking:  {tilt:0.00,float:1.15,eyeDx:0.36,eyeVy:0.02,eyeSize:0.115,glow:0.95,halo:1,blinkRate:1.0,gaze:'lock',
+              desc:'SPEAKING — the halo breathes with the voice and the eyes brighten. No mouth.'},
+};
+let stateName='idle';
+const cur={tilt:0,float:1,eyeDx:0.36,eyeVy:0.02,eyeSize:0.105,glow:0.45,halo:0,blinkRate:1,gx:0,gy:0};
+
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let W,H,blink=0,nextBlink=1500,t0=performance.now(),camStream=null,auto=false,autoT=0;
+function fit(){const r=cv.getBoundingClientRect();const dpr=Math.min(2,devicePixelRatio||1);
+  cv.width=r.width*dpr;cv.height=r.height*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);W=r.width;H=r.height;}
+addEventListener('resize',fit);
+
+function pseudoSpeech(t){const g=(Math.sin(t*0.9)+Math.sin(t*0.37+1))*0.5,sp=g>-0.15;
+  const j=0.5+0.5*Math.sin(t*13)*Math.sin(t*7.3);return sp?Math.max(0.12,0.35+0.6*j):0.05;}
+function gaze(gz,now){switch(gz){
+  case 'drift':return[Math.sin(now/2100)*0.3,Math.sin(now/2600)*0.2];
+  case 'follow':return[Math.sin(now/1250)*0.75,Math.sin(now/1900)*0.15];
+  case 'up':return[-0.4,-0.6]; default:return[0,0];}}
+
+function mix(a,b,t){const A=a.split(',').map(Number),B=b.split(',').map(Number);
+  return A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(',');}
+function softShadow(cx,cy,rx,ry,alpha,blur){ctx.save();ctx.globalAlpha=alpha;ctx.filter='blur('+blur+'px)';
+  ctx.beginPath();ctx.ellipse(cx,cy,rx,ry,0,0,7);ctx.fillStyle='rgb(26,34,52)';ctx.fill();ctx.restore();}
+// soft matte-plastic fill inside the current path
+function paintForm(pathFn,x,y,w,h,P,opt){opt=opt||{};
+  const lx=x+w*0.36, ly=y+h*0.24, m=Math.min(w,h);
+  ctx.save();pathFn();ctx.clip();
+  let g=ctx.createRadialGradient(lx,ly,m*0.04,x+w*0.5,y+h*0.64,Math.max(w,h)*0.85);
+  g.addColorStop(0,'rgb('+mix(P.c0,P.hi,0.45)+')');
+  g.addColorStop(0.42,'rgb('+P.c0+')');
+  g.addColorStop(0.78,'rgb('+mix(P.c0,P.c1,0.65)+')');
+  g.addColorStop(1,'rgb('+P.c1+')');
+  ctx.fillStyle=g;ctx.fillRect(x-2,y-2,w+4,h+4);
+  let ao=ctx.createLinearGradient(0,y+h*0.46,0,y+h+2);
+  ao.addColorStop(0,'rgba(28,40,62,0)');ao.addColorStop(1,'rgba(28,40,62,'+(opt.ao!=null?opt.ao:0.18)+')');
+  ctx.fillStyle=ao;ctx.fillRect(x-2,y-2,w+4,h+4);
+  ctx.globalAlpha=0.6;ctx.filter='blur('+(m*0.06)+'px)';                        // broad sheen
+  ctx.beginPath();ctx.ellipse(lx,y+h*0.15,w*0.30,h*0.12,-0.28,0,7);ctx.fillStyle='rgb('+P.hi+')';ctx.fill();
+  ctx.globalAlpha=0.5;ctx.filter='blur('+(m*0.02)+'px)';                        // hotspot
+  ctx.beginPath();ctx.ellipse(lx-w*0.03,y+h*0.11,w*0.08,h*0.045,-0.3,0,7);ctx.fill();
+  ctx.globalAlpha=0.26;ctx.filter='blur('+(m*0.045)+'px)';                      // far rim light
+  ctx.beginPath();ctx.ellipse(x+w*0.83,y+h*0.56,w*0.045,h*0.30,0.12,0,7);ctx.fill();
+  ctx.filter='none';ctx.globalAlpha=1;ctx.restore();
+}
+function headPath(R){const w=R,h=R*1.05;   // soft squircle pebble head
+  ctx.beginPath();ctx.moveTo(0,-h);
+  ctx.bezierCurveTo(w*0.62,-h, w,-h*0.55, w,0);
+  ctx.bezierCurveTo(w,h*0.60, w*0.55,h, 0,h);
+  ctx.bezierCurveTo(-w*0.55,h, -w,h*0.60, -w,0);
+  ctx.bezierCurveTo(-w,-h*0.55, -w*0.62,-h, 0,-h);ctx.closePath();}
+function drawVisor(R){
+  ctx.save();
+  ctx.filter='blur('+R*0.03+'px)';ctx.beginPath();ctx.ellipse(0,R*0.06,R*0.86,R*0.60,0,0,7);
+  ctx.fillStyle='rgba(8,12,18,0.5)';ctx.fill();ctx.filter='none';                 // soft visor edge
+  ctx.beginPath();ctx.ellipse(0,R*0.04,R*0.82,R*0.57,0,0,7);
+  let g=ctx.createRadialGradient(-R*0.22,-R*0.16,R*0.08,0,R*0.12,R*0.95);
+  g.addColorStop(0,'#232a34');g.addColorStop(0.5,'#12161d');g.addColorStop(1,'#06090d');
+  ctx.fillStyle=g;ctx.fill();
+  ctx.save();ctx.clip();ctx.globalAlpha=0.13;ctx.filter='blur('+R*0.05+'px)';       // top reflection sweep
+  ctx.beginPath();ctx.ellipse(-R*0.14,-R*0.30,R*0.5,R*0.16,-0.25,0,7);ctx.fillStyle='#a6bad2';ctx.fill();ctx.restore();
+  ctx.restore();
+}
+function drawEyes(cx,cy,R,env){
+  const glow=EYE[eyeName];
+  if(performance.now()>nextBlink){blink=1;nextBlink=performance.now()+2600/cur.blinkRate+Math.random()*3000;}
+  blink=Math.max(0,blink-0.14);const open=1-Math.min(1,blink*1.7);
+  const dx=R*cur.eyeDx, vy=cy+R*cur.eyeVy, gx=cur.gx*R*0.16, gy=cur.gy*R*0.16;
+  const sz=R*cur.eyeSize*Math.max(0.14,open), g=Math.min(1,cur.glow+env*0.3);
+  ctx.save();ctx.shadowColor=`rgb(${glow})`;ctx.shadowBlur=8+g*16;ctx.fillStyle=`rgb(${glow})`;ctx.strokeStyle=`rgb(${glow})`;
+  ctx.globalAlpha=0.16+g*0.1;ctx.lineWidth=R*0.028;ctx.beginPath();
+  ctx.moveTo(cx-dx+gx,vy+gy);ctx.lineTo(cx+dx+gx,vy+gy);ctx.stroke();     // faint Baymax link
+  ctx.globalAlpha=0.72+g*0.28;
+  for(const s of [-1,1]){ctx.beginPath();ctx.ellipse(cx+s*dx+gx,vy+gy,sz,sz*(open<0.5?Math.max(0.14,open):1),0,0,7);ctx.fill();}
+  ctx.restore();
+}
+function frame(now){
+  const t=(now-t0)/1000;
+  if(auto){autoT+=1/60;const seq=['idle','listening','thinking','curious','speaking'];setState(seq[Math.floor(autoT/2.6)%5],true);}
+  const S=STATES[stateName];
+  for(const k of ['tilt','float','eyeDx','eyeVy','eyeSize','glow','halo','blinkRate']) cur[k]+=(S[k]-cur[k])*0.08;
+  const [tgx,tgy]=gaze(S.gaze,now); cur.gx+=(tgx-cur.gx)*0.06; cur.gy+=(tgy-cur.gy)*0.06;
+  const env=stateName==='speaking'?pseudoSpeech(t):0;
+
+  ctx.clearRect(0,0,W,H);
+  const cx=W/2, P=BODY[bodyName], R=Math.min(W*0.26,H*0.26);
+  const floatY=Math.sin(now/1000)*(4+(stateName==='speaking'?env*8:0))*cur.float;
+  const cy=H*0.48+floatY;
+  // soft floating shadow under the head
+  softShadow(cx,H*0.86,R*0.9*(1-Math.max(0,floatY)*0.01),H*0.02,0.16,16);
+  // halo (speaking) behind the head
+  if(cur.halo>0.04){for(let i=0;i<3;i++){const rad=R*(1.1+i*0.34)+Math.sin(now/560+i)*3+(0.3+env)*cur.halo*22;
+    let hg=ctx.createRadialGradient(cx,cy,rad*0.72,cx,cy,rad*1.18);
+    hg.addColorStop(0,`rgba(${EYE[eyeName]},0)`);
+    hg.addColorStop(0.75,`rgba(${EYE[eyeName]},${(0.06+env*0.14)*cur.halo*(1-i*0.24)})`);
+    hg.addColorStop(1,`rgba(${EYE[eyeName]},0)`);
+    ctx.fillStyle=hg;ctx.beginPath();ctx.ellipse(cx,cy,rad*1.18,rad*1.28,0,0,7);ctx.fill();}}
+  // head (with tilt)
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(cur.tilt);
+  paintForm(()=>headPath(R), -R,-R*1.05,2*R,2*R*1.05, P, {ao:0.16});
+  drawVisor(R);
+  drawEyes(0,R*0.04,R,env);
+  ctx.restore();
+  requestAnimationFrame(frame);
+}
+fit();requestAnimationFrame(frame);
+
+const $=id=>document.getElementById(id);
+function setState(n,fromAuto){stateName=n;$('lbl').textContent=n.toUpperCase();$('desc').textContent=STATES[n].desc;
+  [...document.querySelectorAll('#stateRow [data-st]')].forEach(b=>b.classList.toggle('on',b.dataset.st===n));
+  if(!fromAuto){auto=false;$('btnAuto').classList.remove('on');}}
+[...document.querySelectorAll('#stateRow [data-st]')].forEach(b=>b.onclick=()=>setState(b.dataset.st));
+$('desc').textContent=STATES.idle.desc;
+$('btnAuto').onclick=()=>{auto=!auto;autoT=0;$('btnAuto').classList.toggle('on',auto);};
+$('btnBody').onclick=()=>{bodyName=bodyName==='cream'?'white':bodyName==='white'?'green':'cream';
+  $('btnBody').textContent='Body: '+bodyName;$('btnBody').classList.toggle('on',bodyName!=='white');};
+$('btnEye').onclick=()=>{eyeName=eyeName==='green'?'blue':eyeName==='blue'?'salmon':'green';
+  $('btnEye').textContent='Eyes: '+eyeName;$('btnEye').classList.toggle('on',eyeName!=='blue');};
+$('btnCam').onclick=async()=>{const pip=document.querySelector('.pip');
+  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;$('btnCam').classList.remove('on');
+    pip.innerHTML='<span class="ph">camera off</span><span class="tag">You</span>';return;}
+  try{camStream=await navigator.mediaDevices.getUserMedia({video:{width:320,facingMode:'user'}});
+    pip.innerHTML='<span class="tag">You</span>';const v=document.createElement('video');
+    v.autoplay=true;v.muted=true;v.playsInline=true;v.srcObject=camStream;pip.prepend(v);$('btnCam').classList.add('on');}
+  catch(e){}};
+</script>
+</body>
+</html>
