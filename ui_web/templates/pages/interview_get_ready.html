@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
 {% import "partials/interview_stepper.html" as steps %}
 {% block title %}{{ _('prep2.step.get_ready') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
@@ -15,13 +16,7 @@
 
   {# ---- header + stepper ---- #}
   <div class="space-y-4">
-    <a href="/interviews/{{ interview.id }}" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
-      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.step.brief') }}
-    </a>
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">{{ interview.role_title or _('prep2.gen.the_role') }}</h1>
-      <p class="text-body-muted">{{ interview.company }}</p>
-    </div>
+    {{ ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=interview.company, back=('/interviews/' ~ interview.id, _('prep2.step.brief'))) }}
     {{ steps.stepper('get_ready', interview.id) }}
   </div>
 

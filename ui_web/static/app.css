@@ -122,7 +122,20 @@ html {
   --r-xl: 1rem;
   --r-pill: 9999px;
 
-  /* Elevation — earned, warm/green-tinted */
+  /* Surfaces — "tinta, no contorno" (design.md §7A, Eduardo 2026-09-28).
+     Page is pure white; things separate by a warm-grey FILL, never by an
+     outline. Alpha over white so the steps stack correctly when nested.
+       surf-1 = rest (cards, chips, tab track, inputs)
+       surf-2 = hover
+       surf-3 = selected / active (+ the 3px green leading bar)
+     Green stays a SIGNAL (bar, ring, primary button), never a border. */
+  --surf-1: oklch(var(--n-7) / 0.035);
+  --surf-2: oklch(var(--n-7) / 0.06);
+  --surf-3: oklch(var(--n-7) / 0.085);
+  --lead-bar: inset 3px 0 0 oklch(var(--p));
+
+  /* Elevation — earned, warm/green-tinted. Only for things that truly float
+     (modal, drawer, popover, the active seg-tab thumb) — never resting cards. */
   --elev-1: 0 1px 2px oklch(var(--p) / .05);
   --elev-2: 0 10px 25px -18px oklch(var(--p) / .28);
   --elev-3: 0 24px 60px -24px oklch(var(--n-7) / .28);
@@ -148,14 +161,14 @@ html {
    `bg-base-100 border-base-300 …` combo and the inline-styled delete
    buttons (one of which still used raw HSL). */
 .btn-quiet {
-  background: oklch(var(--b1));
-  border-color: oklch(var(--b3));
+  background: var(--surf-1);
+  border-color: transparent;
   color: oklch(var(--bc));
   font-weight: 500;
 }
 .btn-quiet:hover {
-  background: oklch(var(--b2));
-  border-color: oklch(var(--b3));
+  background: var(--surf-3);
+  border-color: transparent;
 }
 /* Soft danger — tint bg + danger ink (for inline "Yes, delete" confirms) */
 .btn-danger {
@@ -296,45 +309,101 @@ h4 {
 .text-body-muted {
   color: oklch(var(--bc) / 0.72);
 }
+/* Text ramp below body-muted (2026-09-28) — replaces the ad-hoc
+   text-base-content/NN opacities (10 different values in the wild).
+   subtle = secondary meta, hints · faint = separators, decorative icons. */
+.text-subtle { color: oklch(var(--n-5)); }
+.text-faint  { color: oklch(var(--n-4)); }
 
 /* ─────────────────────────────────────────────────────────────
    Layout primitives — quiet card, nav tab, pill
    ───────────────────────────────────────────────────────────── */
 
 .card-quiet {
-  /* Solid white surface (--b1) so cards float as the lightest level over
-     the linen page (--b2), not a translucent wash. Resting box-shadow is
-     barely there — enough to imply lift without competing with the hover
-     glow. */
-  background: oklch(var(--b1));
-  border: 1px solid oklch(var(--b3));
+  /* Tinta, no contorno (2026-09-28): a warm-grey fill on the white page — no
+     border, no resting shadow. The card is a slightly darker field, not a
+     white box drawn with a line (that read high-contrast and "everything
+     floats"). */
+  background: var(--surf-1);
+  border: 1px solid transparent;
   border-radius: var(--rounded-box);
   padding: 1.5rem;
-  box-shadow: 0 1px 2px oklch(var(--p) / 0.04);
-  transition: border-color 0.2s ease, box-shadow 0.3s ease, transform 0.2s ease, background 0.2s ease;
+  box-shadow: none;
+  transition: background var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
 
-/* Hover state — warm shadow tint + subtle salmon border edge. The soft
-   drop-shadow uses the primary color at very low opacity so the card
-   appears to "lift" gently on hover without breaking the minimal aesthetic. */
-.card-quiet:hover {
-  border-color: oklch(var(--p) / 0.28);
-  box-shadow:
-    0 1px 0 oklch(var(--p) / 0.05),
-    0 10px 25px -18px oklch(var(--p) / 0.28);
+/* Hover only on cards you can act on — a static content card must not
+   react to the pointer. Hover = one step greyer. */
+.card-quiet:is(a, button, [role="button"], [role="option"], [hx-get], [hx-post], [\@click], .cursor-pointer):hover {
+  background: var(--surf-2);
 }
 
-/* Selected-state override — a card in the "selected" state should always
-   win over hover. Both .card-quiet--selected and .card-quiet--selected:hover
-   render with the primary-green ring so the selection never gets lost while
-   the user's cursor is anywhere on the card. */
+/* Selected wins over hover: greyest step + the 3px green leading bar (the
+   same move as the job-card and the brief's callouts). */
 .card-quiet--selected,
 .card-quiet--selected:hover {
-  border-color: oklch(var(--p));
-  background: oklch(var(--p) / 0.025);
-  box-shadow:
-    0 0 0 2px oklch(var(--p) / 0.55),
-    0 12px 30px -18px oklch(var(--p) / 0.35);
+  background: var(--surf-3);
+  box-shadow: var(--lead-bar);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   UI kit helpers (macros/ui.html, 2026-09-28) — the small pieces every
+   page kept re-inventing. Tinta, no contorno.
+   ───────────────────────────────────────────────────────────── */
+/* Back link above a page title. */
+.ui-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: oklch(var(--n-5));
+  transition: color var(--dur-1) ease;
+}
+.ui-back:hover { color: oklch(var(--bc)); }
+/* Quiet text link (section actions, "see all"). */
+.ui-link-quiet {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: oklch(var(--n-6));
+  text-underline-offset: 3px;
+}
+.ui-link-quiet:hover { color: oklch(var(--bc)); text-decoration: underline; }
+/* Level 2 — importance: green tint + 3px rule. One per view. */
+.ui-callout {
+  background: oklch(var(--p) / 0.07);
+  box-shadow: var(--lead-bar);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  padding: 1rem 1.25rem;
+}
+.ui-callout__eyebrow { color: oklch(var(--p)); margin-bottom: 0.5rem; }
+/* Level 1 — context: grey tint, no rule, no border. */
+.ui-notice {
+  display: block;
+  background: var(--surf-1);
+  border-radius: var(--r-lg);
+  padding: 0.85rem 1rem;
+  font-size: 0.875rem;
+  color: oklch(var(--n-6));
+}
+.ui-notice--icon { display: flex; gap: 0.6rem; }
+.ui-notice a { color: oklch(var(--p)); font-weight: 500; }
+.ui-notice a:hover { text-decoration: underline; }
+/* Empty state — a written sentence, left-aligned, no illustration box. */
+.ui-empty {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  padding: 2rem 0.25rem;
+  max-width: 32rem;
+}
+.ui-empty__icon { font-size: 1.75rem; color: oklch(var(--n-4)); }
+.ui-empty__sentence { font-size: 1.0625rem; font-weight: 500; }
+.ui-datum-unit {
+  font-size: 0.45em;
+  font-weight: 500;
+  letter-spacing: 0;
+  margin-left: 0.25rem;
+  color: oklch(var(--n-5));
 }
 
 /* Job result cards (master-detail rail: Top matches / Saved / results page).
@@ -363,42 +432,54 @@ h4 {
    deeper shade of the warm hue) so they recede into the panel; the SELECTED
    one turns pure white, lifts, and carries a green leading accent bar. */
 .job-card {
-  background: oklch(var(--b1));               /* white card on the open page (panel removed) */
-  border: 1px solid oklch(var(--b3));
+  /* Tinta, no contorno (2026-09-28): grey field on the white page, no border,
+     no shadow. States step greyer: rest surf-1 → hover surf-2 → selected
+     surf-3 + the green leading bar. The selected card no longer carries a
+     dark outline + ring + shadow (it was the loudest thing on screen). */
+  background: var(--surf-1);
+  border: 1px solid transparent;
   border-radius: 0.6rem;
   padding: 0.85rem 1rem;
-  box-shadow: none;                           /* flat — no shadow soup in a 20-item list */
-  transition: border-color .18s ease, box-shadow .24s ease, transform .18s ease;
+  box-shadow: none;
+  overflow: hidden;                           /* clips the leading bar to the radius */
+  transition: background var(--dur-2) var(--ease-out);
 }
 .job-card:hover {
-  border-color: oklch(var(--p) / 0.35);       /* green hairline — "about to pick" */
-  transform: translateY(-1px);                /* subtle lift = alive/interactive */
+  background: var(--surf-2);
 }
 .job-card--selected,
 .job-card--selected:hover {
-  background: oklch(var(--b1));               /* white + green edge — the picked card */
-  border-color: oklch(var(--p));
-  transform: none;
-  box-shadow:
-    0 0 0 1px oklch(var(--p) / 0.45),        /* green ring so it reads as selected vs the bordered cards */
-    0 12px 28px -18px oklch(var(--p) / 0.38);
+  background: var(--surf-3);
+  box-shadow: none;
 }
 /* Green accent bar is always present but collapsed; it GROWS in when the card
-   becomes selected, so the selection has a bit of motion. */
+   becomes selected, so the selection has a bit of motion. Full height now —
+   it reads as the edge of the grey field, like the callout rule. */
 .job-card::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 10px;
-  bottom: 10px;
+  top: 0;
+  bottom: 0;
   width: 3px;
-  border-radius: 0 3px 3px 0;
   background: oklch(var(--p));
   transform: scaleY(0);
   transform-origin: center;
   transition: transform .22s ease;
 }
 .job-card--selected::before { transform: scaleY(1); }
+/* Already-opened cards recede (server-rendered; was an inline style). */
+.job-card[data-viewed] { opacity: 0.72; }
+.job-card__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+  line-height: 1.375;
+}
+/* Middle-dot separator in meta lines (company · location · site). */
+.ui-sep { color: oklch(var(--n-4)); margin: 0 0.25rem; }
+/* The small live dot inside the "New" chip. */
+.chip-dot { display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: currentColor; }
 
 /* Detail pane entrance — soft fade + slide IN FROM THE LEFT, following the
    card→detail flow direction (the content feels like it comes from the card
@@ -555,11 +636,11 @@ h4 {
   gap: 0.375rem;
   padding: 0.25rem 0.625rem;
   border-radius: 9999px;
-  background: oklch(var(--b3) / 0.5);
-  color: oklch(var(--bc) / 0.7);
+  background: var(--surf-2);
+  color: oklch(var(--n-6));
   font-size: 0.75rem;
   font-weight: 500;
-  border: 1px solid oklch(var(--b3));
+  border: 1px solid transparent;
 }
 .pill-dot {
   width: 0.375rem;
@@ -786,7 +867,9 @@ html, body {
   border-radius: 0.375rem;
   font-size: 0.75rem;
   font-weight: 500;
-  border: 1px solid;
+  /* Tinta, no contorno: chips are a tint field, no drawn outline. The border
+     stays (transparent) so box size is unchanged for every existing chip. */
+  border: 1px solid transparent;
 }
 @media (max-width: 1023px) {
   .chip {
@@ -797,17 +880,35 @@ html, body {
 .chip-matched {
   background: var(--v-strong-tint);
   color: var(--v-strong-ink);
-  border-color: var(--v-strong-bd);
 }
 .chip-gap {
   background: var(--v-stretch-tint);
   color: var(--v-stretch-ink);
-  border-color: var(--v-stretch-bd);
 }
 .chip-neutral {
-  background: oklch(var(--b3) / 0.5);
-  color: oklch(var(--bc) / 0.7);
-  border-color: oklch(var(--b3));
+  background: var(--surf-2);
+  color: oklch(var(--n-6));
+}
+/* Job-state chips (2026-09-28) — replace the inline hsl() in job_card.html.
+   applied = you acted (success) · fresh = came from your last Expand (green)
+   · viewed = quiet, text-only · dismissed = soft poor tint. */
+.chip-applied {
+  background: var(--v-strong-tint);
+  color: var(--v-strong-ink);
+}
+.chip-fresh {
+  background: oklch(var(--p) / 0.08);
+  color: oklch(var(--p));
+}
+.chip-viewed {
+  background: transparent;
+  color: oklch(var(--n-5));
+  padding-left: 0;
+  padding-right: 0;
+}
+.chip-dismissed {
+  background: var(--v-poor-tint);
+  color: var(--v-poor-ink);
 }
 /* AI role suggestions (For-you) — GREEN, not salmon. Salmon is reserved for
    top-match/celebration (≤1 per view); suggestions read as "Jobot's picks"
@@ -815,14 +916,13 @@ html, body {
 .chip-suggest {
   background: oklch(var(--p) / 0.08);
   color: oklch(var(--p));
-  border-color: oklch(var(--p) / 0.25);
 }
 
 /* Salmon accent variants — for top matches, recommended badges, celebrations. */
 .chip-accent, .pill-accent {
   background: oklch(var(--a) / 0.15);
   color: oklch(var(--af));
-  border-color: oklch(var(--a) / 0.4);
+  border-color: transparent;
 }
 .badge-accent-solid {
   background: oklch(var(--a));
@@ -841,32 +941,32 @@ html, body {
 .pill-success {
   background: oklch(var(--su) / 0.14);
   color: oklch(var(--su) / 0.9);
-  border-color: oklch(var(--su) / 0.35);
+  border-color: transparent;
 }
 .pill-warn {
   background: oklch(var(--wa) / 0.16);
   color: oklch(30% 0.09 65);
-  border-color: oklch(var(--wa) / 0.45);
+  border-color: transparent;
 }
 .pill-danger {
   background: oklch(var(--er) / 0.12);
   color: oklch(var(--er));
-  border-color: oklch(var(--er) / 0.35);
+  border-color: transparent;
 }
 .pill-info {
   background: oklch(var(--in) / 0.12);
   color: oklch(var(--in) / 0.9);
-  border-color: oklch(var(--in) / 0.35);
+  border-color: transparent;
 }
 .pill-neutral {
-  background: oklch(var(--b3) / 0.6);
+  background: var(--surf-2);
   color: oklch(var(--bc) / 0.7);
-  border-color: oklch(var(--b3));
+  border-color: transparent;
 }
 .pill-celebration {
   background: oklch(var(--a) / 0.15);
   color: oklch(var(--af));
-  border-color: oklch(var(--a) / 0.45);
+  border-color: transparent;
 }
 
 /* Quoted-italic — pseudo-element quotes so LLM content that already
@@ -911,43 +1011,39 @@ html, body {
    (white bg, primary text, colored top-border accent, drop shadow). Inactive
    tabs are muted ghost. Generous padding + gap = tabs "breathe". */
 .seg-tabs {
+  /* Segmented control (2026-09-28, tinta): one grey track, tabs sit inside
+     it with no borders. Active = the white "thumb" — the one resting element
+     allowed a hairline of elevation, because it physically sits ON the track. */
   display: inline-flex;
-  gap: 0.5rem;
-  padding: 0;
-  background: transparent;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--surf-2);
   border: none;
+  border-radius: 0.85rem;
 }
 .seg-tab {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.75rem 1.4rem;
-  border-radius: 0.75rem;
+  padding: 0.6rem 1.3rem;
+  border-radius: 0.65rem;
   font-size: 0.9375rem;
   font-weight: 500;
-  color: oklch(var(--bc) / 0.55);
+  color: oklch(var(--n-6));
   cursor: pointer;
-  transition: color 0.18s ease, background 0.18s ease,
-              box-shadow 0.22s ease, transform 0.15s ease;
-  /* Resting inactive tab reads as a real button: a subtle surface + faint
-     border (promoted from the old hover look) so it doesn't disappear into
-     the page the way a bare-text tab did. */
-  border: 1px solid oklch(var(--b3) / 0.7);
-  background: oklch(var(--b1) / 0.5);
+  transition: color var(--dur-1) ease, background var(--dur-2) var(--ease-out),
+              box-shadow var(--dur-2) var(--ease-out);
+  border: none;
+  background: transparent;
   position: relative;
   letter-spacing: -0.005em;
 }
 .seg-tab i {
   transition: color 0.18s ease;
 }
-/* Hover on an inactive tab adds depth — solid surface + soft green lift —
-   so the affordance ladder reads rest → hover → active. */
 .seg-tab:hover:not(.seg-tab--active) {
-  color: oklch(var(--bc) / 0.9);
-  background: oklch(var(--b1));
-  border-color: oklch(var(--b3));
-  box-shadow: 0 2px 6px oklch(var(--p) / 0.08);
-  transform: translateY(-1px);
+  color: oklch(var(--bc));
+  background: var(--surf-1);
 }
 .seg-tab:hover:not(.seg-tab--active) i {
   color: oklch(var(--p) / 0.7);
@@ -955,15 +1051,8 @@ html, body {
 .seg-tab--active {
   background: oklch(var(--b1));
   color: oklch(var(--p));
-  border-color: oklch(var(--b3));
   font-weight: 600;
-  /* Layered green elevation — soft shadow below (depth) + a faint green
-     "top light" inset for the chrome-tab lifted feel (salmon retired). */
-  box-shadow:
-    0 1px 0 oklch(var(--p) / 0.20) inset,
-    0 2px 3px oklch(var(--p) / 0.05),
-    0 12px 20px -12px oklch(var(--p) / 0.25);
-  transform: translateY(-1px);
+  box-shadow: 0 1px 2px oklch(var(--n-7) / 0.08), 0 1px 1px oklch(var(--n-7) / 0.04);
 }
 .seg-tab--active i {
   color: oklch(var(--p));
@@ -1275,11 +1364,15 @@ html, body {
 /* Airline-style connected search bar (Jobs landing). Soft focus-within ring so
    the whole bar lights up when any segment (roles / location) is focused. */
 .jobot-searchbar {
-  transition: border-color .15s ease, box-shadow .15s ease;
+  /* Tinta (2026-09-28): a grey field, no outline. Segments are split by the
+     inner hairline only. Focus turns the field white with a soft green ring. */
+  background: var(--surf-2);
+  border: 1px solid transparent;
+  transition: background var(--dur-2) var(--ease-out), box-shadow .15s ease;
 }
 .jobot-searchbar:focus-within {
-  border-color: oklch(var(--p) / 0.45);
-  box-shadow: 0 0 0 3px oklch(var(--p) / 0.10);
+  background: oklch(var(--b1));
+  box-shadow: 0 0 0 1px oklch(var(--p) / 0.35), 0 0 0 4px oklch(var(--p) / 0.08);
 }
 .typeahead-dropdown {
   position: absolute;

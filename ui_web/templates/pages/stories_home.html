@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
 {% block title %}{{ _('prep2.story.bank_title') }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
 
@@ -7,23 +8,12 @@
 {% block content %}
 <div class="space-y-6" x-data="{ filter: '' }">
 
-  <div class="flex items-start justify-between gap-3">
-    <div>
-      <a href="/interviews" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1 mb-2">
-        <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.new.back') }}
-      </a>
-      <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.story.bank_title') }}</h1>
-      <p class="text-body-muted mt-1">{{ _('prep2.story.bank_subtitle') }}</p>
-    </div>
-    {% if stories %}
-    <a href="/stories/new" class="btn btn-primary btn-sm inline-flex items-center gap-1.5 shrink-0">
-      <i class="ph-thin ph-plus"></i>{{ _('prep2.story.add') }}
-    </a>
-    {% endif %}
-  </div>
+  {% call ui.page_header(_('prep2.story.bank_title'), lede=_('prep2.story.bank_subtitle'), back=('/interviews', _('prep2.new.back'))) %}
+    {% if stories %}{{ ui.button(_('prep2.story.add'), variant='primary', icon='ph-plus', href='/stories/new') }}{% endif %}
+  {% endcall %}
 
   {% if not has_resume %}
-    <div class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+    <div class="ui-notice">
       {{ _('prep2.new.no_resume') }}
       <a href="/profile" class="text-primary font-medium hover:underline">{{ _('prep2.new.no_resume_cta') }}</a>
     </div>
@@ -47,11 +37,11 @@
       </div>
 
       <div class="flex flex-wrap items-center justify-center gap-2 pt-3 border-t border-base-300">
-        <span class="w-full text-center text-xs uppercase tracking-wide text-base-content/40 mb-1">{{ _('prep2.story.or_start') }}</span>
-        <a href="/stories/voice" class="btn btn-ghost btn-sm inline-flex items-center gap-1.5 border border-base-300">
+        <span class="w-full text-center text-xs uppercase tracking-wide text-subtle mb-1">{{ _('prep2.story.or_start') }}</span>
+        <a href="/stories/voice" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5">
           <i class="ph-thin ph-microphone"></i>{{ _('prep2.story.voice_cta') }}
         </a>
-        <a href="/stories/new" class="btn btn-ghost btn-sm inline-flex items-center gap-1.5 border border-base-300">
+        <a href="/stories/new" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5">
           <i class="ph-thin ph-pencil-simple"></i>{{ _('prep2.story.write_cta') }}
         </a>
       </div>

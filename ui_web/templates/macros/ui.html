@@ -1,0 +1,231 @@
+{# ─────────────────────────────────────────────────────────────
+   Jobot UI kit — the composition layer (design.md §9.0, 2026-09-28).
+
+   WHY: tokens alone didn't hold the style. Every screen re-invented its
+   header, card, notice and buttons from raw Tailwind (7 <h1> variants, 47
+   hand-built cards, 44 button class strings). These macros are the ONLY
+   sanctioned way to draw those pieces. They wrap classes in app.css — change
+   the look there, never by adding utility classes at the call site.
+
+   Language: "tinta, no contorno" — white page, things separate by a
+   warm-grey FILL (--surf-1/2/3), importance = grey + 3px green leading bar.
+   No outlines around things; shadow only on what truly floats.
+
+   Usage:
+     {% import "macros/ui.html" as ui %}
+     {{ ui.page_header(_('x.title'), lede=_('x.sub'), back=('/interviews', _('x.back'))) }}
+     {% call ui.card(href='/interviews/1') %}…{% endcall %}
+     {{ ui.button(_('x.go'), variant='primary', icon='ph-plus', href='/new') }}
+
+   `attrs` (dict) passes anything else straight through — hx-*, @click,
+   :class, x-show, data-*, aria-* — so HTMX/Alpine wiring stays at the call
+   site:  ui.button('Save', attrs={'hx-post': '/save', '@click': 'busy=true'})
+   ───────────────────────────────────────────────────────────── #}
+
+{# Render a dict as HTML attributes. None/False values are skipped, True
+   renders a bare attribute. Values are escaped. #}
+{% macro _attrs(d) -%}
+  {%- for k, v in (d or {}).items() -%}
+    {%- if v is sameas true %} {{ k }}{% elif v is not none and v is not sameas false %} {{ k }}="{{ v|e }}"{% endif -%}
+  {%- endfor -%}
+{%- endmacro %}
+
+
+{# ── page_header ────────────────────────────────────────────────
+   The top of every page: optional back link → optional eyebrow → title →
+   the lede (§2A answer-first: one sentence that ANSWERS, not describes).
+   size: 'md' = inner pages (24px) · 'lg' = landing pages (display 38px).
+   Actions (primary button etc.) go in the call block, right-aligned. #}
+{% macro page_header(title, lede=none, eyebrow=none, back=none, size='md') -%}
+<header class="space-y-3">
+  {%- if back %}
+  <a href="{{ back[0] }}" class="ui-back"><i class="ph-thin ph-arrow-left"></i>{{ back[1] }}</a>
+  {%- endif %}
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0 space-y-1.5">
+      {%- if eyebrow %}<div class="text-eyebrow">{{ eyebrow }}</div>{% endif %}
+      <h1 class="{{ 'text-display' if size == 'lg' else 'text-2xl font-semibold tracking-tight' }}">{{ title }}</h1>
+      {%- if lede %}<p class="text-body-muted">{{ lede }}</p>{% endif %}
+    </div>
+    {%- if caller is defined %}
+    <div class="shrink-0 flex items-center gap-2">{{ caller() }}</div>
+    {%- endif %}
+  </div>
+</header>
+{%- endmacro %}
+
+
+{# ── section ─────────────────────────────────────────────────────
+   A section is an eyebrow + space, NOT a box. `title` (optional) is the
+   L2 heading under the eyebrow. `action` = (href, label) quiet link on the
+   right of the eyebrow row. #}
+{% macro section(eyebrow=none, title=none, action=none, id=none, class_='') -%}
+<section{% if id %} id="{{ id }}"{% endif %} class="space-y-3 {{ class_ }}">
+  {%- if eyebrow or title or action %}
+  <div class="flex items-baseline justify-between gap-3">
+    <div class="space-y-1">
+      {%- if eyebrow %}<h2 class="text-eyebrow">{{ eyebrow }}</h2>{% endif %}
+      {%- if title %}<div class="text-title">{{ title }}</div>{% endif %}
+    </div>
+    {%- if action %}<a href="{{ action[0] }}" class="ui-link-quiet">{{ action[1] }}</a>{% endif %}
+  </div>
+  {%- endif %}
+  {{ caller() }}
+</section>
+{%- endmacro %}
+
+
+{# ── card ────────────────────────────────────────────────────────
+   One card, grey field on the white page (.card-quiet).
+   - href           → renders an <a>; gets hover.
+   - selected (str) → Alpine expression; true = greyest step + green bar.
+   - pad: 'sm' p-4 · 'md' p-5 · 'lg' p-6 · 'none'.
+   - tag: element when not a link ('div', 'section', 'button', 'article').
+   Clickable cards (href / tag='button' / attrs with hx-get or @click)
+   get the hover step automatically — static cards don't react. #}
+{% macro card(href=none, selected=none, pad='md', tag='div', class_='', attrs=none) -%}
+{%- set el = 'a' if href else tag -%}
+{%- set p = {'sm': 'p-4', 'md': 'p-5', 'lg': 'p-6', 'none': ''}[pad] -%}
+<{{ el }}{% if href %} href="{{ href }}"{% endif %}{% if el == 'button' %} type="button"{% endif %} class="card-quiet {{ 'block' if href }} {{ p }} {{ class_ }}"
+  {%- if selected %} :class="({{ selected }}) ? 'card-quiet--selected' : ''"{% endif %}{{ _attrs(attrs) }}>
+  {{- caller() -}}
+</{{ el }}>
+{%- endmacro %}
+
+
+{# ── callout / notice ────────────────────────────────────────────
+   callout = importance (Level 2): green tint + 3px green rule. Use for THE
+   recommendation / the answer on a screen — at most one per view.
+   notice  = context (Level 1): grey tint, no rule. "You need a resume
+   first", tips, gentle warnings. Replaces the hand-built
+   `rounded-xl border border-base-300 bg-base-100 p-4 text-sm …` box. #}
+{% macro callout(eyebrow=none, class_='') -%}
+<div class="ui-callout {{ class_ }}">
+  {%- if eyebrow %}<div class="text-eyebrow ui-callout__eyebrow">{{ eyebrow }}</div>{% endif %}
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+{% macro notice(icon=none, class_='') -%}
+{%- if icon -%}
+<div class="ui-notice ui-notice--icon {{ class_ }}">
+  <i class="ph-thin {{ icon }} i-4 shrink-0 mt-0.5"></i>
+  <div class="min-w-0">{{ caller() }}</div>
+</div>
+{%- else -%}
+<div class="ui-notice {{ class_ }}">{{ caller() }}</div>
+{%- endif %}
+{%- endmacro %}
+
+
+{# ── button ──────────────────────────────────────────────────────
+   variant: primary (green — ONE per view; in job surfaces it's Tailor)
+            secondary (grey fill) · ghost (text only) · danger · danger-solid
+   size: 'sm' (default — the app's working size) · 'md'
+   href → <a>; otherwise <button type=type>. #}
+{% macro button(label, variant='secondary', size='sm', icon=none, icon_after=none, href=none, type='button', class_='', attrs=none) -%}
+{%- set v = {'primary': 'btn-primary', 'secondary': 'btn-quiet', 'ghost': 'btn-ghost', 'danger': 'btn-danger', 'danger-solid': 'btn-danger-solid'}[variant] -%}
+{%- set cls = 'btn ' ~ v ~ (' btn-sm' if size == 'sm' else '') ~ ' inline-flex items-center gap-1.5 ' ~ class_ -%}
+{%- if href -%}
+<a href="{{ href }}" class="{{ cls }}"{{ _attrs(attrs) }}>
+{%- else -%}
+<button type="{{ type }}" class="{{ cls }}"{{ _attrs(attrs) }}>
+{%- endif -%}
+{%- if icon %}<i class="ph-thin {{ icon }}"></i>{% endif %}{{ label }}{% if icon_after %}<i class="ph-thin {{ icon_after }}"></i>{% endif -%}
+{%- if href %}</a>{% else %}</button>{% endif -%}
+{%- endmacro %}
+
+
+{# ── chip ────────────────────────────────────────────────────────
+   kind = a real product STATE, not a colour:
+     neutral · suggest (Jobot's pick) · matched · gap · accent (salmon — the
+     one top-match moment) · applied · fresh · viewed · dismissed
+   Max 3 per card. #}
+{% macro chip(label, kind='neutral', icon=none, title=none, class_='') -%}
+<span class="chip chip-{{ kind }} inline-flex items-center gap-1 {{ class_ }}"{% if title %} title="{{ title }}"{% endif %}>
+  {%- if icon %}<i class="ph-thin {{ icon }} i-3"></i>{% endif %}{{ label }}</span>
+{%- endmacro %}
+
+
+{# ── datum ───────────────────────────────────────────────────────
+   A number that means something: label (eyebrow) → value (tabular display
+   numerals) → one line saying what it MEANS. Never four in a row. #}
+{% macro datum(value, label, unit=none, note=none, size='md') -%}
+<div class="space-y-1.5">
+  <div class="text-eyebrow">{{ label }}</div>
+  <div class="{{ 'text-metric' if size == 'lg' else 'text-metric-sm' }}">{{ value }}{% if unit %}<span class="ui-datum-unit">{{ unit }}</span>{% endif %}</div>
+  {%- if note %}<p class="text-sm text-body-muted">{{ note }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{# ── verdict ─────────────────────────────────────────────────────
+   Score ring + the verdict in words. The ring is the app's only chart. #}
+{% macro verdict(verdict_key, score=none, label=none, note=none) -%}
+{%- from "macros/ring.html" import score_ring -%}
+<div class="flex items-center gap-3">
+  {{ score_ring(verdict_key, score) }}
+  {%- if label or note %}
+  <div class="min-w-0">
+    {%- if label %}<div class="font-display font-semibold">{{ label }}</div>{% endif %}
+    {%- if note %}<div class="text-sm text-body-muted">{{ note }}</div>{% endif %}
+  </div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+
+{# ── seg_tabs / utabs ────────────────────────────────────────────
+   items = [(value, label, icon_or_none), …]; model = the Alpine variable
+   holding the current value (must exist in an enclosing x-data).
+   seg_tabs = switch a MODE (grey track + white thumb).
+   utabs    = switch a SECTION (text + green underline). #}
+{% macro seg_tabs(items, model, class_='') -%}
+<div class="seg-tabs {{ class_ }}" role="tablist">
+  {%- for value, label, icon in items %}
+  <button type="button" role="tab" @click="{{ model }} = '{{ value }}'"
+          :aria-selected="{{ model }} === '{{ value }}'"
+          :class="{{ model }} === '{{ value }}' ? 'seg-tab seg-tab--active' : 'seg-tab'" class="seg-tab">
+    {%- if icon %}<i class="ph-thin {{ icon }}"></i>{% endif %}{{ label }}</button>
+  {%- endfor %}
+</div>
+{%- endmacro %}
+
+{% macro utabs(items, model, class_='') -%}
+<div class="utabs {{ class_ }}" role="tablist">
+  {%- for value, label, icon in items %}
+  <button type="button" role="tab" @click="{{ model }} = '{{ value }}'"
+          :aria-selected="{{ model }} === '{{ value }}'"
+          :class="{{ model }} === '{{ value }}' ? 'utab utab--active' : 'utab'" class="utab">
+    {%- if icon %}<i class="ph-thin {{ icon }}"></i>{% endif %}{{ label }}</button>
+  {%- endfor %}
+</div>
+{%- endmacro %}
+
+
+{# ── empty_state ─────────────────────────────────────────────────
+   A written sentence, not an illustration + giant button: what will appear
+   here and how to get it. action = (href, label, icon_or_none). #}
+{% macro empty_state(sentence, hint=none, action=none, icon=none) -%}
+<div class="ui-empty">
+  {%- if icon %}<i class="ph-thin {{ icon }} ui-empty__icon"></i>{% endif %}
+  <p class="ui-empty__sentence">{{ sentence }}</p>
+  {%- if hint %}<p class="text-sm text-body-muted">{{ hint }}</p>{% endif %}
+  {%- if action %}<div class="pt-1">{{ button(action[1], variant='primary', icon=action[2] if action|length > 2 else none, href=action[0]) }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{# ── split_workspace ─────────────────────────────────────────────
+   The email-app list/detail split with independent scroll (ADR-012).
+   The call block is rendered twice: caller('list') and caller('detail').
+     {% call(pane) ui.split_workspace() %}
+       {% if pane == 'list' %}…cards…{% else %}…detail…{% endif %}
+     {% endcall %}
+   min-height:0 on every link is load-bearing — see .workspace-pane. #}
+{% macro split_workspace(class_='') -%}
+<div class="workspace-grid grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-4 {{ class_ }}">
+  <div class="workspace-pane min-w-0">{{ caller('list') }}</div>
+  <div class="workspace-pane min-w-0">{{ caller('detail') }}</div>
+</div>
+{%- endmacro %}

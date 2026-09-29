@@ -1,20 +1,15 @@
 {% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
 {% block title %}{{ _('prep2.new.title') }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
 
 {% block content %}
 <div class="space-y-8" x-data="{ source: null }">
 
-  <div>
-    <a href="/interviews" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1 mb-3">
-      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.new.back') }}
-    </a>
-    <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.new.title') }}</h1>
-    <p class="text-body-muted mt-1">{{ _('prep2.new.subtitle') }}</p>
-  </div>
+  {{ ui.page_header(_('prep2.new.title'), lede=_('prep2.new.subtitle'), back=('/interviews', _('prep2.new.back'))) }}
 
   {% if not has_resume %}
-    <div class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+    <div class="ui-notice">
       {{ _('prep2.new.no_resume') }}
       <a href="/profile" class="text-primary font-medium hover:underline">{{ _('prep2.new.no_resume_cta') }}</a>
     </div>
@@ -55,7 +50,7 @@
   {# ---- from-match: pick an interviewing job ---- #}
   <div id="match-list" x-show="source === 'from_match'" x-cloak class="space-y-3">
     <button type="button" @click="source = null"
-            class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
+            class="ui-back">
       <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.new.change_entry') }}
     </button>
     {% if matches %}
@@ -69,7 +64,7 @@
             <div class="font-medium truncate">{{ m.job_title or '—' }}</div>
             <div class="text-sm text-body-muted truncate">{{ m.job_company }}</div>
           </div>
-          <i class="ph-thin ph-arrow-right text-base-content/40 shrink-0"></i>
+          <i class="ph-thin ph-arrow-right text-subtle shrink-0"></i>
         </button>
         {% endfor %}
       </div>

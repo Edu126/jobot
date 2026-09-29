@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
 {% import "partials/interview_stepper.html" as steps %}
 {% import "partials/readiness.html" as rd %}
 {% block title %}{{ _('prep2.step.feedback') }} · {{ interview.company }}{% endblock %}
@@ -12,13 +13,7 @@
 
   {# header + stepper #}
   <div class="space-y-4">
-    <a href="/interviews/{{ interview.id }}" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
-      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.brief.back') }}
-    </a>
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.feedback.heading') }}</h1>
-      <p class="text-body-muted">{{ interview.role_title or _('prep2.gen.the_role') }} · {{ interview.company }}</p>
-    </div>
+    {{ ui.page_header(_('prep2.feedback.heading'), lede=(interview.role_title or _('prep2.gen.the_role')) ~ ' · ' ~ interview.company, back=('/interviews/' ~ interview.id, _('prep2.brief.back'))) }}
     {{ steps.stepper('feedback', interview.id) }}
   </div>
 
@@ -129,7 +124,7 @@
         </div>
         <p class="text-sm text-body-muted whitespace-pre-wrap">{{ a.transcript or _('prep2.feedback.no_answer') }}</p>
         {% if a.delivery %}
-        <div class="text-xs text-base-content/50 flex flex-wrap gap-3">
+        <div class="text-xs text-subtle flex flex-wrap gap-3">
           <span>{{ a.delivery.seconds }}s</span><span>{{ a.delivery.wpm }} {{ _('prep2.feedback.wpm') }}</span>
           <span>{{ a.delivery.filler_count }} {{ _('prep2.feedback.fillers') }}</span>
           <span>{{ _('prep2.feedback.length_' + a.delivery.length_band) }}</span>

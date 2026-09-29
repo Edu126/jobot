@@ -4,7 +4,7 @@
 >
 > **Status:** v1 · 2026-09-18 · supersedes scattered rules in design memory + CSS comments.
 > **Companion:** [`docs/product/design-system-strategy.md`](docs/product/design-system-strategy.md) (the research + decisions behind this) · [ADR-046 typography](docs/decisions/ADR-046-typography-schibsted-ibmplex.md)
-> **For AI pairs:** before adding any page/partial/component, read §2 (Principles), §4 (Color), §9 (Components). Never introduce a token value not defined here.
+> **For AI pairs:** before adding any page/partial/component, read §2 + §2A (Principles, Editorial doctrine), §7A (Surfaces — tinta, no contorno), §9.0 (the macro kit) and §11. Build with `ui_web/templates/macros/ui.html`; never hand-draw a header, card, notice, button or chip. `scripts/lint_ui.py` (ratchet) fails the build on new hand-drawn UI. Never introduce a token value not defined here.
 
 ---
 
@@ -22,7 +22,7 @@ Two surfaces, two postures:
 
 1. **Accent is punctuation, never a wash.** Green + salmon mark where the eye should go; they are not backgrounds. (Learned the hard way — salmon body-wash was rejected; validated by all three references.)
 2. **Two accents, hard-scoped.** Green = structure/CTAs. Salmon = top-match/celebration only, **≤1 salmon element per view**.
-3. **Depth is earned.** Borders and type do the structural work; shadow is reserved for genuinely floating surfaces. No shadow soup.
+3. **Tinta, no contorno.** Things separate by a warm-grey *fill*, never by an outline drawn around them; type does the rest. Shadow is reserved for genuinely floating surfaces. No shadow soup, no box-in-box. (§7A)
 4. **Type carries hierarchy.** Size · weight · tracking · leading — not background fills, not color, not bold-vs-regular.
 5. **Soft motion.** Restrained, purposeful, `prefers-reduced-motion`-safe. No infinite loops except one loading state.
 6. **Restraint = cohesion.** A tiny fixed set of radii, one shadow family, one color model, repeated everywhere. Predictable because it never breaks.
@@ -41,7 +41,7 @@ Two surfaces, two postures:
 4. **Subtract first.** Every element justifies its existence or dies. Design advances by *removing*, not adding. Accretion across rounds is the failure mode; when in doubt, cut.
 5. **Secondary looks secondary.** Supporting content carries clearly lower weight (size, color, position) and never pretends to be co-equal with the core. A weak side column styled like the main column is a lie about importance.
 6. **The primary action stays in reach.** One primary action per screen, persistent — never buried below a scroll.
-7. **Right component for the datum.** A pill is a 1–2-word tag; long names/phrases do not go in pills. Each datum wears the shape its size and role demand — component misuse reads as amateur instantly. **One content surface:** content blocks use white `.card-quiet` on the `--b2` canvas; primary vs secondary comes from heading size + position, *never* a second box tint (a near-white tint just reads "washed"). Footnotes/caveats are plain muted text, not cards. Three box styles on one screen = the repeat failure.
+7. **Right component for the datum.** A pill is a 1–2-word tag; long names/phrases do not go in pills. Each datum wears the shape its size and role demand — component misuse reads as amateur instantly. **One content surface:** content blocks use `.card-quiet` (grey `--surf-1` field on the white page, §7A); primary vs secondary comes from heading size + position, *never* a second box style. The one exception is `ui.callout` (green tint + rule) for THE answer on a screen — max one per view. Footnotes/caveats are plain muted text, not cards. Three box styles on one screen = the repeat failure.
 8. **Legible measure and contrast.** Reading text ≤ ~70 characters wide; muted ink is for support only — never the main content, never section headings.
 
 **Process rule (people + agents):** every redesign opens by stating the screen's job and proposing *what to cut*, before any visual proposal. A design agent is asked *"what's redundant, and why does this screen exist?"* — never *"give me 3 styling options."* Styling-first briefs produce styling-first bloat.
@@ -192,18 +192,38 @@ No value outside this set. (Migrate job-card 0.6rem→`--r-md`, results-panel 16
 
 ---
 
+## 7A · Surfaces — "tinta, no contorno" (2026-09-28, supersedes the hairline-border default)
+
+Eduardo compared the component-kit artifact (white page; the recommendation = green tint + 3px rule, no border) against the app's components (grey plate, white outlined cards, selected card = dark green border + ring + shadow, every chip/tab/field outlined) → the app read high-contrast and "everything floats". The rule that came out of it:
+
+**Page = pure white. Things separate by a warm-grey FILL, never by an outline. States step greyer. Green is a signal, never a border.**
+
+| Level | Token | Value | Use |
+|---|---|---|---|
+| 0 | `--b1` | white | the page; text sits directly on it |
+| 1 | `--surf-1` | `oklch(var(--n-7) / .035)` | resting cards, notices, chips, secondary buttons |
+| 2 | `--surf-2` | `oklch(var(--n-7) / .06)` | hover; tab track; search field; neutral chips |
+| 3 | `--surf-3` | `oklch(var(--n-7) / .085)` | selected / active — **plus** the 3px green leading bar (`--lead-bar`) |
+| ★ | `ui.callout` | `oklch(var(--p) / .07)` + 3px rule | THE answer / recommendation on a screen — max one per view |
+
+- Alpha over white, so levels stack correctly when nested (a chip inside a card is still one step darker).
+- **Borders:** only a hairline *between* things (list rows, search-bar segments, section rules). Never *around* a card, chip, tab or button. Keep `border: 1px solid transparent` where needed so box sizes don't shift.
+- **Selection** = `--surf-3` + green leading bar. No outline, no ring, no shadow.
+- **Hover** only on things you can act on (links, buttons, `hx-get`, `@click`). A static content card never reacts.
+- **The one resting shadow:** the white thumb of the active `.seg-tab`, because it physically sits on the grey track.
+
 ## 7 · Elevation & depth
 
-Depth is earned. Default is **flat with a hairline border** (`--n-3`). Shadow only on genuinely floating surfaces. Warm/green-tinted, never grey-black.
+Depth is earned. Default is **flat, no border** (§7A). Shadow only on genuinely floating surfaces. Warm/green-tinted, never grey-black.
 
 | Token | Value | Use |
 |---|---|---|
 | `--elev-0` | none | default; hairline border does the work |
-| `--elev-1` | `0 1px 2px oklch(var(--p) / .05)` | resting cards |
-| `--elev-2` | `0 10px 25px -18px oklch(var(--p) / .28)` | hover lift, seg-tab active |
+| `--elev-1` | `0 1px 2px oklch(var(--p) / .05)` | small floating controls (active seg-tab thumb) — **not** resting cards (§7A) |
+| `--elev-2` | `0 10px 25px -18px oklch(var(--p) / .28)` | popovers, typeahead |
 | `--elev-3` | `0 24px 60px -24px oklch(var(--n-7) / .28)` | modals, drawers, overlays |
 
-Rules: never stack beyond one token; never on inline/text elements; selection is shown by a **green leading bar or border**, not a heavier shadow.
+Rules: never stack beyond one token; never on inline/text elements; selection is shown by `--surf-3` + the **green leading bar** — never a border, ring or heavier shadow.
 
 ---
 
@@ -213,12 +233,40 @@ Soft, purposeful, accessible. **Every animation guarded by `@media (prefers-redu
 
 - **Duration tokens:** `--dur-1` 120ms (micro/hover), `--dur-2` 200ms (state change), `--dur-3` 320ms (enter/exit).
 - **Easing tokens:** `--ease-out` `cubic-bezier(.22,.61,.36,1)` (default), `--ease-spring` `cubic-bezier(.34,1.56,.64,1)` (playful — save/heart only, sparingly), `--ease-in-out` (the one loading loop).
-- **Allowed patterns:** one arrival (`cascade`/`detail-in`), one selection (leading-bar grow), one loading loop (the overlay). Hover = `translateY(-1px..-3px)` + `--elev-2`.
+- **Allowed patterns:** one arrival (`cascade`/`detail-in`), one selection (leading-bar grow), one loading loop (the overlay). Hover = one surface step greyer (§7A) — no lift, no shadow.
 - **Banned:** infinite loops on resting UI (`pillBreathe`, `geo-banner-pulse`, `pill-accent` breathe) — retire or make finite/one-shot. No animation without a reduced-motion guard.
 
 ---
 
 ## 9 · Components
+
+### 9.0 The macro kit — `ui_web/templates/macros/ui.html` (2026-09-28)
+
+**Why it exists:** tokens alone didn't hold the style. Every new screen re-drew its header, card, notice and buttons from raw Tailwind (1 macro for 85 templates; 7 `<h1>` variants, 11 `<h2>`, 44 button class strings, 47 hand-built cards, 10 text opacities). The macros are the ONLY sanctioned way to draw these pieces. Change the look in `app.css`, never with utilities at the call site.
+
+```jinja
+{% import "macros/ui.html" as ui %}
+```
+
+| Macro | Signature | Replaces |
+|---|---|---|
+| `page_header` | `(title, lede=None, eyebrow=None, back=(href, label), size='md'\|'lg')` + optional call block for actions | hand-classed `<h1>` + back link + subtitle |
+| `section` | `{% call ui.section(eyebrow, title=None, action=(href,label)) %}` | ad-hoc `<h2>` / `uppercase tracking-*` kickers |
+| `card` | `{% call ui.card(href=None, selected='alpineExpr', pad='sm'\|'md'\|'lg'\|'none', tag='div', attrs={}) %}` | `rounded-xl border border-base-300 bg-base-100 …` |
+| `callout` | `{% call ui.callout(eyebrow=None) %}` | — (Level ★: THE answer, ≤1 per view) |
+| `notice` | `{% call ui.notice(icon=None) %}` | outlined info/warning boxes |
+| `button` | `(label, variant='primary'\|'secondary'\|'ghost'\|'danger'\|'danger-solid', size='sm'\|'md', icon, icon_after, href, type, attrs={})` | 44 `btn …` class strings |
+| `chip` | `(label, kind='neutral'\|'suggest'\|'matched'\|'gap'\|'accent'\|'applied'\|'fresh'\|'viewed'\|'dismissed', icon, title)` | inline-`hsl()` chips |
+| `datum` | `(value, label, unit=None, note=None, size='md'\|'lg')` | stat tiles |
+| `verdict` | `(verdict_key, score=None, label=None, note=None)` | wraps `macros/ring.html` |
+| `seg_tabs` / `utabs` | `(items=[(value,label,icon)], model='alpineVar')` | copy-pasted `:class` ternaries |
+| `empty_state` | `(sentence, hint=None, action=(href,label,icon), icon=None)` | illustration + giant-button empties |
+| `split_workspace` | `{% call(pane) ui.split_workspace() %}` — body rendered for `'list'` and `'detail'` | the ADR-012 grid |
+
+- `attrs` passes hx-*, `@click`, `:class`, `x-show`, `data-*`, `aria-*` straight through — HTMX/Alpine wiring stays at the call site.
+- Text ramp: `text-body-muted` (secondary) · `text-subtle` (meta, hints) · `text-faint` (separators, decorative icons). Never `text-base-content/NN`.
+- Page width comes from `{% block container_class %}` — one of the three in §6.
+- **Lint (ratchet):** `.venv/bin/python scripts/lint_ui.py` — fails on any (file, rule) count above `scripts/lint_ui_baseline.json` (raw colours, text opacities, ad-hoc radius, `text-[..]`, outlined boxes, hand `<h1>`, `btn` without variant). Fix debt → `--update` to lower the baseline. Test: `tests/test_ui_lint.py`.
 
 Inventory of the ~30 existing components with their canonical rules. **Buttons first** — they were the gap that started this.
 
@@ -237,8 +285,8 @@ Retires the one-off **black-background CTA** (map "See my matches" → `.btn-pri
 - **One primary per view, and in job surfaces it is always Tailor.** On job cards + job detail, **Tailor** (✨ magic-wand) is the single green `.btn-primary` — the natural next step after reading a posting. Apply directly / View / Prep / Mark-as-Applied are all `.btn-quiet`. (Fixed 2026-09-19: previously Apply stole the green when a direct-apply URL existed, and the card had two greens.)
 
 ### 9.2 Surfaces & cards
-- `.card-quiet` — white (`--n-0`), 1px `--n-3` border, `--r-lg`, `--elev-1`; hover → `--elev-2`. (Drop the salmon hover border — accent discipline.)
-- `.job-card` — **white card + hairline border, flat (no shadow)** on the open page; hover = green hairline + subtle lift; selected → white + **green border + green ring + `--elev`** and the green **leading bar** (`::before` scaleY). (2026-09-20: the grey grouping panel was removed — cards are no longer muted tiles receding into a container.)
+- `.card-quiet` — `--surf-1` fill, **no border, no shadow**, `--r-lg`; hover (interactive only) → `--surf-2`; `--selected` → `--surf-3` + green leading bar (§7A).
+- `.job-card` — `--surf-1` grey field, no border, no shadow; hover → `--surf-2`; selected → `--surf-3` + the full-height green **leading bar** that grows in (`::before` scaleY). (2026-09-28: dropped the green border + ring + shadow selection — it was the loudest element on screen.)
 - `.results-panel` — **visually removed** (transparent; class kept only for the grid layout). The Top-matches/Saved workspace is open, cards sit directly on the page.
 - `.score-hero`, `.modal-panel`, `.drawer-panel`, `.mobile-detail-sheet`, `.settings-panel`, `.whats-new-panel` — all `--r-lg`, `--elev-3` when floating.
 - `.bene` (marketing) — secondary-palette tint card, `--r-xl`; icon+title in hue ink, body `--n-6`.
@@ -262,7 +310,7 @@ Retires the one-off **black-background CTA** (map "See my matches" → `.btn-pri
 
 ## 10 · Layout & surfaces
 
-- **Page = clean off-white `--b2` (≈98.4% L, near-neutral); cards = white `--n-0`.** The page is a *hair* off the white cards, separated by the `--n-3` hairline border + `--elev-1`. **No background wash/gradient** — the old radial green "cloud" was removed 2026-09-19 (read dirty/uneven); the page is flat and clean. Never reintroduce a full-bleed color wash.
+- **Page = pure white `--b1`; cards = grey `--surf-1` fields on it (§7A).** (Was: off-white page + white outlined cards — superseded 2026-09-25/28; the off-white read "cream", the outlines read high-contrast.) **No background wash/gradient** — the old radial green "cloud" was removed 2026-09-19 (read dirty/uneven); the page is flat and clean. Never reintroduce a full-bleed color wash.
 - **Split viewport** (email-app): `grid lg:grid-cols-2`, list left / detail right; click → `Alpine.store('selectedJob').select(id)` → HTMX loads `/jobs/detail/{id}`.
 - **Dual-scroll** (ADR-012): `app-shell` fixed shell OR bounded block; `min-height:0` on every link in the chain is load-bearing.
 - Generous whitespace: `mb-8` between sections, `mb-4` between related blocks. Never DaisyUI `alert`/`stats`/`tabs-boxed`/`hero`. Emoji only in row-level data, never headings.
@@ -279,6 +327,8 @@ Retires the one-off **black-background CTA** (map "See my matches" → `.btn-pri
 - Keep secondary palette + gradient on marketing surfaces only.
 
 **Don't**
+- A border drawn *around* a card, chip, tab, button or field — separate by fill (§7A). Selection by outline/ring/shadow.
+- Hand-drawn headers, cards, notices, buttons or chips — use `macros/ui.html` (§9.0).
 - Salmon as a background, wash, glow, gradient filler, or button.
 - Raw `hsl()`/hex in a component, or a new radius/shadow value.
 - Ad-hoc text opacities — use the neutral ramp.
@@ -309,5 +359,6 @@ Each item → an ADR/REQ when picked up. Incremental (small safe passes), not a 
 - ✅ #3 Color model — score-badge/score-ring/chip-matched/chip-gap/score-hero-badge/verdict-pill migrated HSL → OKLCH via `--v-strong/stretch/poor-*` tokens (§4.5) (2026-09-20). **Remaining:** inline HSL banners/spinners in jobs.html/jobs_results.html/ring.html (low-visibility status banners) — fine pass.
 - ➕ Also shipped: page bg → clean flat off-white (`--b2` 98.4%), radial green "cloud" wash removed.
 - ⬜ #4 text ramp · #5 radius collapse · #6 elevation · #7 motion tokens (vars defined, not yet wired into existing components) · #8 component inventory.
+- ✅ 2026-09-28 **Composition layer**: `macros/ui.html` (§9.0) + surfaces "tinta, no contorno" (§7A) in app.css (card-quiet, job-card, chips, pills, seg-tabs, btn-quiet, searchbar) + `scripts/lint_ui.py` ratchet. Pilot migrated: Prep/Practice/Stories headers → `ui.page_header`, outlined notices → `.ui-notice`, back links → `.ui-back`, job_card chips off inline HSL. #4 text ramp started (`text-subtle`/`text-faint`). Remaining debt = the lint baseline — lower it screen by screen.
 
 **Verification:** visual/e2e on `jobbotv2-edu` via `verify-on-edu`; unit tests local first. Remember: merging to `main` auto-deploys all 6 user apps — canary on -edu first.

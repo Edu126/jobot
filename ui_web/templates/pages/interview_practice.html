@@ -6,7 +6,7 @@
 {% block content %}
 <div class="space-y-6">
   <div class="space-y-4">
-    <a href="/interviews/{{ interview.id }}/get-ready" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
+    <a href="/interviews/{{ interview.id }}/get-ready" class="ui-back">
       <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.step.get_ready') }}
     </a>
     <div>
@@ -17,7 +17,7 @@
   </div>
 
   <div class="card-quiet p-8 text-center space-y-2">
-    <i class="ph-thin ph-microphone-stage text-3xl text-base-content/40"></i>
+    <i class="ph-thin ph-microphone-stage text-3xl text-subtle"></i>
     <div class="font-medium">{{ _('prep2.practice.soon_title') }}</div>
     <p class="text-sm text-body-muted max-w-sm mx-auto">{{ _('prep2.practice.soon_body') }}</p>
   </div>

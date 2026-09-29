@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
 {% import "partials/interview_stepper.html" as steps %}
 {% block title %}{{ _('prep2.step.practice') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-3xl{% endblock %}
@@ -8,13 +9,7 @@
    layer; this round is written practice.) #}
 <div class="space-y-6">
   <div class="space-y-4">
-    <a href="/interviews/{{ interview.id }}/get-ready" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
-      <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.step.get_ready') }}
-    </a>
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.setup.heading') }}</h1>
-      <p class="text-body-muted mt-1">{{ interview.role_title or _('prep2.gen.the_role') }} · {{ interview.company }}</p>
-    </div>
+    {{ ui.page_header(_('prep2.setup.heading'), lede=(interview.role_title or _('prep2.gen.the_role')) ~ ' · ' ~ interview.company, back=('/interviews/' ~ interview.id ~ '/get-ready', _('prep2.step.get_ready'))) }}
     {{ steps.stepper('practice', interview.id) }}
   </div>
 
@@ -65,7 +60,7 @@
             {% endfor %}
           </select>
           <button type="button" @click="play()" title="{{ _('prep2.setup.voice_preview') }}"
-                  class="btn btn-ghost btn-sm border border-base-300 shrink-0">
+                  class="btn btn-quiet btn-sm shrink-0">
             <i class="ph-thin" :class="sampling ? 'ph-speaker-high animate-pulse' : 'ph-play'"></i>
           </button>
         </div>

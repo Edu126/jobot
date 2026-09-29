@@ -9,7 +9,7 @@
   <h1 class="text-xl font-semibold">{{ _('prep.list.heading') }}</h1>
 
   {% if not has_resume %}
-    <div class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+    <div class="ui-notice">
       {{ _('profile.no_resume') if false else 'Upload a résumé on the Profile tab first.' }}
     </div>
   {% else %}

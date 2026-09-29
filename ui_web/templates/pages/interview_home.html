@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
 {% import "partials/readiness.html" as rd %}
 {% block title %}{{ _('prep2.home.title') }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
@@ -7,27 +8,19 @@
 <div class="space-y-8">
 
   {# ---- header + New Interview ---- #}
-  <div class="flex items-start justify-between gap-3">
-    <div>
-      <h1 class="text-2xl font-semibold tracking-tight">{{ _('prep2.home.heading') }}</h1>
-      <p class="text-body-muted mt-1">{{ _('prep2.home.subtitle') }}</p>
-    </div>
-    {% if any %}
-    <a href="/interviews/new" class="btn btn-primary btn-sm inline-flex items-center gap-1.5 shrink-0">
-      <i class="ph-thin ph-plus"></i>{{ _('prep2.home.new') }}
-    </a>
-    {% endif %}
-  </div>
+  {% call ui.page_header(_('prep2.home.heading'), lede=_('prep2.home.subtitle')) %}
+    {% if any %}{{ ui.button(_('prep2.home.new'), variant='primary', icon='ph-plus', href='/interviews/new') }}{% endif %}
+  {% endcall %}
 
   {% if not has_resume %}
-    <div class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+    <div class="ui-notice">
       {{ _('prep2.new.no_resume') }}
       <a href="/profile" class="text-primary font-medium hover:underline">{{ _('prep2.new.no_resume_cta') }}</a>
     </div>
   {% elif not any %}
     {# empty state — one clear CTA #}
     <div class="card-quiet p-10 text-center space-y-4">
-      <i class="ph-thin ph-confetti text-4xl text-base-content/40"></i>
+      <i class="ph-thin ph-confetti text-4xl text-subtle"></i>
       <div>
         <div class="font-medium">{{ _('prep2.home.empty_title') }}</div>
         <p class="text-sm text-body-muted max-w-sm mx-auto mt-1">{{ _('prep2.home.empty_body') }}</p>

@@ -20,6 +20,25 @@ Mandatory: requirement notes before features, ADRs at the moment of decision.
 Never delete a superseded ADR; write a new one and mark the old
 `Superseded by ADR-YYY`.
 
+## UI work (read before touching any template or app.css)
+
+The style lives in **`design.md`** — it is the authority, not memory and not
+the nearest existing template. Before any UI change read §2 + §2A (principles,
+editorial doctrine), §7A (surfaces: *tinta, no contorno* — white page, grey
+fills, no outlines around things) and §9.0 (the macro kit).
+
+- Build with **`ui_web/templates/macros/ui.html`** (`{% import "macros/ui.html" as ui %}`):
+  `page_header`, `section`, `card`, `callout`, `notice`, `button`, `chip`,
+  `datum`, `verdict`, `seg_tabs`/`utabs`, `empty_state`, `split_workspace`.
+  Never hand-draw a header, card, notice, button or chip from Tailwind utilities.
+- Need something the kit lacks? Add a macro (and its classes in `app.css`,
+  from tokens) and document it in design.md §9.0 — don't inline it once.
+- No raw colours, `text-base-content/NN`, ad-hoc `rounded-*`, `text-[..]` or
+  `border border-base-300` boxes in templates.
+- **Gate:** `.venv/bin/python scripts/lint_ui.py` (ratchet vs
+  `scripts/lint_ui_baseline.json`) and `tests/test_ui_lint.py`. When you pay
+  debt down, run `--update` to lock the lower baseline in.
+
 ## Verification
 
 Visual / end-to-end verification runs on **jobbotv2-edu** (the user's Fly

@@ -34,7 +34,7 @@
          {# Subtle dim on already-viewed cards. Server-rendered — updates
             on next page load, not mid-session (dynamically hiding a card
             the user is currently reading would lose their place). #}
-         style="opacity: 0.72;"
+         data-viewed
          {% endif %}
          :class="$store.selectedJob.id === '{{ job.id }}' ? 'job-card--selected' : ''"
          @click="$store.selectedJob.select('{{ job.id }}')"
@@ -48,15 +48,15 @@
 
   {# Body — right-padded so title never overlaps the score ring. #}
   <div class="pr-12">
-    <h3 class="text-[0.95rem] font-semibold tracking-tight leading-snug line-clamp-2">{{ job.title }}</h3>
+    <h3 class="job-card__title line-clamp-2">{{ job.title }}</h3>
     <div class="text-sm text-body-muted mt-0.5">
-      <span class="font-medium text-base-content/80">{{ job.company }}</span>
-      <span class="text-base-content/30 mx-1">·</span>{{ job.location or '?' }}
-      <span class="text-base-content/30 mx-1">·</span>{{ job.site }}
+      <span class="font-medium text-base-content">{{ job.company }}</span>
+      <span class="ui-sep">·</span>{{ job.location or '?' }}
+      <span class="ui-sep">·</span>{{ job.site }}
       {# REQ-033: date_posted is now always set at ingest (fetch date fallback in search.py).
          Legacy cached jobs (pre-REQ-033) may still have an empty date_posted — show '?'
          rather than the frozen "≤24h" label that never aged. #}
-      <span class="text-base-content/30 mx-1">·</span>{{ job.date_posted or '?' }}
+      <span class="ui-sep">·</span>{{ job.date_posted or '?' }}
     </div>
     {# Requirement + source pills.
 
@@ -69,8 +69,7 @@
       {% if job._is_applied %}
       {# Green + filled check = "you tracked this one." Replaces
          New/Viewed since those are irrelevant once you've applied. #}
-      <span class="chip inline-flex items-center gap-1"
-            style="background: oklch(var(--su) / 0.14); border-color: oklch(var(--su) / 0.42); color: oklch(var(--su));">
+      <span class="chip chip-applied inline-flex items-center gap-1">
         <i class="ph-fill ph-paper-plane-tilt i-3"></i>{{ _('action.applied') }}
       </span>
       {% else %}
@@ -78,8 +77,7 @@
         {# Different from the 48h "New" chip: this one flags jobs that
            came from the user's most recent Expand pass — persists only
            until the next expand. #}
-        <span class="chip inline-flex items-center gap-1"
-              style="background: hsl(140 40% 96%); border-color: hsl(140 30% 82%); color: hsl(140 50% 25%);"
+        <span class="chip chip-fresh inline-flex items-center gap-1"
               title="Added by your last Expand search">
           <i class="ph-thin ph-arrows-out i-3"></i>{{ _('chip.fresh') }}
         </span>
@@ -88,20 +86,18 @@
            isn't "new" to you anymore, so Viewed wins and we suppress New. #}
         {% if job._is_new and not job._is_viewed %}
         <span class="chip chip-accent inline-flex items-center gap-1.5" title="First seen in the last 48 hours">
-          <span class="inline-block w-1.5 h-1.5 rounded-full" style="background: currentColor;"></span>{{ _('chip.new') }}
+          <span class="chip-dot"></span>{{ _('chip.new') }}
         </span>
         {% endif %}
         {% if job._is_viewed %}
-        <span class="chip inline-flex items-center gap-1 text-base-content/50"
-              style="background: hsl(0 0% 96%); border-color: hsl(0 0% 88%);"
+        <span class="chip chip-viewed inline-flex items-center gap-1"
               title="You spent time reading this before">
           <i class="ph-thin ph-eye i-3"></i>{{ _('chip.viewed') }}
         </span>
         {% endif %}
       {% endif %}
       {% if job._is_dismissed %}
-      <span class="chip inline-flex items-center gap-1"
-            style="background: hsl(0 40% 96%); border-color: hsl(0 30% 88%); color: hsl(0 50% 45%);"
+      <span class="chip chip-dismissed inline-flex items-center gap-1"
             title="You dismissed this — swipe again or toggle 'Show dismissed' to restore">
         <i class="ph-thin ph-x-circle i-3"></i>{{ _('chip.dismissed') }}
       </span>
@@ -163,7 +159,7 @@
          on results HTML). Uses hx-select to pull just the JD block out
          of the shared job_detail partial. First click loads + hides
          the button. Desktop path unchanged — sidebar detail pane owns it. #}
-      <button class="text-xs text-base-content/50 hover:text-base-content ml-auto cursor-pointer inline-flex items-center px-3"
+      <button class="text-xs text-subtle hover:text-base-content ml-auto cursor-pointer inline-flex items-center px-3"
               style="min-height: 44px;"
               hx-get="/jobs/detail/{{ job.id }}"
               hx-select=".jd-body"
