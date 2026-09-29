@@ -31,6 +31,23 @@ Two surfaces, two postures:
 
 ---
 
+## 2A · Editorial doctrine — what earns a place (information design)
+
+§2 governs *how it looks*. This governs *what earns a place, and with what weight* — the half that, missing, let competent styling paper over unresolved information architecture (the "looks like a student made it" failure). Same tier as §2; these are laws.
+
+1. **One job per screen.** Before designing, state the screen's job in one sentence and its single primary action. Anything that doesn't serve that job is cut. (Brief's job: *"in 10s know where you stand for this interview; then go practice."*)
+2. **Answer first, evidence below.** A screen opens with the at-a-glance *answer* to its job; the detail that justifies it comes under.
+3. **A summary synthesizes; it never echoes.** The top layer must *compute* something the detail doesn't give at a glance — a verdict, the single gap, a distribution. If it shares the same tokens as a layer below (same names, bands, words), it is failing → rebuild or delete it. (Learned the hard way — the Brief showed the same four competencies as oversized chips *and* as cards; the echo read as noise.)
+4. **Subtract first.** Every element justifies its existence or dies. Design advances by *removing*, not adding. Accretion across rounds is the failure mode; when in doubt, cut.
+5. **Secondary looks secondary.** Supporting content carries clearly lower weight (size, color, position) and never pretends to be co-equal with the core. A weak side column styled like the main column is a lie about importance.
+6. **The primary action stays in reach.** One primary action per screen, persistent — never buried below a scroll.
+7. **Right component for the datum.** A pill is a 1–2-word tag; long names/phrases do not go in pills. Each datum wears the shape its size and role demand — component misuse reads as amateur instantly. **One content surface:** content blocks use white `.card-quiet` on the `--b2` canvas; primary vs secondary comes from heading size + position, *never* a second box tint (a near-white tint just reads "washed"). Footnotes/caveats are plain muted text, not cards. Three box styles on one screen = the repeat failure.
+8. **Legible measure and contrast.** Reading text ≤ ~70 characters wide; muted ink is for support only — never the main content, never section headings.
+
+**Process rule (people + agents):** every redesign opens by stating the screen's job and proposing *what to cut*, before any visual proposal. A design agent is asked *"what's redundant, and why does this screen exist?"* — never *"give me 3 styling options."* Styling-first briefs produce styling-first bloat.
+
+---
+
 ## 3 · Audit summary (health → target)
 
 Rated against this backbone. 🟢 healthy · 🟡 drift · 🔴 debt. Actions tracked in §12.
@@ -47,9 +64,10 @@ Rated against this backbone. 🟢 healthy · 🟡 drift · 🔴 debt. Actions tr
 | **Motion** | 11 keyframes, several infinite, ad-hoc timings | Duration/easing tokens; no infinite loops (§8) | 🟡→🔴 | P2 |
 | **Text tint** | Scattered opacities (/0.72, /0.6, /0.55…) | 4-step neutral ramp (§4.4) | 🔴 | P2 |
 | **Buttons** | No `.btn-*` system; one-off black CTA | Variant set (§9.1) | 🔴 | P1 |
+| **Information architecture** | Additive rounds; summary echoes detail; pills misused for long names | One job/screen; synthesize-don't-echo; subtract (§2A) | 🔴 | P1 |
 | **Governance** | Rules in CSS comments + memory | This doc + component inventory (§9) | 🟢 now | — |
 
-**One-line diagnosis:** *typography is already reference-grade; everything else needs restraint + a single source of truth. This doc is that source; §12 is the paydown plan.*
+**One-line diagnosis:** *typography is already reference-grade; everything else needs restraint + a single source of truth. This doc is that source; §12 is the paydown plan. The doc was also missing an editorial half (§2A) — styling can't fix unresolved information architecture, which is why the same "student-made" problem recurred across rounds.*
 
 ---
 

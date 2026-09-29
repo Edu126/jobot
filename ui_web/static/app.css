@@ -294,7 +294,7 @@ h4 {
    sections). Update the eyebrow rule to restyle them all. */
 
 .text-body-muted {
-  color: oklch(var(--bc) / 0.6);
+  color: oklch(var(--bc) / 0.72);
 }
 
 /* ─────────────────────────────────────────────────────────────

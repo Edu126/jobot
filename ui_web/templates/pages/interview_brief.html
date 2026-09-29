@@ -5,10 +5,35 @@
 
 {% set band_pill = {'strong': 'pill-success', 'solid': 'pill-info', 'needs_work': 'pill-warn'} %}
 
-{% block content %}
-<div class="space-y-6" x-data="{ showJd: false }">
+{# competency evidence card — one datum, one place (design §2A.3). Reused across
+   the band-ordered loops so the weakest bands surface first (prep priority). #}
+{% macro comp_card(c) %}
+<div class="card-quiet p-4">
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h4>{{ c.name }}</h4>
+      {% if c.what_good_looks_like %}
+        <p class="text-sm text-body-muted mt-0.5">{{ c.what_good_looks_like }}</p>
+      {% endif %}
+    </div>
+    <span class="pill {{ band_pill.get(c.resume_match, 'pill-neutral') }} text-xs shrink-0">
+      {{ _('prep2.band.' + c.resume_match) }}
+    </span>
+  </div>
+  {% if c.evidence %}
+    <p class="text-xs text-base-content/60 mt-2 pl-3 border-l-2 border-base-300">{{ c.evidence }}</p>
+  {% endif %}
+</div>
+{% endmacro %}
 
-  {# ---- header + the ONE stepper ---- #}
+{% block content %}
+{# ── Editorial Brief (design §1 identity + §2A). Magazine/docs grid: section
+   labels ride a LEFT RAIL, content fills the wide right column — the width is
+   USED, not left empty. Rules span full-width; type carries hierarchy; the
+   answer is the headline; boxes only where content earns a surface. ── #}
+<div x-data="{ showJd: false }">
+
+  {# ---- masthead: role + stepper (full width) ---- #}
   <div class="space-y-4">
     <a href="/interviews" class="text-sm text-base-content/50 hover:text-base-content inline-flex items-center gap-1">
       <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.brief.back') }}
@@ -20,130 +45,131 @@
     {{ steps.stepper('brief', interview.id) }}
   </div>
 
-  {# ---- round card ---- #}
-  <div class="card-quiet p-4">
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-      <span class="inline-flex items-center gap-1.5">
-        <i class="ph-thin ph-medal text-base-content/50"></i>
-        {{ _('prep2.round.' + (interview.round_type or 'screening')) }}
-      </span>
-      <span class="inline-flex items-center gap-1.5 text-body-muted">
-        <i class="ph-thin ph-clock"></i>{{ interview.round_length_min or 45 }} {{ _('prep2.form.minutes') }}
-      </span>
-      {% if interview.interviewer_title %}
-      <span class="inline-flex items-center gap-1.5 text-body-muted">
-        <i class="ph-thin ph-user"></i>{{ interview.interviewer_title }}
-      </span>
-      {% endif %}
-      {% if interview.interview_at %}
-      <span class="inline-flex items-center gap-1.5 text-body-muted">
-        <i class="ph-thin ph-calendar-blank"></i>{{ interview.interview_at | replace('T', ' · ') }}
-      </span>
-      {% endif %}
+  {# ============================================================
+     THE HEADLINE (§2A.2 answer-first). Left rail = the round facts;
+     right column = the verdict as editorial display type (§2A.3:
+     names the gap, not the four), lede, and the action (§2A.6).
+     ============================================================ #}
+  {% set ns = namespace(strong=0, solid=0, needs=0) %}
+  {% for c in brief.competencies %}
+    {% if c.resume_match == 'strong' %}{% set ns.strong = ns.strong + 1 %}
+    {% elif c.resume_match == 'solid' %}{% set ns.solid = ns.solid + 1 %}
+    {% elif c.resume_match == 'needs_work' %}{% set ns.needs = ns.needs + 1 %}{% endif %}
+  {% endfor %}
+  <div class="mt-10 grid md:grid-cols-4 gap-x-8 gap-y-4">
+    <div class="md:col-span-1 space-y-1.5 text-sm text-body-muted">
+      <div class="inline-flex items-center gap-1.5"><i class="ph-thin ph-medal text-base-content/50"></i>{{ _('prep2.round.' + (interview.round_type or 'screening')) }}</div>
+      <div class="inline-flex items-center gap-1.5"><i class="ph-thin ph-clock"></i>{{ interview.round_length_min or 45 }} {{ _('prep2.form.minutes') }}</div>
+      {% if interview.interviewer_title %}<div class="inline-flex items-center gap-1.5"><i class="ph-thin ph-user"></i>{{ interview.interviewer_title }}</div>{% endif %}
+      {% if interview.interview_at %}<div class="inline-flex items-center gap-1.5"><i class="ph-thin ph-calendar-blank"></i>{{ interview.interview_at | replace('T', ' · ') }}</div>{% endif %}
     </div>
-    {% if brief.role_summary %}
-      <p class="text-sm mt-3 leading-relaxed">{{ brief.role_summary }}</p>
-    {% endif %}
+    <div class="md:col-span-3 space-y-5">
+      {% if brief.competencies %}
+      <p class="font-display text-2xl sm:text-3xl font-semibold leading-tight tracking-tight">
+        {% if ns.needs == 0 %}
+          {{ _('prep2.brief.verdict_solid') }}
+        {% else %}
+          {% if ns.strong + ns.solid == 0 %}{{ _('prep2.brief.verdict_focus') }}
+          {% elif ns.needs == 1 %}{{ _('prep2.brief.verdict_gap_one') }}
+          {% else %}{{ _('prep2.brief.verdict_gap_many') }}{% endif %}
+          <span class="text-primary">{% for c in brief.competencies if c.resume_match == 'needs_work' %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>.
+        {% endif %}
+      </p>
+      {% endif %}
+      {% if brief.role_summary %}
+        <p class="text-body-muted leading-relaxed max-w-2xl">{{ brief.role_summary }}</p>
+      {% endif %}
+      <div>
+        <a href="/interviews/{{ interview.id }}/get-ready" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
+          {{ _('prep2.brief.continue') }}<i class="ph-thin ph-arrow-right"></i>
+        </a>
+      </div>
+    </div>
   </div>
 
-  {# ---- interviewer lens (neutral, never red) ---- #}
-  {% if brief.interviewer_lens %}
-  <section class="rounded-xl border border-base-300 bg-base-200/40 p-4">
-    <h2 class="text-label mb-2">{{ _('prep2.brief.lens') }}</h2>
-    <ul class="space-y-1.5">
-      {% for point in brief.interviewer_lens %}
-      <li class="flex items-start gap-2 text-sm">
-        <i class="ph-thin ph-eye text-base-content/40 mt-0.5 shrink-0"></i><span>{{ point }}</span>
-      </li>
+  {# ---- Before this interview — the DO layer (§2A.1). Label rail + actions. ---- #}
+  {% if brief.gaps %}
+  <section class="mt-10 pt-8 border-t border-base-300 grid md:grid-cols-4 gap-x-8 gap-y-4">
+    <div class="md:col-span-1">
+      <h2 class="text-title">{{ _('prep2.brief.before') }}</h2>
+    </div>
+    <div class="md:col-span-3 space-y-3">
+      {% for g in brief.gaps %}
+      <div class="flex items-start gap-3">
+        <i class="ph-thin ph-arrow-bend-down-right text-primary mt-1 shrink-0"></i>
+        <div>
+          <div class="font-medium">{{ g.action or g.gap }}</div>
+          {% if g.action and g.gap %}<div class="text-sm text-body-muted mt-0.5">{{ g.gap }}</div>{% endif %}
+        </div>
+      </div>
       {% endfor %}
-    </ul>
+    </div>
   </section>
   {% endif %}
 
-  {# ---- company snapshot (with source links) ---- #}
-  <section>
-    <h2 class="text-title mb-3">{{ _('prep2.brief.company') }}</h2>
-    {% if brief.company_snapshot %}
-      <ul class="space-y-2">
-        {% for point in brief.company_snapshot %}
-        <li class="flex items-start gap-2 text-sm">
-          <i class="ph-thin ph-buildings text-base-content/40 mt-0.5 shrink-0"></i>
-          <span>{{ point.point }}
-            {% if point.source_url %}
-              <a href="{{ point.source_url }}" target="_blank" rel="noopener"
-                 class="text-primary hover:underline inline-flex items-center gap-0.5 ml-1 text-xs">
-                {{ _('prep2.brief.source') }}<i class="ph-thin ph-arrow-up-right"></i>
-              </a>
-            {% endif %}
-          </span>
-        </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="text-sm text-body-muted">{{ _('prep2.brief.no_research') }}</p>
-    {% endif %}
+  {# ---- Your evidence — the core (§2A.2). Weakest band first; shown ONCE. ---- #}
+  {% if brief.competencies %}
+  <section class="mt-10 pt-8 border-t border-base-300 grid md:grid-cols-4 gap-x-8 gap-y-4">
+    <div class="md:col-span-1">
+      <h2 class="text-title">{{ _('prep2.brief.about_you') }}</h2>
+      <p class="text-sm text-body-muted mt-1">{{ _('prep2.brief.about_you_sub') }}</p>
+    </div>
+    <div class="md:col-span-3 grid sm:grid-cols-2 gap-3">
+      {% for band in ['needs_work', 'solid', 'strong'] %}
+        {% for c in brief.competencies if c.resume_match == band %}{{ comp_card(c) }}{% endfor %}
+      {% endfor %}
+      {% for c in brief.competencies if c.resume_match not in ['needs_work', 'solid', 'strong'] %}{{ comp_card(c) }}{% endfor %}
+    </div>
   </section>
+  {% endif %}
 
-  {# ---- competencies + evidence bands ---- #}
-  <section>
-    <h2 class="text-title mb-3">{{ _('prep2.brief.competencies') }}</h2>
-    <div class="space-y-2">
-      {% for c in brief.competencies %}
-      <div class="card-quiet p-4">
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="font-medium">{{ c.name }}</div>
-            {% if c.what_good_looks_like %}
-              <div class="text-sm text-body-muted mt-0.5">{{ c.what_good_looks_like }}</div>
-            {% endif %}
-          </div>
-          <span class="pill {{ band_pill.get(c.resume_match, 'pill-neutral') }} text-xs shrink-0">
-            {{ _('prep2.band.' + c.resume_match) }}
-          </span>
-        </div>
-        {% if c.evidence %}
-          <p class="text-xs text-base-content/60 mt-2 pl-3 border-l-2 border-base-300">{{ c.evidence }}</p>
+  {# ---- The interview — secondary (§2A.5): lighter h3 label, lens + company. ---- #}
+  <section class="mt-10 pt-8 border-t border-base-300 grid md:grid-cols-4 gap-x-8 gap-y-4">
+    <div class="md:col-span-1">
+      <h3>{{ _('prep2.brief.about_interview') }}</h3>
+    </div>
+    <div class="md:col-span-3 grid sm:grid-cols-2 gap-x-8 gap-y-5">
+      {% if brief.interviewer_lens %}
+      <div>
+        <h4 class="flex items-center gap-1.5 mb-2"><i class="ph-thin ph-eye text-base-content/50"></i>{{ _('prep2.brief.lens') }}</h4>
+        <ul class="space-y-1.5 text-sm">
+          {% for point in brief.interviewer_lens %}
+          <li class="flex gap-2"><span class="text-base-content/30 shrink-0">•</span><span>{{ point }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      <div>
+        <h4 class="flex items-center gap-1.5 mb-2"><i class="ph-thin ph-buildings text-base-content/50"></i>{{ _('prep2.brief.company') }}</h4>
+        {% if brief.company_snapshot %}
+          <ul class="space-y-2 text-sm">
+            {% for point in brief.company_snapshot %}
+            <li class="flex gap-2"><span class="text-base-content/30 shrink-0">•</span><span>{{ point.point }}{% if point.source_url %} <a href="{{ point.source_url }}" target="_blank" rel="noopener" class="text-primary hover:underline inline-flex items-center gap-0.5 ml-1 text-xs">{{ _('prep2.brief.source') }}<i class="ph-thin ph-arrow-up-right"></i></a>{% endif %}</span></li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-sm text-body-muted">{{ _('prep2.brief.no_research') }}</p>
         {% endif %}
       </div>
-      {% endfor %}
     </div>
   </section>
 
-  {# ---- gaps + actions ---- #}
-  {% if brief.gaps %}
-  <section>
-    <h2 class="text-title mb-3">{{ _('prep2.brief.gaps') }}</h2>
-    <div class="space-y-2">
-      {% for g in brief.gaps %}
-      <div class="rounded-xl border border-base-300 bg-base-100 p-4 flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="text-sm">{{ g.gap }}</div>
-          <div class="text-xs text-primary mt-1 inline-flex items-center gap-1">
-            <i class="ph-thin ph-arrow-bend-down-right"></i>{{ g.action }}
-          </div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-
-  {# ---- friction points (lighter) ---- #}
+  {# ---- Watch-outs — secondary (§2A.5): a real ruled section, never floating. ---- #}
   {% if brief.friction_points %}
-  <section class="rounded-xl bg-base-200/40 p-4">
-    <h2 class="text-label mb-2">{{ _('prep2.brief.friction') }}</h2>
-    <ul class="space-y-1.5">
+  <section class="mt-10 pt-8 border-t border-base-300 grid md:grid-cols-4 gap-x-8 gap-y-4">
+    <div class="md:col-span-1">
+      <h3>{{ _('prep2.brief.friction') }}</h3>
+    </div>
+    <ul class="md:col-span-3 space-y-2">
       {% for f in brief.friction_points %}
-      <li class="flex items-start gap-2 text-sm text-body-muted">
-        <i class="ph-thin ph-warning text-base-content/40 mt-0.5 shrink-0"></i><span>{{ f }}</span>
-      </li>
+      <li class="flex items-start gap-2 text-sm text-body-muted"><i class="ph-thin ph-warning text-base-content/40 mt-0.5 shrink-0"></i><span>{{ f }}</span></li>
       {% endfor %}
     </ul>
   </section>
   {% endif %}
 
-  {# ---- footer: view JD (secondary) + continue (primary) ---- #}
-  <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-base-300">
+  {# ---- footer: view JD / posting (secondary) + continue (repeat) ---- #}
+  <div class="mt-10 pt-8 border-t border-base-300 flex flex-wrap items-center justify-between gap-3">
     <div class="flex items-center gap-3">
       {% if interview.jd_text %}
         <button type="button" @click="showJd = !showJd"
@@ -166,7 +192,7 @@
   {# collapsible JD #}
   {% if interview.jd_text %}
   <div x-show="showJd" x-cloak x-collapse
-       class="rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-body-muted whitespace-pre-wrap leading-relaxed">{{ interview.jd_text }}</div>
+       class="mt-4 rounded-xl border border-base-300 bg-base-100 p-4 text-sm text-body-muted whitespace-pre-wrap leading-relaxed">{{ interview.jd_text }}</div>
   {% endif %}
 
 </div>
