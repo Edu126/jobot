@@ -16,10 +16,6 @@
   "raw-color": 2,
   "text-opacity": 1
  },
- "pages/interview_brief.html": {
-  "adhoc-radius": 1,
-  "outlined-box": 1
- },
  "pages/interview_generating.html": {
   "hand-h1": 1,
   "raw-color": 1,
@@ -170,12 +166,6 @@
  "partials/interview_form.html": {
   "adhoc-radius": 8,
   "outlined-box": 8
- },
- "partials/interview_stepper.html": {
-  "adhoc-fill": 1,
-  "arbitrary-size": 1,
-  "outlined-box": 1,
-  "text-opacity": 3
  },
  "partials/job_detail.html": {
   "text-opacity": 3

@@ -8,26 +8,28 @@
                 ('practice', _('prep2.step.practice')), ('feedback', _('prep2.step.feedback'))] %}
 {% set order = ['brief', 'get_ready', 'practice', 'feedback'] %}
 {% set cur_i = order.index(current) %}
-<nav class="flex items-center gap-2 text-sm" aria-label="{{ _('prep2.step.aria') }}">
+{# Steps link when we know the interview (iid) — the stepper IS the top-of-page
+   navigation, so pages keep ONE primary CTA (at the end of the read) instead of
+   repeating it up here (Eduardo 2026-09-29). Feedback needs a session id, so it
+   stays plain text. #}
+{% set hrefs = {'brief': '/interviews/%s' % iid, 'get_ready': '/interviews/%s/get-ready' % iid,
+                'practice': '/interviews/%s/practice' % iid} if iid else {} %}
+<nav class="flex flex-wrap items-center gap-2 text-sm" aria-label="{{ _('prep2.step.aria') }}">
   {% for key, label in steps %}
     {% set i = loop.index0 %}
     {% set state = 'done' if i < cur_i else ('current' if i == cur_i else 'upcoming') %}
+    {% set href = hrefs.get(key) if state != 'current' else none %}
     <div class="flex items-center gap-2">
-      <span class="inline-flex items-center gap-1.5
-                   {% if state == 'current' %}font-semibold text-primary
-                   {% elif state == 'done' %}text-base-content/70
-                   {% else %}text-base-content/40{% endif %}">
-        <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs
-                     {% if state == 'current' %}bg-primary text-primary-content
-                     {% elif state == 'done' %}bg-base-300 text-base-content/70
-                     {% else %}border border-base-300{% endif %}">
-          {% if state == 'done' %}<i class="ph-bold ph-check text-[0.7rem]"></i>{% else %}{{ i + 1 }}{% endif %}
+      {% if href %}<a href="{{ href }}" class="stepper-step stepper-step--{{ state }}">
+      {%- else %}<span class="stepper-step stepper-step--{{ state }}"{% if state == 'current' %} aria-current="step"{% endif %}>{% endif %}
+        <span class="stepper-dot">
+          {% if state == 'done' %}<i class="ph-bold ph-check"></i>{% else %}{{ i + 1 }}{% endif %}
         </span>
         {{ label }}
-      </span>
+      {% if href %}</a>{% else %}</span>{% endif %}
     </div>
     {% if not loop.last %}
-      <span class="w-6 h-px {% if i < cur_i %}bg-base-300{% else %}bg-base-200{% endif %}"></span>
+      <span class="stepper-line{% if i < cur_i %} stepper-line--done{% endif %}"></span>
     {% endif %}
   {% endfor %}
 </nav>

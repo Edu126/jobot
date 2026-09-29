@@ -22,7 +22,7 @@ Two surfaces, two postures:
 
 1. **Accent is punctuation, never a wash.** Green + salmon mark where the eye should go; they are not backgrounds. (Learned the hard way — salmon body-wash was rejected; validated by all three references.)
 2. **Two accents, hard-scoped.** Green = structure/CTAs. Salmon = top-match/celebration only, **≤1 salmon element per view**.
-3. **Tinta, no contorno.** Things separate by a warm-grey *fill*, never by an outline drawn around them; type does the rest. Shadow is reserved for genuinely floating surfaces. No shadow soup, no box-in-box. (§7A)
+3. **Light boxes, dark ink.** A box is white + a light hairline; grey fills only for small parts inside it; depth appears on hover. Shadow otherwise only on genuinely floating surfaces. No shadow soup, no box-in-box, no grey plates. (§7A)
 4. **Type carries hierarchy.** Size · weight · tracking · leading — not background fills, not color, not bold-vs-regular.
 5. **Soft motion.** Restrained, purposeful, `prefers-reduced-motion`-safe. No infinite loops except one loading state.
 6. **Restraint = cohesion.** A tiny fixed set of radii, one shadow family, one color model, repeated everywhere. Predictable because it never breaks.
@@ -41,7 +41,7 @@ Two surfaces, two postures:
 4. **Subtract first.** Every element justifies its existence or dies. Design advances by *removing*, not adding. Accretion across rounds is the failure mode; when in doubt, cut.
 5. **Secondary looks secondary.** Supporting content carries clearly lower weight (size, color, position) and never pretends to be co-equal with the core. A weak side column styled like the main column is a lie about importance.
 6. **The primary action stays in reach.** One primary action per screen, persistent — never buried below a scroll.
-7. **Right component for the datum.** A pill is a 1–2-word tag; long names/phrases do not go in pills. Each datum wears the shape its size and role demand — component misuse reads as amateur instantly. **One content surface:** content blocks use `.card-quiet` (grey `--surf-1` field on the white page, §7A); primary vs secondary comes from heading size + position, *never* a second box style. The one exception is `ui.callout` (green tint + rule) for THE answer on a screen — max one per view. Footnotes/caveats are plain muted text, not cards. Three box styles on one screen = the repeat failure.
+7. **Right component for the datum.** A pill is a 1–2-word tag; long names/phrases do not go in pills. Each datum wears the shape its size and role demand — component misuse reads as amateur instantly. **One content surface:** content blocks use `.card-quiet` (white + light hairline on the white page, §7A); primary vs secondary comes from heading size + position, *never* a second box style. The one exception is `ui.callout` (green tint + rule) for THE answer on a screen — max one per view. Footnotes/caveats are plain muted text, not cards. Three box styles on one screen = the repeat failure.
 8. **Legible measure and contrast.** Reading text ≤ ~70 characters wide; muted ink is for support only — never the main content, never section headings.
 
 **Process rule (people + agents):** every redesign opens by stating the screen's job and proposing *what to cut*, before any visual proposal. A design agent is asked *"what's redundant, and why does this screen exist?"* — never *"give me 3 styling options."* Styling-first briefs produce styling-first bloat.
@@ -192,26 +192,28 @@ No value outside this set. (Migrate job-card 0.6rem→`--r-md`, results-panel 16
 
 ---
 
-## 7A · Surfaces — "tinta, no contorno" (2026-09-28, supersedes the hairline-border default)
+## 7A · Surfaces — boxes, fills and ink (rev. 2026-09-29)
 
-Eduardo compared the component-kit artifact (white page; the recommendation = green tint + 3px rule, no border) against the app's components (grey plate, white outlined cards, selected card = dark green border + ring + shadow, every chip/tab/field outlined) → the app read high-contrast and "everything floats". The rule that came out of it:
+**History.** 2026-09-28: the app's components read high-contrast and "everything floats" (grey plate + white outlined cards + a selected card with dark border + ring + shadow). First fix, "tinta, no contorno" (every surface a grey fill), was rejected the next day on the live Brief: **grey text on grey cards across a whole section reads washed**, and the grey page (a `bg-base-200` on `<body>`, see below) made it worse. Eduardo's reference was the component-kit artifact: white page, white boxes with a *light* hairline, grey only in a small part inside the box (the code block), dark text everywhere.
 
-**Page = pure white. Things separate by a warm-grey FILL, never by an outline. States step greyer. Green is a signal, never a border.**
+**The rule:**
 
-| Level | Token | Value | Use |
-|---|---|---|---|
-| 0 | `--b1` | white | the page; text sits directly on it |
-| 1 | `--surf-1` | `oklch(var(--n-7) / .035)` | resting cards, notices, chips, secondary buttons |
-| 2 | `--surf-2` | `oklch(var(--n-7) / .06)` | hover; tab track; search field; neutral chips |
-| 3 | `--surf-3` | `oklch(var(--n-7) / .085)` | selected / active — **plus** the 3px green leading bar (`--lead-bar`) |
-| ★ | `ui.callout` | `oklch(var(--p) / .07)` + 3px rule | THE answer / recommendation on a screen — max one per view |
+| Role | Look | Tokens |
+|---|---|---|
+| Page | pure white, owned by `app.css` only | `body` → `--b1` |
+| **Box** (card, panel, search field, JD) | white + light hairline, no resting shadow | `.card-quiet` / `.job-card`: `--b1` + `1px var(--hair)` |
+| Box **hover** (interactive only) | depth: hairline one step darker + soft shadow + 1px lift | `--hair-strong`, `--lift` |
+| Box **selected** | green border + faint green ring, flat | `oklch(var(--p))` + `0 0 0 1px oklch(var(--p)/.2)`; job-card also grows the green leading bar |
+| **Small grey part** (chip, inset, tab track, secondary button, notice) | grey fill, **dark text** | `--surf-1/2/3`, `.ui-inset`, `.ui-notice` |
+| THE answer on a screen | green tint + 3px rule, ≤1 per view | `ui.callout` |
 
-- Alpha over white, so levels stack correctly when nested (a chip inside a card is still one step darker).
-- **The page background is owned by `app.css` (`body` → `--b1`) and nothing else.** No `bg-*` utility on `<body>`/`<main>` — a `bg-base-200` on `<body>` since the initial commit silently beat the CSS, so the "white page" of 2026-09-25 never shipped and every grey surface sat on grey (found 2026-09-28). Lint rule `page-bg` forbids it; `adhoc-fill` flags hand-made `bg-base-200/NN` boxes.
-- **Borders:** only a hairline *between* things (list rows, search-bar segments, section rules). Never *around* a card, chip, tab or button. Keep `border: 1px solid transparent` where needed so box sizes don't shift.
-- **Selection** = `--surf-3` + green leading bar. No outline, no ring, no shadow.
-- **Hover** only on things you can act on (links, buttons, `hx-get`, `@click`). A static content card never reacts.
-- **The one resting shadow:** the white thumb of the active `.seg-tab`, because it physically sits on the grey track.
+- **Grey fills are for small parts, never a whole section.** If a grey block holds more than a few lines of reading text, it should be a white box.
+- **Ink:** reading text (paragraphs, lists, card bodies) = full ink `text-base-content`. `text-body-muted` (≈33% L) is for secondary lines only (sub-lines, meta); `text-subtle` for one-line meta/hints; `text-faint` for separators and decorative icons. Muted ink is never the main content (§2A.8).
+- **The page background is owned by `app.css` (`body` → `--b1`) and nothing else.** No `bg-*` utility on `<body>`/`<main>` — a `bg-base-200` on `<body>` since the initial commit silently beat the CSS, so the "white page" of 2026-09-25 never shipped (found 2026-09-28). Lint rule `page-bg` forbids it; `adhoc-fill` flags hand-made `bg-base-200/NN` boxes.
+
+**Two-column editorial rows (Brief pattern).** Left = the section label (one style for every section, `.brief-label`), **sticky** so the rail never reads empty while the right column scrolls; right = content at a readable measure. Metadata (company, round, interviewer, date) rides the page-header lede — never a content column. **Never invent a default** (the old `or 45` printed "45 min" for untimed rounds).
+
+**One primary CTA per page.** On read-first pages (Brief) it sits at the end of the read; the Prep stepper links forward, so returning users still have a way on without a second button.
 
 ## 7 · Elevation & depth
 
@@ -286,8 +288,8 @@ Retires the one-off **black-background CTA** (map "See my matches" → `.btn-pri
 - **One primary per view, and in job surfaces it is always Tailor.** On job cards + job detail, **Tailor** (✨ magic-wand) is the single green `.btn-primary` — the natural next step after reading a posting. Apply directly / View / Prep / Mark-as-Applied are all `.btn-quiet`. (Fixed 2026-09-19: previously Apply stole the green when a direct-apply URL existed, and the card had two greens.)
 
 ### 9.2 Surfaces & cards
-- `.card-quiet` — `--surf-1` fill, **no border, no shadow**, `--r-lg`; hover (interactive only) → `--surf-2`; `--selected` → `--surf-3` + green leading bar (§7A).
-- `.job-card` — `--surf-1` grey field, no border, no shadow; hover → `--surf-2`; selected → `--surf-3` + the full-height green **leading bar** that grows in (`::before` scaleY). (2026-09-28: dropped the green border + ring + shadow selection — it was the loudest element on screen.)
+- `.card-quiet` — white + `--hair`, `--r-lg`, no resting shadow; hover (interactive only) → `--hair-strong` + `--lift`; `--selected` → green border + faint ring (§7A).
+- `.job-card` — white + `--hair`; hover → `--hair-strong` + `--lift`; selected → green border + faint ring + the green **leading bar** that grows in (`::before` scaleY). No heavy shadow on selection.
 - `.results-panel` — **visually removed** (transparent; class kept only for the grid layout). The Top-matches/Saved workspace is open, cards sit directly on the page.
 - `.score-hero`, `.modal-panel`, `.drawer-panel`, `.mobile-detail-sheet`, `.settings-panel`, `.whats-new-panel` — all `--r-lg`, `--elev-3` when floating.
 - `.bene` (marketing) — secondary-palette tint card, `--r-xl`; icon+title in hue ink, body `--n-6`.
@@ -328,7 +330,8 @@ Retires the one-off **black-background CTA** (map "See my matches" → `.btn-pri
 - Keep secondary palette + gradient on marketing surfaces only.
 
 **Don't**
-- A border drawn *around* a card, chip, tab, button or field — separate by fill (§7A). Selection by outline/ring/shadow.
+- Grey text on a grey section; a grey plate behind white cards; a dark/heavy outline or shadow for selection (§7A).
+- Two primary CTAs on one page; metadata in a content column; invented defaults.
 - Hand-drawn headers, cards, notices, buttons or chips — use `macros/ui.html` (§9.0).
 - Salmon as a background, wash, glow, gradient filler, or button.
 - Raw `hsl()`/hex in a component, or a new radius/shadow value.
