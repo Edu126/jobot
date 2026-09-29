@@ -46,6 +46,15 @@ RULES: dict[str, tuple[re.Pattern[str], str]] = {
         re.compile(r"\bborder border-base-300\b"),
         "tinta, no contorno: ui.card / ui.notice (grey fill, no outline, §7A)",
     ),
+    "page-bg": (
+        # a bg utility on <body>/<main> overrides app.css and repaints the page
+        re.compile(r"<(?:body|main)\b[^>]*class=\"[^\"]*\bbg-"),
+        "nothing — the page background is owned by app.css (body → --b1, §7A)",
+    ),
+    "adhoc-fill": (
+        re.compile(r"(?<![:\w-])bg-base-200(?:/\d+)?\b"),
+        "ui.notice / ui.card (--surf-* fills, §7A)",
+    ),
     "hand-h1": (
         re.compile(r"<h1\b"),
         "ui.page_header(...)",

@@ -1,11 +1,13 @@
 {
  "base.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 8,
   "outlined-box": 3,
   "raw-color": 5,
   "text-opacity": 7
  },
  "pages/admin_pulse.html": {
+  "adhoc-fill": 2,
   "adhoc-radius": 2,
   "hand-h1": 1
  },
@@ -27,6 +29,7 @@
   "hand-h1": 1
  },
  "pages/jobs.html": {
+  "adhoc-fill": 3,
   "adhoc-radius": 2,
   "bare-btn": 1,
   "hand-h1": 1,
@@ -55,10 +58,12 @@
   "hand-h1": 1
  },
  "pages/practice_feedback.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 1,
   "raw-color": 1
  },
  "pages/practice_live.html": {
+  "adhoc-fill": 2,
   "adhoc-radius": 4,
   "hand-h1": 1,
   "outlined-box": 4,
@@ -68,15 +73,18 @@
   "hand-h1": 1
  },
  "pages/practice_setup.html": {
+  "adhoc-fill": 2,
   "adhoc-radius": 4
  },
  "pages/prep_detail.html": {
+  "adhoc-fill": 2,
   "adhoc-radius": 5,
   "hand-h1": 1,
   "outlined-box": 3,
   "text-opacity": 4
  },
  "pages/prep_list.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 8,
   "hand-h1": 1,
   "outlined-box": 8,
@@ -93,6 +101,7 @@
   "hand-h1": 1
  },
  "pages/stories_voice.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 1,
   "hand-h1": 1,
   "outlined-box": 1
@@ -101,6 +110,7 @@
   "hand-h1": 1
  },
  "pages/welcome.html": {
+  "adhoc-fill": 1,
   "bare-btn": 2,
   "hand-h1": 1,
   "raw-color": 6
@@ -142,6 +152,7 @@
   "text-opacity": 3
  },
  "partials/gap_map.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 2,
   "outlined-box": 3,
   "text-opacity": 7
@@ -161,6 +172,7 @@
   "outlined-box": 8
  },
  "partials/interview_stepper.html": {
+  "adhoc-fill": 1,
   "arbitrary-size": 1,
   "outlined-box": 1,
   "text-opacity": 3
@@ -179,16 +191,19 @@
   "text-opacity": 1
  },
  "partials/practice_turn.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 2,
   "outlined-box": 2,
   "text-opacity": 1
  },
  "partials/prep_confirm.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 2,
   "outlined-box": 2,
   "text-opacity": 2
  },
  "partials/prep_import_confirm.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 3,
   "arbitrary-size": 1,
   "outlined-box": 3,
@@ -199,6 +214,7 @@
   "text-opacity": 1
  },
  "partials/prep_kit.html": {
+  "adhoc-fill": 2,
   "adhoc-radius": 4,
   "arbitrary-size": 7,
   "bare-btn": 1,
@@ -206,9 +222,13 @@
   "text-opacity": 12
  },
  "partials/prep_outlook.html": {
+  "adhoc-fill": 4,
   "adhoc-radius": 5,
   "outlined-box": 1,
   "text-opacity": 8
+ },
+ "partials/readiness.html": {
+  "adhoc-fill": 1
  },
  "partials/recent_row.html": {
   "text-opacity": 4
@@ -225,10 +245,12 @@
   "raw-color": 1
  },
  "partials/story_drafts.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 1,
   "text-opacity": 1
  },
  "partials/story_editor_form.html": {
+  "adhoc-fill": 1,
   "adhoc-radius": 4,
   "outlined-box": 3
  },

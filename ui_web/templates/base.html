@@ -726,7 +726,11 @@
    every other page. A page that sets it takes responsibility for
    bounding its own content — get it wrong and the page traps its own
    scroll. #}
-<body class="bg-base-200 min-h-screen flex flex-col text-base-content {% block body_class %}{% endblock %}"
+{# NO bg-* utility on <body>: the page background is owned by app.css
+   (body → --b1 pure white, design.md §7A). A grey bg utility sat here since the
+   initial commit and silently beat the CSS, so the "white page" never shipped
+   and every grey surface sat on grey (2026-09-28). The lint forbids it. #}
+<body class="min-h-screen flex flex-col text-base-content {% block body_class %}{% endblock %}"
       style="padding-bottom: env(safe-area-inset-bottom);"
       x-bind:class="{ 'pb-16 lg:pb-0': true }"
       data-show-onboarding="{{ 'true' if not get_setting('onboarding_seen') else 'false' }}"

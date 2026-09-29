@@ -207,6 +207,7 @@ Eduardo compared the component-kit artifact (white page; the recommendation = gr
 | ★ | `ui.callout` | `oklch(var(--p) / .07)` + 3px rule | THE answer / recommendation on a screen — max one per view |
 
 - Alpha over white, so levels stack correctly when nested (a chip inside a card is still one step darker).
+- **The page background is owned by `app.css` (`body` → `--b1`) and nothing else.** No `bg-*` utility on `<body>`/`<main>` — a `bg-base-200` on `<body>` since the initial commit silently beat the CSS, so the "white page" of 2026-09-25 never shipped and every grey surface sat on grey (found 2026-09-28). Lint rule `page-bg` forbids it; `adhoc-fill` flags hand-made `bg-base-200/NN` boxes.
 - **Borders:** only a hairline *between* things (list rows, search-bar segments, section rules). Never *around* a card, chip, tab or button. Keep `border: 1px solid transparent` where needed so box sizes don't shift.
 - **Selection** = `--surf-3` + green leading bar. No outline, no ring, no shadow.
 - **Hover** only on things you can act on (links, buttons, `hx-get`, `@click`). A static content card never reacts.
