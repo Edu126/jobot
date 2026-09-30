@@ -28,6 +28,7 @@
   "adhoc-fill": 3,
   "adhoc-radius": 2,
   "bare-btn": 1,
+  "hand-bullet": 1,
   "hand-h1": 1,
   "raw-color": 9,
   "text-opacity": 3
@@ -89,6 +90,7 @@
  "pages/profile.html": {
   "adhoc-radius": 4,
   "bare-btn": 2,
+  "hand-bullet": 1,
   "outlined-box": 1,
   "raw-color": 14,
   "text-opacity": 4
@@ -116,12 +118,14 @@
  },
  "partials/app_card.html": {
   "adhoc-radius": 1,
+  "hand-bullet": 2,
   "outlined-box": 1,
   "text-opacity": 9
  },
  "partials/app_kanban_card.html": {
   "adhoc-radius": 2,
   "arbitrary-size": 4,
+  "hand-bullet": 1,
   "outlined-box": 2,
   "raw-color": 1,
   "text-opacity": 2
@@ -167,7 +171,11 @@
   "adhoc-radius": 8,
   "outlined-box": 8
  },
+ "partials/job_card.html": {
+  "hand-bullet": 3
+ },
  "partials/job_detail.html": {
+  "hand-bullet": 1,
   "text-opacity": 3
  },
  "partials/journey_calendar.html": {
@@ -221,6 +229,7 @@
   "adhoc-fill": 1
  },
  "partials/recent_row.html": {
+  "hand-bullet": 1,
   "text-opacity": 4
  },
  "partials/save_action.html": {
@@ -229,6 +238,7 @@
   "text-opacity": 1
  },
  "partials/settings_panel.html": {
+  "hand-bullet": 1,
   "text-opacity": 1
  },
  "partials/story_accepted.html": {
@@ -249,6 +259,7 @@
   "outlined-box": 1
  },
  "partials/suggested_queries.html": {
+  "hand-bullet": 1,
   "text-opacity": 1
  },
  "partials/tailor_panel.html": {
@@ -256,12 +267,14 @@
  },
  "partials/tailor_result.html": {
   "adhoc-radius": 4,
+  "hand-bullet": 3,
   "outlined-box": 2,
   "raw-color": 8,
   "text-opacity": 4
  },
  "partials/tailor_runs_list.html": {
   "adhoc-radius": 2,
+  "hand-bullet": 1,
   "outlined-box": 1,
   "raw-color": 3,
   "text-opacity": 3
@@ -275,6 +288,9 @@
   "adhoc-radius": 1,
   "outlined-box": 1,
   "text-opacity": 2
+ },
+ "partials/toolkit_stories.html": {
+  "hand-bullet": 1
  },
  "partials/toolkit_talking.html": {
   "text-opacity": 1

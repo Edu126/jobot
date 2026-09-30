@@ -37,6 +37,7 @@ def main() -> int:
         "bare-btn": '<button class="btn btn-sm">Go</button>',
         "page-bg": '<body class="bg-base-200 min-h-screen">',
         "adhoc-fill": '<div class="rounded-lg bg-base-200/40 p-3">',
+        "hand-bullet": '<li><span class="text-faint">•</span>x</li>',
     }
     for rule, html in samples.items():
         _assert(check_text(html)[rule] >= 1, f"{rule} should fire on {html!r}")

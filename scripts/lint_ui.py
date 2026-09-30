@@ -55,6 +55,11 @@ RULES: dict[str, tuple[re.Pattern[str], str]] = {
         re.compile(r"(?<![:\w-])bg-base-200(?:/\d+)?\b"),
         "ui.notice / ui.card (--surf-* fills, §7A)",
     ),
+    "hand-bullet": (
+        # a per-list bullet glyph/icon instead of the one list system
+        re.compile(r">\s*[•·◦▪]\s*<|ph-arrow-bend-down-right"),
+        '<ul class="ui-list"> (hanging en dash, §5B)',
+    ),
     "hand-h1": (
         re.compile(r"<h1\b"),
         "ui.page_header(...)",

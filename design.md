@@ -174,6 +174,23 @@ Big numerals wear the display face (IBM Plex bold numerals read "sad" large). On
 
 ---
 
+### 5A · Sizes per screen (2026-09-29)
+
+A screen uses **at most 4 text sizes, each a clear step apart (≥1.2×)**. Eduardo counted 5 on the Brief (verdict 30 · title 24 · rail 17 · body 16 · sub 14) and read it as noise. The near-misses were the problem: 17 beside 16 and 24 beside 30 look like mistakes, not hierarchy.
+
+| Role | Size | Class |
+|---|---|---|
+| Answer / display line | 30 (24 mobile) | `.text-answer` (landing pages: `.text-display` 38) |
+| Page title | 24, or **20 (`.text-masthead`) when the page has its own answer line** | `ui.page_header(size='md'/'sm')` |
+| Body: reading text AND body-level headings (rail labels, card titles) | 16; headings differ by **weight**, not size | `.brief-label`, `.text-body-strong` |
+| Small: secondary lines, sub-lines, insets | 14 | `text-sm`, `.ui-list__sub` |
+
+UI labels (eyebrow 11, chips/pills 12) are a separate role and don't count toward the four.
+
+### 5B · Lists — one bullet system
+
+Every list is `<ul class="ui-list">`: a hanging **en dash (–)** in faint ink, text in full ink, optional `.ui-list__sub` muted line. No arrows, warning icons, `•` spans or grey boxes as bullets. Icons mark *state* and are used once per screen, never repeated as list markers. Numbered lists only when order is real (steps). Lint rule `hand-bullet` flags `•` spans and arrow bullets.
+
 ## 6 · Spacing & shape
 
 - **Spacing base = 4px.** Scale: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. Section rhythm on marketing pages: 64–80px vertical; card internal 16–24px.

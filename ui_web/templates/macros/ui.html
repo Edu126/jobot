@@ -34,7 +34,9 @@
 {# ── page_header ────────────────────────────────────────────────
    The top of every page: optional back link → optional eyebrow → title →
    the lede (§2A answer-first: one sentence that ANSWERS, not describes).
-   size: 'md' = inner pages (24px) · 'lg' = landing pages (display 38px).
+   size: 'md' = inner pages (24px) · 'lg' = landing pages (display 38px) ·
+   'sm' = masthead (20px) for pages whose own display line is an answer
+   headline below the title (Brief) — keeps one clear top size (§5A).
    Actions (primary button etc.) go in the call block, right-aligned. #}
 {% macro page_header(title, lede=none, eyebrow=none, back=none, size='md') -%}
 <header class="space-y-3">
@@ -44,7 +46,7 @@
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0 space-y-1.5">
       {%- if eyebrow %}<div class="text-eyebrow">{{ eyebrow }}</div>{% endif %}
-      <h1 class="{{ 'text-display' if size == 'lg' else 'text-2xl font-semibold tracking-tight' }}">{{ title }}</h1>
+      <h1 class="{{ {'lg': 'text-display', 'sm': 'text-masthead'}.get(size, 'text-2xl font-semibold tracking-tight') }}">{{ title }}</h1>
       {%- if lede %}<p class="text-body-muted">{{ lede }}</p>{% endif %}
     </div>
     {%- if caller is defined %}

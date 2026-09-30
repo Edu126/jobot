@@ -2282,9 +2282,60 @@ a.stepper-step:hover .stepper-dot { border-color: oklch(var(--n-5)); }
 }
 .brief-label {
   font-family: var(--font-display);
-  font-size: 1.0625rem;
-  line-height: 1.32;
+  font-size: 1rem;                /* body size — weight carries it (§5A) */
+  line-height: 1.4;
   font-weight: 600;
   letter-spacing: -0.011em;
   color: oklch(var(--bc));
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Type roles used by the Brief-style pages (design.md §5A). One screen uses
+   at most 4 sizes, each a clear step apart (≥1.2×): answer 30 · masthead 20
+   · body 16 · small 14. Near-misses (15/17 beside 16) read as mistakes.
+   ───────────────────────────────────────────────────────────── */
+.text-answer {
+  font-family: var(--font-display);
+  font-size: 1.875rem;            /* 30px */
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+@media (max-width: 639px) { .text-answer { font-size: 1.5rem; } }
+.text-masthead {
+  font-family: var(--font-display);
+  font-size: 1.25rem;             /* 20px */
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.014em;
+}
+/* Body-size heading: same size as body, weight does the work. */
+.text-body-strong {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.006em;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Lists — ONE bullet system (design.md §5B). A hanging en dash in faint ink;
+   text in full ink; optional muted sub-line. No arrows, no warning icons, no
+   dots-in-spans per list. Icons are for state, used once — not bullets.
+   ───────────────────────────────────────────────────────────── */
+.ui-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+.ui-list > li { position: relative; padding-left: 1.25rem; }
+.ui-list > li::before {
+  content: "–";
+  position: absolute;
+  left: 0;
+  color: oklch(var(--n-4));
+  font-weight: 500;
+}
+.ui-list__sub { font-size: 0.875rem; color: oklch(var(--bc) / 0.84); margin-top: 0.2rem; }
+.ui-source {
+  display: inline-flex; align-items: center; gap: 0.15rem; margin-left: 0.25rem;
+  font-size: 0.875rem; color: oklch(var(--p));
+}
+.ui-source:hover { text-decoration: underline; }

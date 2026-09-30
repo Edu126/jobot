@@ -12,7 +12,7 @@
 <div class="card-quiet p-4 space-y-3">
   <div class="flex items-start justify-between gap-3">
     <div class="min-w-0">
-      <h4>{{ c.name }}</h4>
+      <h3 class="text-body-strong">{{ c.name }}</h3>
       {% if c.what_good_looks_like %}
         <p class="text-sm mt-0.5">{{ c.what_good_looks_like }}</p>
       {% endif %}
@@ -22,7 +22,7 @@
     </span>
   </div>
   {% if c.evidence %}
-    <p class="ui-inset text-xs">{{ c.evidence }}</p>
+    <p class="ui-inset text-sm">{{ c.evidence }}</p>
   {% endif %}
 </div>
 {% endmacro %}
@@ -40,10 +40,11 @@
        No invented default length (the old `or 45` showed "45 min" for rounds
        the user never timed). #}
     {% set meta = [interview.company, _('prep2.round.' + (interview.round_type or 'screening'))] %}
-    {% if interview.round_length_min %}{% set meta = meta + [interview.round_length_min ~ ' ' ~ _('prep2.form.minutes')] %}{% endif %}
     {% if interview.interviewer_title %}{% set meta = meta + [interview.interviewer_title] %}{% endif %}
     {% if interview.interview_at %}{% set meta = meta + [interview.interview_at | replace('T', ' · ')] %}{% endif %}
-    {{ ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=meta | join('  ·  '), back=('/interviews', _('prep2.brief.back'))) }}
+    {# size='sm': the verdict below is this page's display line; the role
+       title is the masthead, one clear step under it (design.md §5A). #}
+    {{ ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=meta | join('  ·  '), back=('/interviews', _('prep2.brief.back')), size='sm') }}
     {{ steps.stepper('brief', interview.id) }}
   </div>
 
@@ -62,7 +63,7 @@
     <div class="brief-rail"><h2 class="brief-label">{{ _('prep2.brief.standing') }}</h2></div>
     <div class="md:col-span-3 space-y-5">
       {% if brief.competencies %}
-      <p class="font-display text-2xl sm:text-3xl font-semibold leading-tight tracking-tight">
+      <p class="text-answer">
         {% if ns.needs == 0 %}
           {{ _('prep2.brief.verdict_solid') }}
         {% else %}
@@ -85,17 +86,14 @@
     <div class="brief-rail">
       <h2 class="brief-label">{{ _('prep2.brief.before') }}</h2>
     </div>
-    <div class="md:col-span-3 space-y-3">
+    <ul class="md:col-span-3 ui-list">
       {% for g in brief.gaps %}
-      <div class="flex items-start gap-3">
-        <i class="ph-thin ph-arrow-bend-down-right text-primary mt-1 shrink-0"></i>
-        <div>
-          <div class="font-medium">{{ g.action or g.gap }}</div>
-          {% if g.action and g.gap %}<div class="text-sm text-body-muted mt-1">{{ g.gap }}</div>{% endif %}
-        </div>
-      </div>
+      <li>
+        <div class="font-medium">{{ g.action or g.gap }}</div>
+        {% if g.action and g.gap %}<div class="ui-list__sub">{{ g.gap }}</div>{% endif %}
+      </li>
       {% endfor %}
-    </div>
+    </ul>
   </section>
   {% endif %}
 
@@ -123,20 +121,20 @@
     <div class="md:col-span-3 grid sm:grid-cols-2 gap-x-8 gap-y-5">
       {% if brief.interviewer_lens %}
       <div>
-        <h4 class="flex items-center gap-1.5 mb-2"><i class="ph-thin ph-eye text-subtle"></i>{{ _('prep2.brief.lens') }}</h4>
-        <ul class="space-y-1.5 text-sm">
+        <h3 class="text-eyebrow mb-3">{{ _('prep2.brief.lens') }}</h3>
+        <ul class="ui-list">
           {% for point in brief.interviewer_lens %}
-          <li class="flex gap-2"><span class="text-faint shrink-0">•</span><span>{{ point }}</span></li>
+          <li>{{ point }}</li>
           {% endfor %}
         </ul>
       </div>
       {% endif %}
       <div>
-        <h4 class="flex items-center gap-1.5 mb-2"><i class="ph-thin ph-buildings text-subtle"></i>{{ _('prep2.brief.company') }}</h4>
+        <h3 class="text-eyebrow mb-3">{{ _('prep2.brief.company') }}</h3>
         {% if brief.company_snapshot %}
-          <ul class="space-y-2 text-sm">
+          <ul class="ui-list">
             {% for point in brief.company_snapshot %}
-            <li class="flex gap-2"><span class="text-faint shrink-0">•</span><span>{{ point.point }}{% if point.source_url %} <a href="{{ point.source_url }}" target="_blank" rel="noopener" class="text-primary hover:underline inline-flex items-center gap-0.5 ml-1 text-xs">{{ _('prep2.brief.source') }}<i class="ph-thin ph-arrow-up-right"></i></a>{% endif %}</span></li>
+            <li>{{ point.point }}{% if point.source_url %} <a href="{{ point.source_url }}" target="_blank" rel="noopener" class="ui-source">{{ _('prep2.brief.source') }}<i class="ph-thin ph-arrow-up-right"></i></a>{% endif %}</li>
             {% endfor %}
           </ul>
         {% else %}
@@ -152,9 +150,9 @@
     <div class="brief-rail">
       <h2 class="brief-label">{{ _('prep2.brief.friction') }}</h2>
     </div>
-    <ul class="md:col-span-3 space-y-2.5">
+    <ul class="md:col-span-3 ui-list">
       {% for f in brief.friction_points %}
-      <li class="flex items-start gap-2"><i class="ph-thin ph-warning text-subtle mt-1 shrink-0"></i><span>{{ f }}</span></li>
+      <li>{{ f }}</li>
       {% endfor %}
     </ul>
   </section>
