@@ -36,10 +36,10 @@ from core.settings import get_output_language, language_instruction
 from . import brief as p1
 from . import prompts as P
 
-PROMPT_VERSION = "2026-09-30-toolkit-v1"
+PROMPT_VERSION = "2026-09-30-toolkit-v2"
 ARTIFACT_KIND = "toolkit"
 FACTS_KIND = "facts"
-FACTS_VERSION = "v1"
+FACTS_VERSION = "v2"   # v2 stores the question text with each answer
 
 MIN_QUESTIONS = 8
 MAX_QUESTIONS = 10
@@ -112,14 +112,18 @@ class Toolkit:
 # ---------- facts: the candidate's answers to the Brief's fact questions ----------
 
 def read_facts(interview_id: int, *, path=db.DB_PATH) -> dict[str, str]:
-    """{fact_question_id: answer} — only non-blank answers. {} when none."""
+    """{question_text: answer} — only non-blank answers. Keyed by the question's
+    TEXT, not its f-id, so a regenerated Brief (new questions re-using f1..fN)
+    can never attach an old answer to a different question. {} when none."""
     row = db.get_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, path=path)
     a = (row or {}).get("artifact")
     return {str(k): str(v).strip() for k, v in a.items() if str(v).strip()} if isinstance(a, dict) else {}
 
 
 def save_facts(interview_id: int, answers: dict[str, str], *, path=db.DB_PATH) -> None:
-    clean = {str(k): str(v).strip()[:P.MAX_NOTES_CHARS] for k, v in answers.items() if str(v).strip()}
+    """`answers` = {question_text: answer}. Blank answers are dropped."""
+    clean = {str(k).strip(): str(v).strip()[:P.MAX_NOTES_CHARS]
+             for k, v in answers.items() if str(k).strip() and str(v).strip()}
     db.save_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, clean, path=path)
 
 
@@ -231,10 +235,8 @@ def get_or_generate_toolkit(
 
 # ---------- prompt ----------
 
-def _facts_block(brief: dict, facts: dict[str, str]) -> str:
-    qs = {str(f.get("id", "")): str(f.get("question", "")) for f in brief.get("fact_questions") or []
-          if isinstance(f, dict)}
-    lines = [f"- Q: {qs.get(fid, fid)}\n  A: {ans}" for fid, ans in facts.items() if ans]
+def _facts_block(facts: dict[str, str]) -> str:
+    lines = [f"- Q: {q}\n  A (my own words): {ans}" for q, ans in facts.items() if ans]
     return "\n".join(lines) if lines else "(none given — rely on the résumé only)"
 
 
@@ -265,7 +267,9 @@ def _build_prompt(interview: dict, brief: dict, stories: list[dict], facts: dict
 
 {P.RULE_BLOCK}
 - Write every answer AS ME, in the first person ("I led…", "At CRA I…"). Never use my name, never "the candidate", never "he/she".
-- Be concrete: use the real employers, tools, numbers and results from my résumé and from MY ANSWERS below. Prefer my answers when they are more specific than the résumé.
+- Be concrete: use the real employers, tools, numbers and results from my résumé and from MY ANSWERS below. MY ANSWERS are authoritative — prefer them over the résumé.
+- Keep every number with EXACTLY the meaning it has in my words or my résumé. Never add numbers together, never turn a number into a share of something else (no "X% of the budget" unless I said so), never re-derive or round. Example: if I wrote "the forecast savings were 15% and I delivered an extra 10%", say exactly that — not "25% of the budget".
+- If my wording is ambiguous, stay close to my words instead of reinterpreting them.
 - If there is no evidence for something, do not invent it — answer honestly with the closest real experience and how it transfers.
 
 {language_instruction(lang)}
@@ -278,13 +282,13 @@ A. QUESTIONS — write {MIN_QUESTIONS} to {MAX_QUESTIONS} questions this intervi
 B. STORIES — for EVERY competency in the brief:
    - pick the best story from my Story Bank (story_id), say in one sentence why it fits and one sentence how to angle it for this role;
    - if no saved story fits, set story_id null and write "draft": a STAR story from my résumé (and my answers) for this competency — title, situation, task, action (what I did, with "I"), result, metric (a number only if it is in the inputs, else null). If the résumé has nothing usable, set draft null.
-C. QUESTIONS TO ASK — {MAX_QUESTIONS_TO_ASK - 1} to {MAX_QUESTIONS_TO_ASK} smart questions I can ask at the end. For each: why it is a good question for this role/company (one sentence), and "shows" = what asking it shows about me (2-4 words, e.g. "strategic thinking").
+C. QUESTIONS TO ASK — {MAX_QUESTIONS_TO_ASK - 1} to {MAX_QUESTIONS_TO_ASK} questions I can ask at the end. Keep them SHORT and plain: one sentence, at most 15 words, easy to remember under pressure — smart, not complicated. For each: why it is a good question (one short sentence), and "shows" = what asking it shows about me (2-4 words, e.g. "strategic thinking").
 
 The brief (competencies use these ids):
 {_brief_block(brief)}
 
-MY ANSWERS to your questions about specifics the résumé doesn't state:
-{_facts_block(brief, facts)}
+MY ANSWERS to your questions about specifics the résumé doesn't state (authoritative — keep their meaning exactly):
+{_facts_block(facts)}
 
 My Story Bank (use these story ids):
 {P.format_stories(stories)}

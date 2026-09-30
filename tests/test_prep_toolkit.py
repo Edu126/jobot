@@ -126,11 +126,16 @@ def test_parse_validates_joins():
 def test_prompt_first_person_facts_and_ids():
     p = _fresh()
     interview, stories, sid = _seed(p)
-    T.save_facts(interview["id"], {"f1": "$4M across 3 programs", "f2": "  "}, path=p)
-    _assert(T.read_facts(interview["id"], path=p) == {"f1": "$4M across 3 programs"}, "blank facts dropped")
+    T.save_facts(interview["id"], {"How big was the budget?": "$4M across 3 programs", "Other?": "  "}, path=p)
+    _assert(T.read_facts(interview["id"], path=p) == {"How big was the budget?": "$4M across 3 programs"},
+            "keyed by question text; blank answers dropped")
     prompt = T._build_prompt(interview, _BRIEF, stories, T.read_facts(interview["id"], path=p), "résumé", lang="en")
     _assert("first person" in prompt and "Never use my name" in prompt, "first person, no name")
-    _assert("Q: How big was the budget?" in prompt and "A: $4M across 3 programs" in prompt, "fact answers in context")
+    _assert("Q: How big was the budget?" in prompt and "A (my own words): $4M across 3 programs" in prompt,
+            "fact answers in context")
+    _assert("Never add numbers together" in prompt and "not \"25% of the budget\"" in prompt,
+            "number-fidelity rule present")
+    _assert("at most 15 words" in prompt, "questions to ask kept short")
     _assert(f"- {sid}: CRA dashboards" in prompt, "Story Bank ids offered")
     _assert('"id": "c2"' in prompt, "brief competencies with ids")
     print("PASS test_prompt_first_person_facts_and_ids")
@@ -144,7 +149,7 @@ def test_generate_cache_and_fingerprint():
     _assert(tk is not None and len(tk.questions) == 3 and c.calls == 1, "miss generates")
     T.get_or_generate_toolkit(interview, _BRIEF, stories, "résumé", c, lang="en", path=p)
     _assert(c.calls == 1, "same inputs → cache hit")
-    T.save_facts(interview["id"], {"f1": "$4M"}, path=p)
+    T.save_facts(interview["id"], {"How big was the budget?": "$4M"}, path=p)
     T.get_or_generate_toolkit(interview, _BRIEF, stories, "résumé", c, lang="en", path=p)
     _assert(c.calls == 2, "a new fact answer → miss")
     edited = [dict(stories[0], result="saved 80h")]

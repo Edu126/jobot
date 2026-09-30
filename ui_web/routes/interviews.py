@@ -283,7 +283,11 @@ async def interview_facts(request: Request, interview_id: int):
     if not db.get_interview(interview_id):
         return _redirect("/interviews/new")
     form = await request.form()
-    answers = {k[5:]: str(v) for k, v in form.items() if k.startswith("fact_")}
+    brief = prep_brief.read_cached_brief(interview_id, lang=db.get_interview(interview_id).get("lang") or None)
+    qtext = {f.id: f.question for f in (brief.fact_questions if brief else [])}
+    # keyed by the question TEXT (see toolkit.read_facts) — ids are re-used on a rebuild
+    answers = {qtext[k[5:]]: str(v) for k, v in form.items()
+               if k.startswith("fact_") and k[5:] in qtext}
     prep_toolkit.save_facts(interview_id, answers)
     return RedirectResponse(f"/interviews/{interview_id}/get-ready", status_code=303)
 

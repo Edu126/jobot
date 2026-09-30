@@ -4,12 +4,12 @@
 {% import "partials/interview_stepper.html" as steps %}
 {% block title %}{{ _('prep2.step.practice') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
+{% block main_class %}py-6{% endblock %}
 
 {% block content %}
 <div class="space-y-6">
   <div class="space-y-4">
-    {{ ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), back=('/interviews/' ~ interview.id ~ '/get-ready', _('prep2.step.get_ready'))) }}
-    {{ steps.stepper('practice', interview.id) }}
+    {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), size='sm') %}{{ steps.stepper('practice', interview.id) }}{% endcall %}
   </div>
 
   {{ ui.empty_state(_('prep2.practice.soon_title'), hint=_('prep2.practice.soon_body')) }}

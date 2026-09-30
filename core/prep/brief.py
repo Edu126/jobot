@@ -26,7 +26,7 @@ from core.settings import get_output_language, language_instruction
 
 from . import prompts as P
 
-PROMPT_VERSION = "2026-09-30-brief-v2"
+PROMPT_VERSION = "2026-09-30-brief-v3"
 ARTIFACT_KIND = "brief"
 
 MIN_COMPETENCIES = 4
@@ -76,7 +76,7 @@ class FactQuestion:
     vague (ADR-057). Answers live in prep_artifacts kind 'facts'."""
     id: str
     question: str
-    why: str = ""
+    example: str = ""   # a short sample answer showing the FORMAT (shown as the placeholder)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -211,7 +211,7 @@ Do this:
 5. List up to {MAX_GAPS} gaps. For each gap, give one concrete prep action and the competency id it belongs to (or null).
 6. Based on the interviewer's title (if given) and the round type, list what this interviewer likely cares about in {MAX_LENS} bullets. If no title is given, base it on the round type only.
 7. List up to {MAX_FRICTION} likely friction points (tough topics they may push on).
-8. Write up to {MAX_FACT_QUESTIONS} short questions to ASK THE CANDIDATE about specifics this interview will probe but the résumé does not state — a number, a budget or team size, a scope, a concrete result. Address the candidate as "you". For each, say in a few words why it matters for this interview. Only ask about things the résumé leaves vague; if it is already specific, ask fewer.
+8. Write up to {MAX_FACT_QUESTIONS} short questions to ASK THE CANDIDATE about specifics this interview will probe but the résumé does not state — a number, a budget or team size, a scope, a concrete result. Address the candidate as "you". Keep each question to one short sentence. For each, write "example": a one-line sample answer in the first person that shows the FORMAT of a good answer (e.g. "I managed a $2M yearly budget across 3 programs"). The example is only an illustration of the format — use round, generic numbers, never facts from the résumé. Only ask about things the résumé leaves vague; if it is already specific, ask fewer.
 
 Round type: {round_type}. Length: {length} minutes.
 Interviewer title: {interviewer}
@@ -241,7 +241,7 @@ Return JSON with this exact schema — no prose before or after:
   "gaps": [{{ "competency_id": "c1 | null", "gap": "string", "action": "string" }}],
   "interviewer_lens": ["string"],
   "friction_points": ["string"],
-  "fact_questions": [{{ "question": "string", "why": "string" }}]
+  "fact_questions": [{{ "question": "string", "example": "string" }}]
 }}"""
 
 
@@ -270,8 +270,8 @@ def _parse_fact_questions(items: Any) -> list[FactQuestion]:
         q = str(it.get("question", "")).strip() if isinstance(it, dict) else str(it or "").strip()
         if not q:
             continue
-        why = str(it.get("why", "")).strip() if isinstance(it, dict) else ""
-        out.append(FactQuestion(id=f"f{len(out) + 1}", question=q, why=why))
+        ex = str(it.get("example", "")).strip() if isinstance(it, dict) else ""
+        out.append(FactQuestion(id=f"f{len(out) + 1}", question=q, example=ex))
         if len(out) >= MAX_FACT_QUESTIONS:
             break
     return out

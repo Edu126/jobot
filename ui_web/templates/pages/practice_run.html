@@ -4,6 +4,7 @@
 {% import "partials/interview_stepper.html" as steps %}
 {% block title %}{{ _('prep2.step.practice') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-3xl{% endblock %}
+{% block main_class %}py-6{% endblock %}
 
 {% block content %}
 <div class="space-y-6">
@@ -11,8 +12,8 @@
     {# masthead size: the QUESTION is this page's display line (§5A) #}
     {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview, _('prep2.setup.mode_' + session.mode)), size='sm') %}
       <span class="pill pill-neutral inline-flex items-center gap-1"><span class="pill-dot live"></span>{{ _('prep2.run.ai_coach') }}</span>
+      {{ steps.stepper('practice', interview.id) }}
     {% endcall %}
-    {{ steps.stepper('practice', interview.id) }}
   </div>
 
   <div id="practice-turn">

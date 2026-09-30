@@ -14,7 +14,15 @@
    stays plain text. #}
 {% set hrefs = {'brief': '/interviews/%s' % iid, 'get_ready': '/interviews/%s/get-ready' % iid,
                 'practice': '/interviews/%s/practice' % iid} if iid else {} %}
+{# ← / → at the ends replace the old "← back to <step>" link above the title
+   (Eduardo 2026-09-29: the stepper IS the navigation — one place, fluid).
+   ← from the Brief goes back to the Prep home. #}
+{% set prev_href = {'brief': '/interviews', 'get_ready': hrefs.get('brief'), 'practice': hrefs.get('get_ready'),
+                    'feedback': hrefs.get('practice')}.get(current) if iid else none %}
+{% set next_href = {'brief': hrefs.get('get_ready'), 'get_ready': hrefs.get('practice')}.get(current) if iid else none %}
 <nav class="flex flex-wrap items-center gap-2 text-sm" aria-label="{{ _('prep2.step.aria') }}">
+  {% if prev_href %}<a href="{{ prev_href }}" class="stepper-arrow" aria-label="{{ _('prep2.step.prev') }}"><i class="ph-thin ph-arrow-left"></i></a>
+  {% else %}<span class="stepper-arrow stepper-arrow--off" aria-hidden="true"><i class="ph-thin ph-arrow-left"></i></span>{% endif %}
   {% for key, label in steps %}
     {% set i = loop.index0 %}
     {% set state = 'done' if i < cur_i else ('current' if i == cur_i else 'upcoming') %}
@@ -32,5 +40,7 @@
       <span class="stepper-line{% if i < cur_i %} stepper-line--done{% endif %}"></span>
     {% endif %}
   {% endfor %}
+  {% if next_href %}<a href="{{ next_href }}" class="stepper-arrow" aria-label="{{ _('prep2.step.next') }}"><i class="ph-thin ph-arrow-right"></i></a>
+  {% else %}<span class="stepper-arrow stepper-arrow--off" aria-hidden="true"><i class="ph-thin ph-arrow-right"></i></span>{% endif %}
 </nav>
 {% endmacro %}

@@ -3,6 +3,7 @@
 {% import "partials/interview_stepper.html" as steps %}
 {% block title %}{{ _('prep2.brief.title') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
+{% block main_class %}py-6{% endblock %}
 
 {% set band_pill = {'strong': 'pill-success', 'solid': 'pill-info', 'needs_work': 'pill-warn'} %}
 
@@ -44,8 +45,7 @@
     {% if interview.interview_at %}{% set meta = meta + [interview.interview_at | replace('T', ' · ')] %}{% endif %}
     {# size='sm': the verdict below is this page's display line; the role
        title is the masthead, one clear step under it (design.md §5A). #}
-    {{ ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=meta | join('  ·  '), back=('/interviews', _('prep2.brief.back')), size='sm') }}
-    {{ steps.stepper('brief', interview.id) }}
+    {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=meta | join('  ·  '), size='sm') %}{{ steps.stepper('brief', interview.id) }}{% endcall %}
   </div>
 
   {# ============================================================
@@ -172,9 +172,9 @@
         {% for f in brief.fact_questions %}
         <div class="space-y-1.5">
           <label for="fact_{{ f.id }}" class="font-medium block">{{ f.question }}</label>
-          {% if f.why %}<p class="text-sm text-body-muted">{{ f.why }}</p>{% endif %}
+          {# the example lives IN the placeholder — "something like this goes here" #}
           <textarea id="fact_{{ f.id }}" name="fact_{{ f.id }}" rows="2" class="ui-field resize-y"
-                    placeholder="{{ _('prep2.brief.fact_ph') }}">{{ facts.get(f.id, '') }}</textarea>
+                    placeholder="{{ (_('prep2.brief.fact_eg') ~ ' ' ~ f.example) if f.example else _('prep2.brief.fact_ph') }}">{{ facts.get(f.question, '') }}</textarea>
         </div>
         {% endfor %}
       </div>
