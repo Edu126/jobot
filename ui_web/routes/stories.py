@@ -85,23 +85,33 @@ async def stories_home(request: Request):
 
 # ---------- B4: the editor ----------
 
+def _safe_next(url: str) -> str:
+    """A same-site relative path to return to after saving (e.g. Get Ready ›
+    Stories), or "" — never an absolute / protocol-relative URL (open redirect)."""
+    url = (url or "").strip()
+    if not url.startswith("/") or url.startswith("//") or "\\" in url or "\n" in url or "\r" in url:
+        return ""
+    return url
+
+
 @router.get("/stories/new")
-async def story_new(request: Request):
+async def story_new(request: Request, next: str = ""):
     return templates.TemplateResponse(
         request, "pages/story_editor.html",
-        {"active_tab": "prep", "story": None, "all_tags": story_bank.DEFAULT_COMPETENCY_TAGS},
+        {"active_tab": "prep", "story": None, "all_tags": story_bank.DEFAULT_COMPETENCY_TAGS,
+         "next_url": _safe_next(next)},
     )
 
 
 @router.get("/stories/{story_id}/edit")
-async def story_edit(request: Request, story_id: int):
+async def story_edit(request: Request, story_id: int, next: str = ""):
     story = db.get_story(story_id)
     if not story:
         return _redirect("/stories")
     return templates.TemplateResponse(
         request, "pages/story_editor.html",
         {"active_tab": "prep", "story": _with_strength(story),
-         "all_tags": story_bank.DEFAULT_COMPETENCY_TAGS},
+         "all_tags": story_bank.DEFAULT_COMPETENCY_TAGS, "next_url": _safe_next(next)},
     )
 
 
@@ -116,6 +126,7 @@ async def story_create(
     metric: str = Form(""),
     tags: str = Form(""),
     source: str = Form("manual"),
+    next: str = Form(""),
 ):
     _resume, resume_hash, _rid, _txt = _current()
     if not resume_hash:
@@ -127,7 +138,7 @@ async def story_create(
         task=task.strip(), action=action.strip(), result=result.strip(),
         metric=metric.strip() or None, tags=_parse_tags(tags),
         source=source if source in db.VALID_STORY_SOURCES else "manual", status="saved")
-    return HTMLResponse("", headers={"HX-Redirect": "/stories"})
+    return HTMLResponse("", headers={"HX-Redirect": _safe_next(next) or "/stories"})
 
 
 @router.post("/stories/strength")
@@ -249,6 +260,7 @@ async def story_update(
     result: str = Form(""),
     metric: str = Form(""),
     tags: str = Form(""),
+    next: str = Form(""),
 ):
     if not db.get_story(story_id):
         return _redirect("/stories")
@@ -256,7 +268,7 @@ async def story_update(
         "title": title.strip(), "situation": situation.strip(), "task": task.strip(),
         "action": action.strip(), "result": result.strip(),
         "metric": metric.strip() or None, "tags": _parse_tags(tags)})
-    return HTMLResponse("", headers={"HX-Redirect": "/stories"})
+    return HTMLResponse("", headers={"HX-Redirect": _safe_next(next) or "/stories"})
 
 
 @router.delete("/stories/{story_id}")

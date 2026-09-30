@@ -12,7 +12,8 @@
    itself if it must. Tabs: Answer cards (flip deck) · Your stories (STAR) ·
    Questions to ask them (why + what it shows). #}
 {% block content %}
-<div class="gr-shell" x-data="{ tab: 'answers' }">
+{# the tab can be deep-linked (#stories) — e.g. returning from the story editor #}
+<div class="gr-shell" x-data="{ tab: (['answers', 'stories', 'ask'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'answers') }">
 
   {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), size='sm') %}
     {{ steps.stepper('get_ready', interview.id) }}

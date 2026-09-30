@@ -6,12 +6,15 @@
 {% set is_edit = s.get('id') is not none and s.get('id') %}
 <form hx-post="{{ '/stories/' ~ s.get('id') if is_edit else '/stories' }}"
       hx-target="#story-error" hx-swap="innerHTML"
-      x-data="{ tags: {{ (s.get('tags') or []) | tojson }},
-                toggle(t){ this.tags.includes(t) ? this.tags = this.tags.filter(x=>x!==t) : this.tags.push(t) } }"
+      {# single-quoted: tojson escapes ' but NOT " — a double-quoted attribute
+         broke as soon as a story had tags (raw JS leaked onto the page) #}
+      x-data='{ tags: {{ (s.get('tags') or []) | tojson }},
+                toggle(t){ this.tags.includes(t) ? this.tags = this.tags.filter(x=>x!==t) : this.tags.push(t) } }'
       class="grid md:grid-cols-3 gap-6">
 
   {% if not is_edit %}<input type="hidden" name="source" value="{{ source or 'manual' }}">{% endif %}
   <input type="hidden" name="tags" :value="tags.join(',')">
+  {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
 
   {# ---- fields ---- #}
   <div class="md:col-span-2 space-y-4">

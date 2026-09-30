@@ -62,12 +62,12 @@
       {# no story and nothing in the résumé to draft from — a quiet way on, never a
          second green button (the page's one primary is Start Practice) #}
       <p class="text-body-muted">{{ _('prep2.getready.no_story_hint') }}</p>
-      <a href="/stories/new" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5"><i class="ph-thin ph-plus"></i>{{ _('prep2.getready.create_story') }}</a>
+      <a href="/stories/new?next={{ ('/interviews/' ~ interview.id ~ '/get-ready#stories') | urlencode }}" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5"><i class="ph-thin ph-plus"></i>{{ _('prep2.getready.create_story') }}</a>
       {% endif %}
 
       <div class="flex flex-wrap items-center gap-4 pt-1">
         {% if row.story %}
-          <a href="/stories/{{ row.story.id }}/edit" class="ui-link-quiet">{{ _('prep2.getready.edit_story') }}</a>
+          <a href="/stories/{{ row.story.id }}/edit?next={{ ('/interviews/' ~ interview.id ~ '/get-ready#stories') | urlencode }}" class="ui-link-quiet">{{ _('prep2.getready.edit_story') }}</a>
         {% elif row.draft %}
           <div id="save-draft-{{ loop.index0 }}">
             <button type="button" class="btn btn-quiet btn-sm" hx-post="/stories/draft/accept"
