@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
 {% import "partials/interview_stepper.html" as steps %}
 {% block title %}{{ _('prep2.step.practice') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-3xl{% endblock %}
@@ -7,36 +8,16 @@
 {# C1 — first-time consent (once, account-level). D10: audio isn't stored by
    default; transcript + feedback are; the coach is always labelled AI. #}
 <div class="space-y-6">
-  <a href="/interviews/{{ interview.id }}/get-ready" class="ui-back">
-    <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.step.get_ready') }}
-  </a>
+  {{ ui.page_header(_('prep2.consent.title'), lede=_('prep2.consent.body'), back=('/interviews/' ~ interview.id ~ '/get-ready', _('prep2.step.get_ready'))) }}
 
-  <div class="card-quiet p-8 space-y-5 max-w-xl mx-auto">
-    <div class="flex justify-center">
-      <div class="w-14 h-14 rounded-full bg-primary/10 inline-flex items-center justify-center">
-        <i class="ph-thin ph-shield-check text-2xl text-primary"></i>
-      </div>
-    </div>
-    <div class="text-center">
-      <h1 class="text-xl font-semibold tracking-tight">{{ _('prep2.consent.title') }}</h1>
-      <p class="text-body-muted text-sm mt-2">{{ _('prep2.consent.body') }}</p>
-    </div>
-    <ul class="space-y-2 text-sm">
-      {% for k in ['point_ai', 'point_audio', 'point_stored', 'point_delete'] %}
-      <li class="flex items-start gap-2">
-        <i class="ph-thin ph-check-circle text-primary mt-0.5 shrink-0"></i>{{ _('prep2.consent.' + k) }}
-      </li>
-      {% endfor %}
-    </ul>
-    <div class="flex items-center justify-center gap-3 pt-2">
-      <button class="btn btn-primary btn-sm"
-              hx-post="/interviews/{{ interview.id }}/practice/consent" hx-swap="none">
-        {{ _('prep2.consent.accept') }}
-      </button>
-      <a href="/interviews/{{ interview.id }}/get-ready" class="text-sm text-body-muted hover:text-base-content">
-        {{ _('prep2.consent.not_now') }}
-      </a>
-    </div>
+  <ul class="ui-list">
+    {% for k in ['point_ai', 'point_audio', 'point_stored', 'point_delete'] %}
+    <li>{{ _('prep2.consent.' + k) }}</li>
+    {% endfor %}
+  </ul>
+  <div class="flex items-center gap-4 pt-2">
+    {{ ui.button(_('prep2.consent.accept'), variant='primary', attrs={'hx-post': '/interviews/' ~ interview.id ~ '/practice/consent', 'hx-swap': 'none'}) }}
+    <a href="/interviews/{{ interview.id }}/get-ready" class="ui-link-quiet">{{ _('prep2.consent.not_now') }}</a>
   </div>
 </div>
 {% endblock %}

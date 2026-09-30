@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% import "partials/prep_macros.html" as pm %}
+{% import "macros/ui.html" as ui %}
 {% import "partials/interview_stepper.html" as steps %}
 {% block title %}{{ _('prep2.step.practice') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-3xl{% endblock %}
@@ -6,15 +8,10 @@
 {% block content %}
 <div class="space-y-6">
   <div class="space-y-4">
-    <div class="flex items-center justify-between gap-3">
-      <div>
-        <h1 class="text-xl font-semibold tracking-tight">{{ interview.role_title or _('prep2.gen.the_role') }}</h1>
-        <p class="text-body-muted text-sm">{{ interview.company }} · {{ _('prep2.setup.mode_' + session.mode) }}</p>
-      </div>
-      <span class="pill pill-neutral text-xs inline-flex items-center gap-1">
-        <span class="pill-dot live"></span>{{ _('prep2.run.ai_coach') }}
-      </span>
-    </div>
+    {# masthead size: the QUESTION is this page's display line (§5A) #}
+    {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview, _('prep2.setup.mode_' + session.mode)), size='sm') %}
+      <span class="pill pill-neutral inline-flex items-center gap-1"><span class="pill-dot live"></span>{{ _('prep2.run.ai_coach') }}</span>
+    {% endcall %}
     {{ steps.stepper('practice', interview.id) }}
   </div>
 

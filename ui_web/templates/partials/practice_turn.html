@@ -1,3 +1,4 @@
+{% import "macros/ui.html" as ui %}
 {# One practice turn (C3). Swapped into #practice-turn on each answer. Self-
    contained Alpine timer (re-inits per swap). Study mode shows the STAR cue;
    Simulate hides it (design brief §Practice). #}
@@ -6,25 +7,21 @@
      class="space-y-4">
 
   {# progress + competency #}
-  <div class="flex items-center justify-between gap-3 text-sm">
-    <span class="text-body-muted">{{ _('prep2.run.question') }} {{ turn.index + 1 }} / {{ turn.total }}</span>
-    <span class="font-mono text-body-muted"><i class="ph-thin ph-timer"></i> <span x-text="secs + 's'"></span></span>
+  <div class="flex items-center justify-between gap-3">
+    <span class="text-eyebrow">{{ _('prep2.run.question') }} {{ turn.index + 1 }} / {{ turn.total }}</span>
+    <span class="text-sm text-subtle tabular-nums" x-text="secs + 's'"></span>
   </div>
 
   {# the question #}
-  <div class="card-quiet p-5">
-    <div class="text-lg font-medium leading-snug">{{ turn.question.text }}</div>
-  </div>
+  <p class="text-title">{{ turn.question.text }}</p>
 
   {# study cue (only in Study mode) #}
   {% if turn.cue %}
-  <div class="rounded-xl border border-base-300 bg-base-200/40 p-4 space-y-1.5 text-sm">
-    <div class="text-label">{{ _('prep2.run.cue') }}</div>
-    {% if turn.cue.competency %}<div class="text-body-muted"><span class="font-medium">{{ turn.cue.competency }}</span> — {{ turn.cue.what_good }}</div>{% endif %}
-    {% if turn.cue.story_title %}
-      <div class="inline-flex items-center gap-1.5 text-primary"><i class="ph-thin ph-book-open"></i>{{ _('prep2.run.use_story') }} {{ turn.cue.story_title }}</div>
-    {% endif %}
-    <div class="text-xs text-base-content/50">{{ _('prep2.run.star_hint') }}</div>
+  <div class="ui-notice space-y-1.5">
+    <div class="text-eyebrow">{{ _('prep2.run.cue') }}</div>
+    {% if turn.cue.competency %}<div><b class="font-semibold">{{ turn.cue.competency }}</b> — {{ turn.cue.what_good }}</div>{% endif %}
+    {% if turn.cue.story_title %}<div>{{ _('prep2.run.use_story') }} <b class="font-semibold">{{ turn.cue.story_title }}</b></div>{% endif %}
+    <div class="text-body-muted">{{ _('prep2.run.star_hint') }}</div>
   </div>
   {% endif %}
 
@@ -33,16 +30,13 @@
         hx-target="#practice-turn" hx-swap="innerHTML"
         @htmx:before-request="clearInterval(t)">
     <input type="hidden" name="seconds" :value="secs">
-    <label class="text-label block mb-1">{{ _('prep2.run.your_answer') }}</label>
+    <label class="text-eyebrow block mb-2">{{ _('prep2.run.your_answer') }}</label>
     <textarea name="transcript" rows="6" autofocus
               placeholder="{{ _('prep2.run.answer_ph') }}"
-              class="w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-sm resize-y"></textarea>
+              class="ui-field resize-y"></textarea>
     <div class="flex items-center justify-between gap-3 mt-3">
-      <p class="text-xs text-body-muted">{{ _('prep2.run.no_scores') }}</p>
-      <button type="submit" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
-        {% if turn.index + 1 == turn.total %}{{ _('prep2.run.finish') }}{% else %}{{ _('prep2.run.next') }}{% endif %}
-        <i class="ph-thin ph-arrow-right"></i>
-      </button>
+      <p class="text-sm text-subtle">{{ _('prep2.run.no_scores') }}</p>
+      {{ ui.button(_('prep2.run.finish') if turn.index + 1 == turn.total else _('prep2.run.next'), variant='primary', icon_after='ph-arrow-right', type='submit') }}
     </div>
   </form>
 </div>

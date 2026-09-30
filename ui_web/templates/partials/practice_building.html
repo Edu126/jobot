@@ -3,8 +3,8 @@
 <div class="min-h-[40vh] flex flex-col items-center justify-center text-center gap-6">
   <div class="gen-orb" aria-hidden="true"><span></span><span></span><span></span></div>
   <div>
-    <div class="text-lg font-semibold">{{ _('prep2.build.title') }}</div>
-    <p class="text-body-muted text-sm mt-1">{{ _('prep2.build.body') }}</p>
+    <div class="text-masthead">{{ _('prep2.build.title') }}</div>
+    <p class="text-body-muted mt-1">{{ _('prep2.build.body') }}</p>
   </div>
   <div hx-post="/interviews/{{ interview.id }}/practice/{{ session_id }}/build"
        hx-trigger="load" hx-swap="none"></div>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "partials/prep_macros.html" as pm %}
 {% import "macros/ui.html" as ui %}
 {% import "partials/interview_stepper.html" as steps %}
 {% block title %}{{ _('prep2.step.practice') }} · {{ interview.company }}{% endblock %}
@@ -9,7 +10,7 @@
    layer; this round is written practice.) #}
 <div class="space-y-6">
   <div class="space-y-4">
-    {{ ui.page_header(_('prep2.setup.heading'), lede=(interview.role_title or _('prep2.gen.the_role')) ~ ' · ' ~ interview.company, back=('/interviews/' ~ interview.id ~ '/get-ready', _('prep2.step.get_ready'))) }}
+    {{ ui.page_header(_('prep2.setup.heading'), lede=(interview.role_title or _('prep2.gen.the_role')) ~ '  ·  ' ~ pm.iv_meta(interview), back=('/interviews/' ~ interview.id ~ '/get-ready', _('prep2.step.get_ready'))) }}
     {{ steps.stepper('practice', interview.id) }}
   </div>
 
@@ -22,12 +23,11 @@
       <label class="text-label block mb-2">{{ _('prep2.setup.channel') }}</label>
       <input type="hidden" name="channel" :value="channel">
       <div class="grid sm:grid-cols-2 gap-2">
-        {% for key, icon in [('voice','ph-microphone'), ('text','ph-keyboard')] %}
-        <button type="button" @click="channel = '{{ key }}'"
-                class="text-left rounded-lg border p-3 transition-colors"
-                :class="channel === '{{ key }}' ? 'border-primary bg-primary/5' : 'border-base-300 hover:border-base-content/30'">
-          <div class="font-medium text-sm inline-flex items-center gap-1.5"><i class="ph-thin {{ icon }}"></i>{{ _('prep2.setup.channel_' + key) }}</div>
-          <div class="text-xs text-body-muted mt-1">{{ _('prep2.setup.channel_' + key + '_sub') }}</div>
+        {% for key in ['voice', 'text'] %}
+        <button type="button" @click="channel = '{{ key }}'" class="ui-option"
+                :class="channel === '{{ key }}' && 'ui-option--on'">
+          <div class="text-body-strong">{{ _('prep2.setup.channel_' + key) }}</div>
+          <div class="text-sm text-body-muted mt-1">{{ _('prep2.setup.channel_' + key + '_sub') }}</div>
         </button>
         {% endfor %}
       </div>
@@ -81,12 +81,11 @@
       <label class="text-label block mb-2">{{ _('prep2.setup.mode') }}</label>
       <input type="hidden" name="mode" :value="mode">
       <div class="grid sm:grid-cols-2 gap-2">
-        {% for key, icon in [('simulate','ph-eye-slash'), ('study','ph-book-open')] %}
-        <button type="button" @click="mode = '{{ key }}'"
-                class="text-left rounded-lg border p-3 transition-colors"
-                :class="mode === '{{ key }}' ? 'border-primary bg-primary/5' : 'border-base-300 hover:border-base-content/30'">
-          <div class="font-medium text-sm inline-flex items-center gap-1.5"><i class="ph-thin {{ icon }}"></i>{{ _('prep2.setup.mode_' + key) }}</div>
-          <div class="text-xs text-body-muted mt-1">{{ _('prep2.setup.mode_' + key + '_sub') }}</div>
+        {% for key in ['simulate', 'study'] %}
+        <button type="button" @click="mode = '{{ key }}'" class="ui-option"
+                :class="mode === '{{ key }}' && 'ui-option--on'">
+          <div class="text-body-strong">{{ _('prep2.setup.mode_' + key) }}</div>
+          <div class="text-sm text-body-muted mt-1">{{ _('prep2.setup.mode_' + key + '_sub') }}</div>
         </button>
         {% endfor %}
       </div>
@@ -96,14 +95,9 @@
     <div>
       <label class="text-label block mb-2">{{ _('prep2.setup.length') }}</label>
       <input type="hidden" name="length" :value="length">
-      <div class="flex flex-wrap gap-2">
-        {% for key, n in [('quick',3), ('standard',5), ('full',8)] %}
-        <button type="button" @click="length = '{{ key }}'" class="chip cursor-pointer"
-                :class="length === '{{ key }}' ? 'chip-accent' : 'chip-neutral'">
-          {{ _('prep2.setup.len_' + key) }} · {{ n }}
-        </button>
-        {% endfor %}
-      </div>
+      {# a MODE switch → seg-tabs (was salmon chips: salmon is for the one
+         celebration moment, never a control, §2) #}
+      {{ ui.seg_tabs([('quick', _('prep2.setup.len_quick') ~ ' · 3', none), ('standard', _('prep2.setup.len_standard') ~ ' · 5', none), ('full', _('prep2.setup.len_full') ~ ' · 8', none)], 'length') }}
     </div>
 
     {# focus #}
@@ -117,19 +111,11 @@
       </select>
     </div>
 
-    <div class="rounded-lg bg-base-200/60 p-3 text-xs text-body-muted flex items-start gap-2"
-         x-show="channel === 'text'">
-      <i class="ph-thin ph-info mt-0.5"></i>{{ _('prep2.setup.written_note') }}
-    </div>
-    <div class="rounded-lg bg-base-200/60 p-3 text-xs text-body-muted flex items-start gap-2"
-         x-show="channel === 'voice'" x-cloak>
-      <i class="ph-thin ph-microphone mt-0.5"></i>{{ _('prep2.setup.voice_note') }}
-    </div>
+    <div class="ui-notice" x-show="channel === 'text'">{{ _('prep2.setup.written_note') }}</div>
+    <div class="ui-notice" x-show="channel === 'voice'" x-cloak>{{ _('prep2.setup.voice_note') }}</div>
 
     <div class="flex items-center gap-3 pt-1">
-      <button type="submit" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
-        {{ _('prep2.setup.start') }}<i class="ph-thin ph-arrow-right"></i>
-      </button>
+      {{ ui.button(_('prep2.setup.start'), variant='primary', icon_after='ph-arrow-right', type='submit') }}
       <span id="setup-error" class="text-error text-sm"></span>
     </div>
   </form>

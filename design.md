@@ -286,6 +286,8 @@ Soft, purposeful, accessible. **Every animation guarded by `@media (prefers-redu
 - `attrs` passes hx-*, `@click`, `:class`, `x-show`, `data-*`, `aria-*` straight through — HTMX/Alpine wiring stays at the call site.
 - Text ramp: `text-body-muted` (secondary) · `text-subtle` (meta, hints) · `text-faint` (separators, decorative icons). Never `text-base-content/NN`.
 - Page width comes from `{% block container_class %}` — one of the three in §6.
+- Small CSS pieces (no macro needed): `.ui-list` / `.ui-list--num` (dash / numbered lists, §5B) · `.ui-field` (textarea/input box) · `.ui-option` + `--on` (selectable option tile) · `.ui-inset` (small grey part inside a box) · `.ui-kv` (bold label + text line) · `.ui-bubble--coach/--me` (conversation) · `.ui-source` (source link) · `.text-answer` / `.text-masthead` / `.text-body-strong` (§5A).
+- Interview metadata line: `{% import "partials/prep_macros.html" as pm %}` → `pm.iv_meta(interview, extra=None)` (company · round · interviewer · date — never length).
 - **Lint (ratchet):** `.venv/bin/python scripts/lint_ui.py` — fails on any (file, rule) count above `scripts/lint_ui_baseline.json` (raw colours, text opacities, ad-hoc radius, `text-[..]`, outlined boxes, hand `<h1>`, `btn` without variant). Fix debt → `--update` to lower the baseline. Test: `tests/test_ui_lint.py`.
 
 Inventory of the ~30 existing components with their canonical rules. **Buttons first** — they were the gap that started this.

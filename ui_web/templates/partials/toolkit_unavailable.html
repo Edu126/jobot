@@ -1,6 +1,4 @@
 {# The AI couldn't build this part right now (quota / transient). Honest, not a
    dead panel — the user can switch tabs or come back. #}
-<div class="rounded-xl border border-base-300 bg-base-100 p-6 text-center text-sm text-body-muted">
-  <i class="ph-thin ph-cloud-slash text-2xl block mb-2"></i>
-  {{ _('prep2.getready.unavailable') }}
-</div>
+{% import "macros/ui.html" as ui %}
+{% call ui.notice(icon='ph-cloud-slash') %}{{ _('prep2.getready.unavailable') }}{% endcall %}

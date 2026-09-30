@@ -1,39 +1,31 @@
 {# P4 talking points + questions-to-ask. Talking points tie a résumé strength to
-   a JD need; questions-to-ask are smart questions the candidate asks them. #}
-<div class="space-y-6">
+   a JD need; questions-to-ask are smart questions the candidate asks them.
+   Labels in words, not icons (§5B). #}
+{% import "macros/ui.html" as ui %}
+<div class="space-y-8">
 
-  <section>
-    <h3 class="text-label mb-2">{{ _('prep2.getready.talking_heading') }}</h3>
+  <section class="space-y-3">
+    <h3 class="text-eyebrow">{{ _('prep2.getready.talking_heading') }}</h3>
     {% if talking_points %}
-      <div class="space-y-2">
+      <div class="space-y-3">
         {% for t in talking_points %}
-        <div class="card-quiet p-4">
-          <div class="font-medium text-sm">{{ t.message }}</div>
-          <div class="flex flex-col sm:flex-row sm:gap-4 mt-2 text-xs text-body-muted">
-            {% if t.resume_evidence %}
-              <span class="inline-flex items-start gap-1"><i class="ph-thin ph-file-text mt-0.5"></i>{{ t.resume_evidence }}</span>
-            {% endif %}
-            {% if t.jd_need %}
-              <span class="inline-flex items-start gap-1"><i class="ph-thin ph-target mt-0.5"></i>{{ t.jd_need }}</span>
-            {% endif %}
-          </div>
+        <div class="card-quiet p-4 space-y-2">
+          <div class="text-body-strong">{{ t.message }}</div>
+          {% if t.resume_evidence %}<p class="ui-kv text-body-muted"><b class="text-base-content">{{ _('prep2.getready.from_resume') }}</b>{{ t.resume_evidence }}</p>{% endif %}
+          {% if t.jd_need %}<p class="ui-kv text-body-muted"><b class="text-base-content">{{ _('prep2.getready.they_need') }}</b>{{ t.jd_need }}</p>{% endif %}
         </div>
         {% endfor %}
       </div>
     {% else %}
-      <p class="text-sm text-body-muted">{{ _('prep2.getready.empty_talking') }}</p>
+      {{ ui.empty_state(_('prep2.getready.empty_talking')) }}
     {% endif %}
   </section>
 
   {% if questions_to_ask %}
-  <section>
-    <h3 class="text-label mb-2">{{ _('prep2.getready.ask_heading') }}</h3>
-    <ul class="space-y-1.5">
-      {% for q in questions_to_ask %}
-      <li class="flex items-start gap-2 text-sm">
-        <i class="ph-thin ph-question text-base-content/40 mt-0.5 shrink-0"></i><span>{{ q }}</span>
-      </li>
-      {% endfor %}
+  <section class="space-y-3">
+    <h3 class="text-eyebrow">{{ _('prep2.getready.ask_heading') }}</h3>
+    <ul class="ui-list">
+      {% for q in questions_to_ask %}<li>{{ q }}</li>{% endfor %}
     </ul>
   </section>
   {% endif %}

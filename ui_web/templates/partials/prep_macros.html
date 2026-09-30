@@ -3,3 +3,14 @@
 {% macro band_pill_class(band) -%}
 {{ {'strong': 'pill-success', 'solid': 'pill-info', 'stretch': 'pill-warn'}.get(band, 'pill-neutral') }}
 {%- endmacro %}
+
+{# The interview's metadata line for page headers (company · round · interviewer
+   · date). Metadata rides the header lede, never a content column; no invented
+   defaults — round length is left out on purpose (design.md §7A). #}
+{% macro iv_meta(interview, extra=none) -%}
+{%- set meta = [interview.company, _('prep2.round.' + (interview.round_type or 'screening'))] -%}
+{%- if interview.interviewer_title %}{% set meta = meta + [interview.interviewer_title] %}{% endif -%}
+{%- if interview.interview_at %}{% set meta = meta + [interview.interview_at | replace('T', ' · ')] %}{% endif -%}
+{%- if extra %}{% set meta = meta + [extra] %}{% endif -%}
+{{ meta | join('  ·  ') }}
+{%- endmacro %}

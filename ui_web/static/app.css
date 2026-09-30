@@ -2339,3 +2339,56 @@ a.stepper-step:hover .stepper-dot { border-color: oklch(var(--n-5)); }
   font-size: 0.875rem; color: oklch(var(--p));
 }
 .ui-source:hover { text-decoration: underline; }
+
+/* Numbered list — only when order is real (question flow, ranked actions). */
+.ui-list--num { counter-reset: ui-num; }
+.ui-list--num > li { counter-increment: ui-num; padding-left: 1.75rem; }
+.ui-list--num > li::before {
+  content: counter(ui-num);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: oklch(var(--n-5));
+}
+
+/* Form field in the box language: white + hairline, green focus ring. */
+.ui-field {
+  width: 100%;
+  background: oklch(var(--b1));
+  border: 1px solid var(--hair);
+  border-radius: var(--r-md);
+  padding: 0.6rem 0.75rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  transition: border-color var(--dur-1) ease, box-shadow var(--dur-1) ease;
+}
+.ui-field:focus { outline: none; border-color: oklch(var(--p) / 0.45); box-shadow: 0 0 0 3px oklch(var(--p) / 0.08); }
+
+/* Selectable option tile (mode / channel pickers): a box; picked = green border. */
+.ui-option {
+  text-align: left;
+  background: oklch(var(--b1));
+  border: 1px solid var(--hair);
+  border-radius: var(--r-lg);
+  padding: 0.85rem 1rem;
+  transition: border-color var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+}
+.ui-option:hover { border-color: var(--hair-strong); box-shadow: var(--lift); }
+.ui-option--on, .ui-option--on:hover { border-color: oklch(var(--p)); box-shadow: 0 0 0 1px oklch(var(--p) / 0.2); }
+
+/* Conversation bubbles (practice live + feedback transcript). Coach = small
+   grey part with dark text; you = green. */
+.ui-bubble { max-width: 85%; border-radius: 1rem; padding: 0.5rem 0.875rem; font-size: 0.875rem; line-height: 1.5; }
+.ui-bubble--coach { background: var(--surf-2); color: oklch(var(--bc)); }
+.ui-bubble--me { background: oklch(var(--p)); color: oklch(var(--pc)); }
+
+/* Small labelled line inside a card ("From your résumé — …"). */
+.ui-kv { font-size: 0.875rem; }
+.ui-kv > b { font-weight: 600; margin-right: 0.35rem; }
+/* A numbered list whose items are cards: the number sits inside the box. */
+.ui-list--num > li.card-quiet { padding-left: 2.75rem; }
+.ui-list--num > li.card-quiet::before { left: 1rem; top: 1rem; }
+/* Mic level meter track (practice live) + bounded captions pane. */
+.ui-meter { width: 6rem; height: 0.375rem; border-radius: 9999px; background: var(--surf-2); overflow: hidden; }
+.ui-captions { height: 46vh; }
+@media (min-width: 1024px) { .ui-captions { height: 60vh; } }

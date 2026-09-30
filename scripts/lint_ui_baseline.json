@@ -21,9 +21,6 @@
   "raw-color": 1,
   "text-opacity": 1
  },
- "pages/interview_practice.html": {
-  "hand-h1": 1
- },
  "pages/jobs.html": {
   "adhoc-fill": 3,
   "adhoc-radius": 2,
@@ -51,27 +48,8 @@
   "raw-color": 20,
   "text-opacity": 4
  },
- "pages/practice_consent.html": {
-  "hand-h1": 1
- },
- "pages/practice_feedback.html": {
-  "adhoc-fill": 1,
-  "adhoc-radius": 1,
-  "raw-color": 1
- },
  "pages/practice_live.html": {
-  "adhoc-fill": 2,
-  "adhoc-radius": 4,
-  "hand-h1": 1,
-  "outlined-box": 4,
-  "raw-color": 5
- },
- "pages/practice_run.html": {
-  "hand-h1": 1
- },
- "pages/practice_setup.html": {
-  "adhoc-fill": 2,
-  "adhoc-radius": 4
+  "raw-color": 4
  },
  "pages/prep_detail.html": {
   "adhoc-fill": 2,
@@ -188,12 +166,6 @@
   "raw-color": 1,
   "text-opacity": 1
  },
- "partials/practice_turn.html": {
-  "adhoc-fill": 1,
-  "adhoc-radius": 2,
-  "outlined-box": 2,
-  "text-opacity": 1
- },
  "partials/prep_confirm.html": {
   "adhoc-fill": 1,
   "adhoc-radius": 2,
@@ -278,26 +250,6 @@
   "outlined-box": 1,
   "raw-color": 3,
   "text-opacity": 3
- },
- "partials/toolkit_flashcards.html": {
-  "adhoc-radius": 1,
-  "outlined-box": 1,
-  "text-opacity": 2
- },
- "partials/toolkit_questions.html": {
-  "adhoc-radius": 1,
-  "outlined-box": 1,
-  "text-opacity": 2
- },
- "partials/toolkit_stories.html": {
-  "hand-bullet": 1
- },
- "partials/toolkit_talking.html": {
-  "text-opacity": 1
- },
- "partials/toolkit_unavailable.html": {
-  "adhoc-radius": 1,
-  "outlined-box": 1
  },
  "partials/typeahead_dropdown.html": {
   "raw-color": 1
