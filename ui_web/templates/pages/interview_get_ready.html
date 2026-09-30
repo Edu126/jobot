@@ -4,46 +4,40 @@
 {% import "partials/prep_macros.html" as pm %}
 {% block title %}{{ _('prep2.step.get_ready') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
+{% block main_class %}py-6{% endblock %}
 
-{# Two tabs (ADR-056): the answer-card deck (P2 questions + my answers) and my
-   mapped stories. Text-only — an icon on every tab is repetition (§5B). #}
-{% set tabs = [
-  ('answers', _('prep2.getready.tab_answers')),
-  ('stories', _('prep2.getready.tab_stories'))
-] %}
-
+{# Get Ready (ADR-057). Everything comes from ONE toolkit call, rendered in
+   full — no per-tab "Building this part…". On desktop the whole screen fits one
+   viewport (.gr-shell): header · tabs · the active panel, which scrolls inside
+   itself if it must. Tabs: Answer cards (flip deck) · Your stories (STAR) ·
+   Questions to ask them (why + what it shows). #}
 {% block content %}
-<div class="space-y-6" x-data="{ tab: 'answers' }">
+<div class="gr-shell" x-data="{ tab: 'answers' }">
 
-  {# ---- header + stepper ---- #}
-  <div class="space-y-4">
-    {{ ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), back=('/interviews/' ~ interview.id, _('prep2.step.brief'))) }}
+  {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), back=('/interviews/' ~ interview.id, _('prep2.step.brief'))) %}
     {{ steps.stepper('get_ready', interview.id) }}
-  </div>
+  {% endcall %}
 
-  {# ---- tab bar ---- #}
-  <div class="seg-tabs flex-nowrap overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
-    {% for key, label in tabs %}
-    <button id="tab-{{ key }}" type="button" class="seg-tab shrink-0"
-            :class="tab === '{{ key }}' && 'seg-tab--active'"
-            @click="tab = '{{ key }}'">{{ label }}</button>
-    {% endfor %}
+  {% if toolkit is none %}
+  {# ---- not written yet: ONE honest loading state, then reload ---- #}
+  <div class="gr-panel">
+    <div class="card-quiet p-8 flex flex-col items-center justify-center text-center gap-4 h-full"
+         hx-post="/interviews/{{ interview.id }}/toolkit/build" hx-trigger="load" hx-swap="outerHTML">
+      <div class="gen-orb" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="text-masthead">{{ _('prep2.getready.writing') }}</div>
+      <p class="text-body-muted max-w-md">{{ _('prep2.getready.writing_sub') }}</p>
+    </div>
   </div>
+  {% else %}
 
-  {# ---- lazy panels: the default loads on load; the rest on first activation ---- #}
-  {% for key, label in tabs %}
-  <div id="panel-{{ key }}" x-show="tab === '{{ key }}'" x-cloak
-       hx-get="/interviews/{{ interview.id }}/toolkit/{{ key }}"
-       hx-trigger="{% if loop.first %}load{% else %}click from:#tab-{{ key }} once{% endif %}"
-       hx-swap="innerHTML">
-    {% include "partials/toolkit_loading.html" %}
-  </div>
-  {% endfor %}
-
-  {# ---- footer: nudge + Start Practice (always enabled, §3/§6) ---- #}
-  <div class="flex flex-wrap items-center justify-between gap-3 pt-6 border-t border-base-300">
-    <p class="text-sm text-body-muted">{{ _('prep2.getready.nudge') }}</p>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    {{ ui.seg_tabs([('answers', _('prep2.getready.tab_answers'), none), ('stories', _('prep2.getready.tab_stories'), none), ('ask', _('prep2.getready.tab_ask'), none)], 'tab') }}
     {{ ui.button(_('prep2.getready.start_practice'), variant='primary', icon_after='ph-arrow-right', href='/interviews/' ~ interview.id ~ '/practice') }}
   </div>
+
+  <div class="gr-panel" x-show="tab === 'answers'">{% include "partials/getready_answers.html" %}</div>
+  <div class="gr-panel" x-show="tab === 'stories'" x-cloak>{% include "partials/getready_stories.html" %}</div>
+  <div class="gr-panel" x-show="tab === 'ask'" x-cloak>{% include "partials/getready_ask.html" %}</div>
+  {% endif %}
 </div>
 {% endblock %}

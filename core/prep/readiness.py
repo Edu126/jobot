@@ -21,7 +21,7 @@ from typing import Optional
 from core import db
 
 from . import brief as p1
-from . import mapping as p3
+from . import toolkit as p3  # story picks now come from the one toolkit call (ADR-057)
 
 LEVELS = ("not_started", "getting_there", "almost_ready", "ready")
 

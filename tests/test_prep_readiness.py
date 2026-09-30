@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import db  # noqa: E402
 from core.prep import brief as B  # noqa: E402
-from core.prep import mapping as M  # noqa: E402
+from core.prep import toolkit as T  # noqa: E402
 from core.prep import readiness as R  # noqa: E402
 
 
@@ -39,11 +39,14 @@ def _seed_brief(p, iid, n):
 
 
 def _seed_mapping(p, iid, cand, covered_ids):
+    """Story picks now live in the one toolkit artifact (ADR-057)."""
     stories = db.list_stories(cand, status="saved", path=p)
-    version = M._cache_version(stories)
+    brief = B.read_cached_brief(iid, lang="en", path=p).to_dict_for_cache()
+    version = T._cache_version(brief, stories, T.read_facts(iid, path=p))
     sid = str(stories[0]["id"]) if stories else "1"
     rows = [{"competency_id": cid, "story_id": sid} for cid in covered_ids]
-    db.save_prep_artifact(iid, "mapping", "en", version, {"mapping": rows}, "f", path=p)
+    db.save_prep_artifact(iid, "toolkit", "en", version,
+                          {"questions": [], "stories": rows, "questions_to_ask": []}, "f", path=p)
 
 
 def test_readiness_levels():

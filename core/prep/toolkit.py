@@ -1,0 +1,421 @@
+"""The Get Ready toolkit in ONE call (ADR-057, REQ-041) — replaces the P2
+questions / P3 story mapping / P4 answer cards chain.
+
+Eduardo (2026-09-29): "todo este material debería venir desde que procesamos el
+brief, nada de construir por capas — perdemos contexto, tokens y llamadas". The
+three calls each re-sent the same brief + résumé and saw only a slice of the
+picture (P4 answered questions it hadn't written, with stories it hadn't
+picked). One call with the full context writes all of it consistently:
+
+  - questions[] (8–10): the likely questions in interview flow order, each with
+    why they ask it, one follow-up, MY first-person answer and the point to land;
+  - stories[] (one per competency): the best Story Bank story for it (+ why and
+    the angle for this role), or — when none fits — a STAR draft built from the
+    résumé that the candidate can save to the bank;
+  - questions_to_ask[] (3–4): questions for the end of the interview, each with
+    why it's a good question and what asking it shows about me.
+
+Inputs: the cached Brief (P1), the candidate's answers to the Brief's fact
+questions ("facts" — the specifics the résumé lacked), the saved Story Bank and
+the résumé. Cache in `prep_artifacts(interview, 'toolkit', lang, version)` with
+version = PROMPT_VERSION + a fingerprint of brief/stories/facts, so any of them
+changing is a miss, never stale. temperature=0.0. Joins are validated in code:
+unknown competency ids are nulled, unknown story ids fall back to "no story".
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import asdict, dataclass, field
+from typing import Any, Optional
+
+from core import db
+from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
+from core.settings import get_output_language, language_instruction
+
+from . import brief as p1
+from . import prompts as P
+
+PROMPT_VERSION = "2026-09-30-toolkit-v1"
+ARTIFACT_KIND = "toolkit"
+FACTS_KIND = "facts"
+FACTS_VERSION = "v1"
+
+MIN_QUESTIONS = 8
+MAX_QUESTIONS = 10
+MAX_QUESTIONS_TO_ASK = 4
+VALID_TYPES = ("opener", "behavioral", "situational", "technical")
+DEFAULT_TYPE = "behavioral"
+
+
+@dataclass
+class ToolkitQuestion:
+    """A likely question + my answer. Carries the P2 Question fields (id, text,
+    type, competency_id, why_they_ask, follow_up) so Practice keeps working."""
+    id: str
+    text: str
+    type: str
+    competency_id: Optional[str]
+    why_they_ask: str = ""
+    follow_up: str = ""
+    answer: str = ""
+    point_to_land: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class StoryPick:
+    """One competency's story. Same attribute names as the old P3 Mapping
+    (competency_id, story_id, why_it_fits, angle_for_this_role) so readiness and
+    the live coach's cues read it unchanged. `draft` = a STAR drafted from the
+    résumé when no bank story fits (story_id None)."""
+    competency_id: str
+    story_id: Optional[str] = None
+    why_it_fits: Optional[str] = None
+    angle_for_this_role: Optional[str] = None
+    draft: Optional[dict] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class AskQuestion:
+    question: str
+    why: str = ""
+    shows: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Toolkit:
+    questions: list[ToolkitQuestion] = field(default_factory=list)
+    stories: list[StoryPick] = field(default_factory=list)
+    questions_to_ask: list[AskQuestion] = field(default_factory=list)
+    created_at: str = ""
+
+    def is_empty(self) -> bool:
+        return not self.questions
+
+    def to_dict_for_cache(self) -> dict[str, Any]:
+        return {
+            "questions": [q.to_dict() for q in self.questions],
+            "stories": [s.to_dict() for s in self.stories],
+            "questions_to_ask": [a.to_dict() for a in self.questions_to_ask],
+        }
+
+
+# ---------- facts: the candidate's answers to the Brief's fact questions ----------
+
+def read_facts(interview_id: int, *, path=db.DB_PATH) -> dict[str, str]:
+    """{fact_question_id: answer} — only non-blank answers. {} when none."""
+    row = db.get_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, path=path)
+    a = (row or {}).get("artifact")
+    return {str(k): str(v).strip() for k, v in a.items() if str(v).strip()} if isinstance(a, dict) else {}
+
+
+def save_facts(interview_id: int, answers: dict[str, str], *, path=db.DB_PATH) -> None:
+    clean = {str(k): str(v).strip()[:P.MAX_NOTES_CHARS] for k, v in answers.items() if str(v).strip()}
+    db.save_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, clean, path=path)
+
+
+# ---------- cache keys ----------
+
+def _resolve_lang(lang: Optional[str]) -> str:
+    return lang if lang is not None else get_output_language()
+
+
+def _fingerprint(brief: dict, stories: list[dict], facts: dict[str, str]) -> str:
+    comps = sorted((str(c.get("id", "")), str(c.get("name", "")))
+                   for c in (brief.get("competencies") or []) if isinstance(c, dict))
+    story_rows = sorted(
+        ({k: str(s.get(k, "")) for k in ("id", "title", "situation", "task", "action", "result", "metric")}
+         for s in stories if isinstance(s, dict)),
+        key=lambda r: r["id"],
+    )
+    blob = json.dumps({"r": str(brief.get("role_summary", "")), "c": comps,
+                       "s": story_rows, "f": sorted(facts.items())},
+                      ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
+
+
+def _cache_version(brief: dict, stories: list[dict], facts: dict[str, str]) -> str:
+    return f"{PROMPT_VERSION}:{_fingerprint(brief, stories, facts)}"
+
+
+def _row_to_toolkit(row: dict) -> Toolkit:
+    tk = _parse_toolkit(row.get("artifact") or {}, valid_comps=None, valid_stories=None)
+    tk.created_at = row.get("created_at", "")
+    return tk
+
+
+# ---------- entry points ----------
+
+def read_cached_toolkit(
+    interview_id: int, stories: list[dict], *, lang: Optional[str] = None, path=db.DB_PATH,
+) -> Optional[Toolkit]:
+    """Cache-only read (never generates) — for Practice setup, readiness and the
+    live coach. None when the toolkit hasn't been built for the current brief /
+    Story Bank / facts."""
+    lang = _resolve_lang(lang)
+    brief = p1.read_cached_brief(interview_id, lang=lang, path=path)
+    if brief is None or brief.is_empty():
+        return None
+    version = _cache_version(brief.to_dict_for_cache(), stories, read_facts(interview_id, path=path))
+    row = db.get_prep_artifact(interview_id, ARTIFACT_KIND, lang, version, path=path)
+    return _row_to_toolkit(row) if row else None
+
+
+def read_cached_mapping(
+    interview_id: int, stories: list[dict], *, lang: Optional[str] = None, path=db.DB_PATH,
+) -> Optional[list[StoryPick]]:
+    """The per-competency story picks (old P3 contract) from the cached toolkit."""
+    tk = read_cached_toolkit(interview_id, stories, lang=lang, path=path)
+    return tk.stories if tk else None
+
+
+def get_or_generate_toolkit(
+    interview: dict,
+    brief: dict,
+    stories: list[dict],
+    resume_text: str,
+    client: GeminiClient,
+    *,
+    lang: Optional[str] = None,
+    use_cache: bool = True,
+    path=db.DB_PATH,
+) -> Optional[Toolkit]:
+    """Cache-aware entry point. `brief` = P1's cached dict; `stories` = the saved
+    Story Bank. Facts are read from the interview. Returns the toolkit,
+    generating + caching on a miss. None on failure, an empty result, or no
+    competencies / résumé."""
+    interview_id = interview.get("id")
+    if not interview_id or not resume_text.strip() or not brief.get("competencies"):
+        return None
+    lang = _resolve_lang(lang)
+    facts = read_facts(interview_id, path=path)
+    version = _cache_version(brief, stories, facts)
+
+    if use_cache:
+        cached = db.get_prep_artifact(interview_id, ARTIFACT_KIND, lang, version, path=path)
+        if cached is not None:
+            return _row_to_toolkit(cached)
+
+    if client.all_models_exhausted():
+        return None
+
+    prompt = _build_prompt(interview, brief, stories, facts, resume_text, lang=lang)
+    try:
+        raw = client.generate_json(prompt, temperature=0.0)
+    except (QuotaExhaustedError, GeminiError):
+        return None
+    tk = _parse_toolkit(
+        raw,
+        valid_comps={str(c.get("id", "")) for c in brief.get("competencies") or [] if isinstance(c, dict)},
+        valid_stories={str(s.get("id", "")) for s in stories if isinstance(s, dict)},
+        all_comps=[str(c.get("id", "")) for c in brief.get("competencies") or [] if isinstance(c, dict)],
+    )
+    if tk.is_empty():
+        return None
+
+    model_used = client.last_model_used or client.model_name or ""
+    db.save_prep_artifact(interview_id, ARTIFACT_KIND, lang, version,
+                          tk.to_dict_for_cache(), model_used, path=path)
+    stored = db.get_prep_artifact(interview_id, ARTIFACT_KIND, lang, version, path=path)
+    return _row_to_toolkit(stored) if stored else tk
+
+
+# ---------- prompt ----------
+
+def _facts_block(brief: dict, facts: dict[str, str]) -> str:
+    qs = {str(f.get("id", "")): str(f.get("question", "")) for f in brief.get("fact_questions") or []
+          if isinstance(f, dict)}
+    lines = [f"- Q: {qs.get(fid, fid)}\n  A: {ans}" for fid, ans in facts.items() if ans]
+    return "\n".join(lines) if lines else "(none given — rely on the résumé only)"
+
+
+def _brief_block(brief: dict) -> str:
+    keep = {
+        "role_summary": brief.get("role_summary", ""),
+        "company_snapshot": [p.get("point", "") for p in brief.get("company_snapshot") or [] if isinstance(p, dict)],
+        "competencies": [
+            {k: c.get(k) for k in ("id", "name", "what_good_looks_like", "resume_match", "evidence")}
+            for c in brief.get("competencies") or [] if isinstance(c, dict)],
+        "gaps": brief.get("gaps") or [],
+        "interviewer_lens": brief.get("interviewer_lens") or [],
+        "friction_points": brief.get("friction_points") or [],
+    }
+    return json.dumps(keep, ensure_ascii=False, indent=2)
+
+
+def _build_prompt(interview: dict, brief: dict, stories: list[dict], facts: dict[str, str],
+                  resume_text: str, *, lang: str) -> str:
+    company = (interview.get("company") or "").strip() or "(unknown company)"
+    role = (interview.get("role_title") or "").strip() or "(unknown role)"
+    round_type = (interview.get("round_type") or "screening").strip()
+    jd = P.clip(interview.get("jd_text") or "", P.MAX_JD_CHARS)
+    jd_block = jd if jd else "(not provided — use the role title and the brief)"
+    resume = P.clip(resume_text, P.MAX_RESUME_CHARS)
+
+    return f"""You are my interview coach. I have a {round_type} interview for {role} at {company}. Build my Get Ready toolkit in one pass, using everything below.
+
+{P.RULE_BLOCK}
+- Write every answer AS ME, in the first person ("I led…", "At CRA I…"). Never use my name, never "the candidate", never "he/she".
+- Be concrete: use the real employers, tools, numbers and results from my résumé and from MY ANSWERS below. Prefer my answers when they are more specific than the résumé.
+- If there is no evidence for something, do not invent it — answer honestly with the closest real experience and how it transfers.
+
+{language_instruction(lang)}
+
+Task:
+A. QUESTIONS — write {MIN_QUESTIONS} to {MAX_QUESTIONS} questions this interview will most likely include, in the order a real interview flows.
+   - Mix for the round type: screening = mostly openers and motivation + 1-2 behavioral; behavioral = one per competency; technical = role knowledge + 1-2 behavioral; case = situational/problem-solving; hiring_manager = behavioral + situational + one "first 90 days"; final_panel = a harder mix.
+   - For each: type (opener | behavioral | situational | technical), competency_id (from the brief, or null for an opener), why they ask it (one sentence), one likely follow-up.
+   - For each: "answer" = what I would say out loud, 2 to 4 sentences, light Situation → Action → Result, built on the story you picked for that competency in B when there is one. And "point_to_land" = the one thing the interviewer should remember (one short line).
+B. STORIES — for EVERY competency in the brief:
+   - pick the best story from my Story Bank (story_id), say in one sentence why it fits and one sentence how to angle it for this role;
+   - if no saved story fits, set story_id null and write "draft": a STAR story from my résumé (and my answers) for this competency — title, situation, task, action (what I did, with "I"), result, metric (a number only if it is in the inputs, else null). If the résumé has nothing usable, set draft null.
+C. QUESTIONS TO ASK — {MAX_QUESTIONS_TO_ASK - 1} to {MAX_QUESTIONS_TO_ASK} smart questions I can ask at the end. For each: why it is a good question for this role/company (one sentence), and "shows" = what asking it shows about me (2-4 words, e.g. "strategic thinking").
+
+The brief (competencies use these ids):
+{_brief_block(brief)}
+
+MY ANSWERS to your questions about specifics the résumé doesn't state:
+{_facts_block(brief, facts)}
+
+My Story Bank (use these story ids):
+{P.format_stories(stories)}
+
+Job description:
+---
+{jd_block}
+---
+
+My résumé:
+---
+{resume}
+---
+
+Return JSON with this exact schema — no prose before or after:
+{{
+  "questions": [
+    {{ "text": "string", "type": "opener | behavioral | situational | technical", "competency_id": "c1 | null",
+       "why_they_ask": "string", "follow_up": "string", "answer": "string", "point_to_land": "string" }}
+  ],
+  "stories": [
+    {{ "competency_id": "c1", "story_id": "12 | null", "why_it_fits": "string | null",
+       "angle_for_this_role": "string | null",
+       "draft": {{ "title": "string", "situation": "string", "task": "string", "action": "string",
+                  "result": "string", "metric": "string | null" }} }}
+  ],
+  "questions_to_ask": [{{ "question": "string", "why": "string", "shows": "string" }}]
+}}"""
+
+
+# ---------- parsing (defensive; joins validated in code) ----------
+
+def _s(v: Any) -> str:
+    return str(v).strip() if v not in (None,) else ""
+
+
+def _opt(v: Any) -> Optional[str]:
+    t = _s(v)
+    return t if t and t.lower() != "null" else None
+
+
+def _parse_toolkit(raw: Any, *, valid_comps: Optional[set[str]], valid_stories: Optional[set[str]],
+                   all_comps: Optional[list[str]] = None) -> Toolkit:
+    if not isinstance(raw, dict):
+        return Toolkit()
+    return Toolkit(
+        questions=_parse_questions(raw.get("questions"), valid_comps),
+        stories=_parse_stories(raw.get("stories"), valid_comps, valid_stories, all_comps),
+        questions_to_ask=_parse_ask(raw.get("questions_to_ask")),
+    )
+
+
+def _parse_questions(items: Any, valid_comps: Optional[set[str]]) -> list[ToolkitQuestion]:
+    """Re-id q1..qN (dense, stable order — the join key for card reviews and
+    Practice), drop blank text, coerce unknown types, null unknown competencies.
+    The cache-read path (valid_comps None) trusts stored ids."""
+    out: list[ToolkitQuestion] = []
+    if not isinstance(items, list):
+        return out
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        text = _s(it.get("text"))
+        if not text:
+            continue
+        qtype = _s(it.get("type")).lower()
+        if qtype not in VALID_TYPES:
+            qtype = DEFAULT_TYPE
+        cid = _opt(it.get("competency_id"))
+        if cid is not None and valid_comps is not None and cid not in valid_comps:
+            cid = None
+        qid = _s(it.get("id")) if valid_comps is None and _s(it.get("id")) else f"q{len(out) + 1}"
+        out.append(ToolkitQuestion(
+            id=qid, text=text, type=qtype, competency_id=cid,
+            why_they_ask=_s(it.get("why_they_ask")), follow_up=_s(it.get("follow_up")),
+            answer=_s(it.get("answer")), point_to_land=_s(it.get("point_to_land")),
+        ))
+        if len(out) >= MAX_QUESTIONS:
+            break
+    return out
+
+
+def _parse_draft(d: Any) -> Optional[dict]:
+    if not isinstance(d, dict):
+        return None
+    draft = {k: _s(d.get(k)) for k in ("title", "situation", "task", "action", "result")}
+    draft["metric"] = _opt(d.get("metric"))
+    return draft if (draft["title"] or draft["action"]) else None
+
+
+def _parse_stories(items: Any, valid_comps: Optional[set[str]], valid_stories: Optional[set[str]],
+                   all_comps: Optional[list[str]]) -> list[StoryPick]:
+    """One row per competency: unknown/duplicate competencies dropped, an
+    unknown story id falls back to 'no story' (its why/angle dropped), a draft
+    is kept only when there is no story. On generation, every brief competency
+    gets a row (missing ones become an empty gap) so the tab never skips one."""
+    out: list[StoryPick] = []
+    seen: set[str] = set()
+    for it in items if isinstance(items, list) else []:
+        if not isinstance(it, dict):
+            continue
+        cid = _s(it.get("competency_id"))
+        if not cid or cid in seen or (valid_comps is not None and cid not in valid_comps):
+            continue
+        seen.add(cid)
+        sid = _opt(it.get("story_id"))
+        if sid is not None and valid_stories is not None and sid not in valid_stories:
+            sid = None
+        pick = StoryPick(competency_id=cid, story_id=sid)
+        if sid:
+            pick.why_it_fits = _opt(it.get("why_it_fits"))
+            pick.angle_for_this_role = _opt(it.get("angle_for_this_role"))
+        else:
+            pick.draft = _parse_draft(it.get("draft")) if valid_comps is not None else (
+                it.get("draft") if isinstance(it.get("draft"), dict) else None)
+        out.append(pick)
+    for cid in all_comps or []:
+        if cid not in seen:
+            out.append(StoryPick(competency_id=cid))
+    return out
+
+
+def _parse_ask(items: Any) -> list[AskQuestion]:
+    out: list[AskQuestion] = []
+    for it in items if isinstance(items, list) else []:
+        if isinstance(it, dict):
+            q = _s(it.get("question"))
+            if q:
+                out.append(AskQuestion(question=q, why=_s(it.get("why")), shows=_s(it.get("shows"))))
+        elif _s(it):
+            out.append(AskQuestion(question=_s(it)))
+        if len(out) >= MAX_QUESTIONS_TO_ASK:
+            break
+    return out

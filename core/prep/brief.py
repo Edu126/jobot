@@ -26,7 +26,7 @@ from core.settings import get_output_language, language_instruction
 
 from . import prompts as P
 
-PROMPT_VERSION = "2026-09-21-brief-v1"
+PROMPT_VERSION = "2026-09-30-brief-v2"
 ARTIFACT_KIND = "brief"
 
 MIN_COMPETENCIES = 4
@@ -34,6 +34,7 @@ MAX_COMPETENCIES = 6
 MAX_GAPS = 3
 MAX_LENS = 3
 MAX_FRICTION = 3
+MAX_FACT_QUESTIONS = 4
 
 
 @dataclass
@@ -68,6 +69,20 @@ class Gap:
 
 
 @dataclass
+class FactQuestion:
+    """A question TO the candidate about a specific the résumé doesn't give
+    (a number, a scope, a result) that this interview will probe. Asked on the
+    Brief before the toolkit is written, so answers can be concrete instead of
+    vague (ADR-057). Answers live in prep_artifacts kind 'facts'."""
+    id: str
+    question: str
+    why: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class Brief:
     role_summary: str = ""
     company_snapshot: list[CompanyPoint] = field(default_factory=list)
@@ -75,6 +90,7 @@ class Brief:
     gaps: list[Gap] = field(default_factory=list)
     interviewer_lens: list[str] = field(default_factory=list)
     friction_points: list[str] = field(default_factory=list)
+    fact_questions: list[FactQuestion] = field(default_factory=list)
     created_at: str = ""
 
     def is_empty(self) -> bool:
@@ -90,6 +106,7 @@ class Brief:
             "gaps": [g.to_dict() for g in self.gaps],
             "interviewer_lens": self.interviewer_lens,
             "friction_points": self.friction_points,
+            "fact_questions": [f.to_dict() for f in self.fact_questions],
         }
 
 
@@ -194,6 +211,7 @@ Do this:
 5. List up to {MAX_GAPS} gaps. For each gap, give one concrete prep action and the competency id it belongs to (or null).
 6. Based on the interviewer's title (if given) and the round type, list what this interviewer likely cares about in {MAX_LENS} bullets. If no title is given, base it on the round type only.
 7. List up to {MAX_FRICTION} likely friction points (tough topics they may push on).
+8. Write up to {MAX_FACT_QUESTIONS} short questions to ASK THE CANDIDATE about specifics this interview will probe but the résumé does not state — a number, a budget or team size, a scope, a concrete result. Address the candidate as "you". For each, say in a few words why it matters for this interview. Only ask about things the résumé leaves vague; if it is already specific, ask fewer.
 
 Round type: {round_type}. Length: {length} minutes.
 Interviewer title: {interviewer}
@@ -222,7 +240,8 @@ Return JSON with this exact schema — no prose before or after:
   ],
   "gaps": [{{ "competency_id": "c1 | null", "gap": "string", "action": "string" }}],
   "interviewer_lens": ["string"],
-  "friction_points": ["string"]
+  "friction_points": ["string"],
+  "fact_questions": [{{ "question": "string", "why": "string" }}]
 }}"""
 
 
@@ -238,7 +257,24 @@ def _parse_brief(raw: Any) -> Brief:
         gaps=_parse_gaps(raw.get("gaps")),
         interviewer_lens=_parse_str_list(raw.get("interviewer_lens"), MAX_LENS),
         friction_points=_parse_str_list(raw.get("friction_points"), MAX_FRICTION),
+        fact_questions=_parse_fact_questions(raw.get("fact_questions")),
     )
+
+
+def _parse_fact_questions(items: Any) -> list[FactQuestion]:
+    """Keep non-blank questions, re-id f1..fN (the answer join key), cap."""
+    out: list[FactQuestion] = []
+    if not isinstance(items, list):
+        return out
+    for it in items:
+        q = str(it.get("question", "")).strip() if isinstance(it, dict) else str(it or "").strip()
+        if not q:
+            continue
+        why = str(it.get("why", "")).strip() if isinstance(it, dict) else ""
+        out.append(FactQuestion(id=f"f{len(out) + 1}", question=q, why=why))
+        if len(out) >= MAX_FACT_QUESTIONS:
+            break
+    return out
 
 
 def _parse_snapshot(items: Any) -> list[CompanyPoint]:

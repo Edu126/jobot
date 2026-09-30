@@ -26,14 +26,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from core import db
 from core.llm.gemini import GeminiClient, resolve_api_key
 from core.prep import brief as prep_brief
-from core.prep import flashcards as prep_flashcards
-from core.prep import mapping as prep_mapping
 from core.prep import audio_score as prep_audio_score
 from core.prep import live as prep_live
 from core.prep import pipeline
 from core.prep import practice as prep_practice
-from core.prep import questions as prep_questions
+from core.prep import toolkit as prep_toolkit
 from core.prep import readiness as prep_readiness
+from core.prep import story_bank as prep_story_bank
 from core.prep import tavily
 from core import settings as app_settings
 from core.settings import get_output_language
@@ -220,9 +219,8 @@ async def interview_generating(request: Request, interview_id: int):
 
 @router.post("/interviews/{interview_id}/build")
 async def interview_build(request: Request, interview_id: int):
-    """Run the synchronous half: fetch company research (Tavily) then P1 Brief.
-    On success, warm the P2/P3/P4 fan-out in the background and redirect to the
-    Brief. On failure (quota / no résumé), render a retry state in place."""
+    """Fetch company research (Tavily) then P1 Brief, and redirect to the Brief.
+    On failure (quota / no résumé), render a retry state in place."""
     interview = db.get_interview(interview_id)
     if not interview:
         return _redirect("/interviews/new")
@@ -251,15 +249,9 @@ async def interview_build(request: Request, interview_id: int):
             request, "partials/interview_build_error.html",
             {"interview_id": interview_id, "reason": "generation_failed"})
 
-    # Warm the toolkit (P2/P3/P4) in the background so Get Ready is ready when
-    # the user arrives — best-effort; those tabs also lazy-load on a cache miss.
-    stories = db.list_stories(interview["resume_hash"], status="saved")
-    task = asyncio.create_task(pipeline.fan_out_toolkit(
-        interview, brief, resume_text, make_client=_make_client_factory(),
-        stories=stories, lang=lang))
-    _warmups.add(task)
-    task.add_done_callback(_warmups.discard)
-
+    # No background toolkit warm-up any more (ADR-057): the ONE toolkit call
+    # waits for the candidate's answers to the Brief's fact questions, so it can
+    # write specific answers instead of vague ones.
     return HTMLResponse("", headers={"HX-Redirect": f"/interviews/{interview_id}"})
 
 
@@ -280,106 +272,90 @@ async def interview_brief(request: Request, interview_id: int):
         request,
         "pages/interview_brief.html",
         {"active_tab": "prep", "interview": interview, "brief": brief,
-         "step": "brief"},
+         "facts": prep_toolkit.read_facts(interview_id), "step": "brief"},
     )
+
+
+@router.post("/interviews/{interview_id}/facts")
+async def interview_facts(request: Request, interview_id: int):
+    """The Brief's one CTA (ADR-057): save the candidate's answers to the fact
+    questions (all optional) and go to Get Ready, which writes the toolkit."""
+    if not db.get_interview(interview_id):
+        return _redirect("/interviews/new")
+    form = await request.form()
+    answers = {k[5:]: str(v) for k, v in form.items() if k.startswith("fact_")}
+    prep_toolkit.save_facts(interview_id, answers)
+    return RedirectResponse(f"/interviews/{interview_id}/get-ready", status_code=303)
 
 
 @router.get("/interviews/{interview_id}/get-ready")
 async def interview_get_ready(request: Request, interview_id: int):
-    """Get Ready (Screen 3) — the toolkit shell. Two tabs (Answer cards · Your
-    stories, ADR-056) that lazy-load their fragments (already warmed by the
-    build, generated on a cache miss). Brief must exist — a miss bounces to the
-    generating screen."""
+    """Get Ready (Screen 3) — three tabs (Answer cards · Your stories · Questions
+    to ask) from ONE cached toolkit (ADR-057), rendered in full. Not built yet →
+    the page shows one loading state that POSTs /toolkit/build and reloads."""
     interview = db.get_interview(interview_id)
     if not interview:
         return _redirect("/interviews/new")
-    if prep_brief.read_cached_brief(interview_id, lang=interview.get("lang") or None) is None:
-        return _redirect(f"/interviews/{interview_id}/generating")
-    db.touch_interview(interview_id)
-    return templates.TemplateResponse(
-        request,
-        "pages/interview_get_ready.html",
-        {"active_tab": "prep", "interview": interview, "step": "get_ready"},
-    )
-
-
-# ---------- Get Ready toolkit fragments (lazy-loaded per tab) ----------
-
-def _toolkit_ctx(interview_id: int):
-    """Shared prerequisites for a toolkit fragment: (interview, brief, resume_text,
-    client, lang). Returns None for the whole tuple if the interview or its brief
-    is missing (the fragment then renders an unavailable state)."""
-    interview = db.get_interview(interview_id)
-    if not interview:
-        return None
     lang = interview.get("lang") or get_output_language()
     brief = prep_brief.read_cached_brief(interview_id, lang=lang)
     if brief is None:
-        return None
+        return _redirect(f"/interviews/{interview_id}/generating")
+    db.touch_interview(interview_id)
+    stories = db.list_stories(interview["resume_hash"], status="saved")
+    toolkit = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang)
+    ctx = {"active_tab": "prep", "interview": interview, "step": "get_ready", "toolkit": toolkit}
+    if toolkit is not None:
+        ctx.update(_get_ready_ctx(interview, brief, toolkit, stories))
+    return templates.TemplateResponse(request, "pages/interview_get_ready.html", ctx)
+
+
+@router.post("/interviews/{interview_id}/toolkit/build")
+async def toolkit_build(request: Request, interview_id: int):
+    """Write the toolkit (the one call) then reload Get Ready. A failure renders
+    an honest retry state in place."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return _redirect("/interviews/new")
+    lang = interview.get("lang") or get_output_language()
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
     _resume, _rh, _rid, resume_text = _current()
-    client = GeminiClient(api_key=resolve_api_key())
-    return interview, brief, resume_text, client, lang
-
-
-@router.get("/interviews/{interview_id}/toolkit/stories")
-async def toolkit_stories(request: Request, interview_id: int):
-    ctx = _toolkit_ctx(interview_id)
-    if ctx is None:
+    if brief is None or not resume_text:
         return _toolkit_unavailable(request)
-    interview, brief, _resume_text, client, lang = ctx
-    competencies = [c.to_dict() for c in brief.competencies]
     stories = db.list_stories(interview["resume_hash"], status="saved")
-    mapping = await asyncio.to_thread(
-        prep_mapping.get_or_generate_mapping, interview, competencies, stories, client, lang=lang)
-    by_comp = {m.competency_id: m for m in (mapping or [])}
-    by_story = {str(s["id"]): s for s in stories}
-    return templates.TemplateResponse(
-        request, "partials/toolkit_stories.html",
-        {"interview": interview, "competencies": competencies,
-         "by_comp": by_comp, "by_story": by_story},
-    )
+    toolkit = await pipeline.run_toolkit(
+        interview, brief, resume_text, make_client=_make_client_factory(),
+        stories=stories, lang=lang)
+    if toolkit is None:
+        return _toolkit_unavailable(request)
+    return HTMLResponse("", headers={"HX-Redirect": f"/interviews/{interview_id}/get-ready"})
 
 
-@router.get("/interviews/{interview_id}/toolkit/answers")
-async def toolkit_answers(request: Request, interview_id: int):
-    """Answer cards (ADR-056): each P2 likely question (front) + MY first-person
-    answer from P4 (back) + the candidate's last self-rating. P2 ∥ P3 then P4 —
-    all cache hits after the build warm-up."""
-    ctx = _toolkit_ctx(interview_id)
-    if ctx is None:
-        return _toolkit_unavailable(request)
-    interview, brief, resume_text, client, lang = ctx
-    competencies = [c.to_dict() for c in brief.competencies]
-    stories = db.list_stories(interview["resume_hash"], status="saved")
-    questions, mapping = await asyncio.gather(
-        asyncio.to_thread(prep_questions.get_or_generate_questions,
-                          interview, competencies, client, lang=lang),
-        asyncio.to_thread(prep_mapping.get_or_generate_mapping,
-                          interview, competencies, stories, GeminiClient(api_key=resolve_api_key()), lang=lang),
-    )
-    if not questions:
-        return _toolkit_unavailable(request)
-    qdicts = [q.to_dict() for q in questions]
-    kit = await asyncio.to_thread(
-        prep_flashcards.get_or_generate_answers, interview, brief.to_dict_for_cache(),
-        qdicts, [m.to_dict() for m in (mapping or [])], stories, resume_text, client, lang=lang)
-    answers = kit.by_question() if kit else {}
-    reviews = db.latest_card_reviews(interview_id)
+def _get_ready_ctx(interview: dict, brief, toolkit, stories: list[dict]) -> dict:
+    """Join the toolkit with the Story Bank, the brief and the candidate's card
+    ratings for the three tabs."""
+    reviews = db.latest_card_reviews(interview["id"])
     cards = []
-    for q in qdicts:
-        a = answers.get(q["id"])
-        r = reviews.get(q["id"])
+    for q in toolkit.questions:
+        r = reviews.get(q.id)
         cards.append({
-            "id": q["id"], "text": q["text"], "type": _t("prep2.qtype." + q["type"]),
-            "why": q.get("why_they_ask", ""), "follow_up": q.get("follow_up", ""),
-            "answer": a.answer if a else "", "point": a.point_to_land if a else "",
-            # a rating only counts for the SAME question text (P2 regen re-uses ids)
-            "rating": r["rating"] if r and r["question_text"] == q["text"] else None,
+            "id": q.id, "text": q.text, "type": _t("prep2.qtype." + q.type),
+            "why": q.why_they_ask, "follow_up": q.follow_up,
+            "answer": q.answer, "point": q.point_to_land,
+            # a rating only counts for the SAME question text (a rebuild re-uses ids)
+            "rating": r["rating"] if r and r["question_text"] == q.text else None,
         })
-    return templates.TemplateResponse(
-        request, "partials/toolkit_answers.html",
-        {"interview": interview, "cards": cards,
-         "questions_to_ask": kit.questions_to_ask if kit else []})
+    story_by_id = {str(s["id"]): s for s in stories}
+    picks = {p.competency_id: p for p in toolkit.stories}
+    story_rows = []
+    for c in brief.competencies:
+        p = picks.get(c.id)
+        story = story_by_id.get(p.story_id) if (p and p.story_id) else None
+        star = story or (p.draft if p else None)
+        story_rows.append({
+            "competency": c, "pick": p, "story": story, "draft": None if story else (p.draft if p else None),
+            "strength": prep_story_bank.strength_check(star) if star else None,
+        })
+    return {"cards": cards, "story_rows": story_rows, "ask": toolkit.questions_to_ask}
 
 
 @router.post("/interviews/{interview_id}/cards/{question_id}/review")
@@ -423,9 +399,9 @@ async def practice_entry(request: Request, interview_id: int):
             {"active_tab": "prep", "interview": interview, "step": "practice"})
     # Answer cards rated "missed" in Get Ready (ADR-056) → a pre-selected focus.
     # Cache-only read of P2: setup must never trigger a generation.
-    qrow = db.get_prep_artifact(interview_id, prep_questions.ARTIFACT_KIND,
-                                lang or get_output_language(), prep_questions.PROMPT_VERSION)
-    qlist = [q for q in ((qrow or {}).get("artifact") or {}).get("questions", []) if isinstance(q, dict)]
+    cached = prep_toolkit.read_cached_toolkit(
+        interview_id, db.list_stories(interview["resume_hash"], status="saved"), lang=lang)
+    qlist = [q.to_dict() for q in cached.questions] if cached else []
     missed_count = len(_missed_question_ids(interview_id, qlist))
     focus_default = "__missed__" if (missed_count and request.query_params.get("focus") != "all") else ""
     return templates.TemplateResponse(
@@ -477,11 +453,16 @@ async def practice_start(
     if brief is None:
         return HTMLResponse('<div class="text-error text-sm">Build the brief first.</div>')
     competencies = [c.to_dict() for c in brief.competencies]
-    # Cached P2 questions; generate on a cold miss so Practice always has a set.
-    client = GeminiClient(api_key=resolve_api_key())
-    questions = await asyncio.to_thread(
-        prep_questions.get_or_generate_questions, interview, competencies, client, lang=lang)
-    qdicts = [q.to_dict() for q in (questions or [])]
+    # The toolkit's questions (ADR-057); build it on a cold miss so Practice
+    # always has a set.
+    stories = db.list_stories(interview["resume_hash"], status="saved")
+    toolkit = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang)
+    if toolkit is None:
+        _resume, _rh, _rid, resume_text = _current()
+        toolkit = await pipeline.run_toolkit(
+            interview, brief, resume_text, make_client=_make_client_factory(),
+            stories=stories, lang=lang)
+    qdicts = [q.to_dict() for q in (toolkit.questions if toolkit else [])]
     if not qdicts:
         return HTMLResponse('<div class="text-error text-sm">We couldn\'t load questions — try again.</div>')
     missed = focus.strip() == "__missed__"
@@ -728,7 +709,7 @@ async def practice_build(request: Request, interview_id: int, session_id: int):
     brief = prep_brief.read_cached_brief(interview_id, lang=lang)
     comp_by_id = {c.id: c.to_dict() for c in brief.competencies} if brief else {}
     stories = db.list_stories(interview["resume_hash"], status="saved")
-    mapping = prep_mapping.read_cached_mapping(interview_id, stories, lang=lang) or []
+    mapping = prep_toolkit.read_cached_mapping(interview_id, stories, lang=lang) or []
     story_by_comp = {m.competency_id: next((s for s in stories if str(s["id"]) == m.story_id), None)
                      for m in mapping if m.story_id}
 
@@ -801,7 +782,7 @@ def _current_turn(interview: dict, session: dict) -> Optional[dict]:
         story_title = None
         if q.get("competency_id"):
             stories = db.list_stories(interview["resume_hash"], status="saved")
-            mapping = prep_mapping.read_cached_mapping(interview["id"], stories, lang=lang) or []
+            mapping = prep_toolkit.read_cached_mapping(interview["id"], stories, lang=lang) or []
             m = next((m for m in mapping if m.competency_id == q.get("competency_id") and m.story_id), None)
             if m:
                 s = next((s for s in stories if str(s["id"]) == m.story_id), None)

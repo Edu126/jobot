@@ -1,0 +1,20 @@
+{% import "macros/ui.html" as ui %}
+{# Questions to ask them (ADR-057) — read, not a game. Each: the question, why
+   it's a good one for this role, and a pill with what asking it shows about me. #}
+{% if ask %}
+<div class="gr-scroll">
+  <ol class="ui-list ui-list--num">
+    {% for a in ask %}
+    <li class="card-quiet p-5 space-y-2">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <p class="text-body-strong min-w-0 flex-1">{{ a.question }}</p>
+        {% if a.shows %}{{ ui.chip(_('prep2.getready.shows') ~ ' ' ~ a.shows, 'suggest') }}{% endif %}
+      </div>
+      {% if a.why %}<p class="text-sm text-body-muted">{{ a.why }}</p>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+</div>
+{% else %}
+  {{ ui.empty_state(_('prep2.getready.empty_talking')) }}
+{% endif %}

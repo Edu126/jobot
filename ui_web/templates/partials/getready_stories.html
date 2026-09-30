@@ -1,0 +1,87 @@
+{% import "macros/ui.html" as ui %}
+{# Your stories (ADR-057) — one row per competency, split like /jobs: the list on
+   the left, the story as STAR on the right. A Story Bank story shows its own
+   S/T/A/R + why it fits + the angle for this role; no story → a STAR draft from
+   my résumé I can save to the bank. The strength badge + flags are computed in
+   code (story_bank.strength_check) — same honesty as the Story Bank. #}
+{% set badge_pill = {'strong': 'pill-success'} %}
+{% if story_rows %}
+<div class="gr-split" x-data="{ sel: 0 }">
+
+  {# ---- left: competencies ---- #}
+  <div class="gr-split__list">
+    {% for row in story_rows %}
+    <button type="button" class="ui-option w-full" :class="sel === {{ loop.index0 }} && 'ui-option--on'" @click="sel = {{ loop.index0 }}">
+      <div class="text-body-strong">{{ row.competency.name }}</div>
+      <div class="text-sm text-body-muted mt-1 truncate">
+        {% if row.story %}{{ row.story.title }}
+        {% elif row.draft %}{{ _('prep2.getready.draft_from_resume') }}
+        {% else %}{{ _('prep2.getready.no_story') }}{% endif %}
+      </div>
+    </button>
+    {% endfor %}
+  </div>
+
+  {# ---- right: the story as STAR ---- #}
+  <div class="gr-split__detail">
+    {% for row in story_rows %}
+    {% set star = row.story or row.draft %}
+    <div x-show="sel === {{ loop.index0 }}" {% if not loop.first %}x-cloak{% endif %} class="card-quiet p-6 space-y-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="space-y-1 min-w-0">
+          <div class="text-eyebrow">{{ row.competency.name }}</div>
+          <div class="text-title">{{ star.title if star and star.title else _('prep2.getready.no_story') }}</div>
+        </div>
+        {% if row.strength %}
+        <span class="pill {{ badge_pill.get(row.strength.badge, 'pill-warn') }}">{{ _('prep2.story.badge.' + row.strength.badge) }}</span>
+        {% endif %}
+      </div>
+
+      {% if row.story and row.pick and row.pick.angle_for_this_role %}
+      <p class="ui-inset text-sm"><b class="font-semibold">{{ _('prep2.getready.angle') }}.</b> {{ row.pick.angle_for_this_role }}</p>
+      {% endif %}
+      {% if row.draft %}
+      <p class="text-sm text-body-muted">{{ _('prep2.getready.draft_note') }}</p>
+      {% endif %}
+
+      {% if star %}
+      <dl class="star">
+        {% for k in ['situation', 'task', 'action', 'result'] %}
+        <div class="star__row">
+          <dt class="star__key">{{ _('prep2.story.' + k) }}</dt>
+          <dd>{% if star[k] %}{{ star[k] }}{% if k == 'result' and star.metric %} <span class="font-semibold">({{ star.metric }})</span>{% endif %}{% else %}<span class="text-subtle">—</span>{% endif %}</dd>
+        </div>
+        {% endfor %}
+      </dl>
+      {% if row.strength and row.strength.flags %}
+      <ul class="ui-list">
+        {% for f in row.strength.flags %}<li class="text-sm">{{ _('prep2.story.flag.' + f) }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% else %}
+      {# no story and nothing in the résumé to draft from — a quiet way on, never a
+         second green button (the page's one primary is Start Practice) #}
+      <p class="text-body-muted">{{ _('prep2.getready.no_story_hint') }}</p>
+      <a href="/stories/new" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5"><i class="ph-thin ph-plus"></i>{{ _('prep2.getready.create_story') }}</a>
+      {% endif %}
+
+      <div class="flex flex-wrap items-center gap-4 pt-1">
+        {% if row.story %}
+          <a href="/stories/{{ row.story.id }}/edit" class="ui-link-quiet">{{ _('prep2.getready.edit_story') }}</a>
+        {% elif row.draft %}
+          <div id="save-draft-{{ loop.index0 }}">
+            <button type="button" class="btn btn-quiet btn-sm" hx-post="/stories/draft/accept"
+                    hx-target="#save-draft-{{ loop.index0 }}" hx-swap="innerHTML"
+                    hx-vals='{{ {"title": row.draft.title, "situation": row.draft.situation, "task": row.draft.task, "action": row.draft.action, "result": row.draft.result, "metric": row.draft.metric or "", "tags": row.competency.name} | tojson }}'>
+              <i class="ph-thin ph-plus"></i>{{ _('prep2.getready.save_draft') }}
+            </button>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+  {{ ui.empty_state(_('prep2.getready.no_story_hint')) }}
+{% endif %}

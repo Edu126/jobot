@@ -218,7 +218,7 @@ def _load_context(interview: dict, lang: str):
     """(brief_dict, persona, cues_by_question_index) for the live session — what
     the coach knows + the Study-mode STAR cues. Best-effort; empties on miss."""
     from . import brief as prep_brief
-    from . import mapping as prep_mapping
+    from . import toolkit as prep_mapping  # ADR-057: story picks live in the toolkit
     b = prep_brief.read_cached_brief(interview["id"], lang=lang)
     brief_dict = b.to_dict_for_cache() if b else None
     persona = ""

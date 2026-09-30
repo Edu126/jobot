@@ -1,0 +1,79 @@
+{% import "macros/ui.html" as ui %}
+{# Answer cards (ADR-056/057) — a real flip deck. Front = the likely question;
+   back = MY first-person answer + the point to land + the likely follow-up.
+   Controls sit together under the card: ← · Show answer / Needs work · Got it · →.
+   Ratings post to card_reviews; misses lead the next Practice session.
+   Behaviour: Alpine.data('answerDeck') in base.html. #}
+{% if cards %}
+<div x-data="answerDeck({{ interview.id }})" @keydown.window="key($event)" class="deck">
+  <script type="application/json" x-ref="data">{{ cards | tojson }}</script>
+
+  <template x-if="!done">
+    <div class="deck-body">
+      <div class="flex items-baseline justify-between gap-2">
+        <span class="text-eyebrow">{{ _('prep2.cards.counter') }} <span x-text="i + 1"></span> / <span x-text="order.length"></span></span>
+        <span class="text-sm text-subtle hidden md:inline">{{ _('prep2.cards.hint') }}</span>
+      </div>
+
+      <div class="flip" :class="flipped && 'flip--on'" @click="flip()" role="button" tabindex="0"
+           @keydown.enter.prevent="flip()" :aria-pressed="flipped">
+        <div class="flip-inner">
+          {# front — the question #}
+          <div class="flip-face flip-front">
+            <div class="flex items-center justify-between gap-3">
+              <span class="chip chip-neutral" x-text="card && card.type"></span>
+              <span x-show="card && card.rating === 'got_it'" x-cloak class="chip chip-applied">{{ _('prep2.cards.got') }}</span>
+              <span x-show="card && card.rating === 'missed'" x-cloak class="chip chip-gap">{{ _('prep2.cards.missed') }}</span>
+            </div>
+            <p class="text-title flip-question" x-text="card && card.text"></p>
+            <span class="text-sm text-subtle">{{ _('prep2.cards.tap') }}</span>
+          </div>
+          {# back — my answer #}
+          <div class="flip-face flip-back">
+            <div class="space-y-4">
+              <div class="text-eyebrow">{{ _('prep2.cards.my_answer') }}</div>
+              <p class="leading-relaxed" x-show="card && card.answer" x-text="card && card.answer"></p>
+              <p class="text-body-muted" x-show="card && !card.answer">{{ _('prep2.cards.no_answer') }}</p>
+              <p class="ui-kv" x-show="card && card.point"><b>{{ _('prep2.cards.point') }}</b><span x-text="card && card.point"></span></p>
+              <p class="ui-inset text-sm" x-show="card && card.follow_up"><b class="font-semibold">{{ _('prep2.getready.follow_up') }}</b> <span x-text="card && card.follow_up"></span></p>
+              <p class="text-sm text-body-muted" x-show="card && card.why">{{ _('prep2.getready.why_ask') }} <span x-text="card && card.why"></span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# one tight cluster — arrows hug the main action #}
+      <div class="deck-controls">
+        <button type="button" class="btn btn-quiet btn-sm deck-arrow" @click="go(-1)" :disabled="i === 0" aria-label="Previous">
+          <i class="ph-thin ph-arrow-left"></i>
+        </button>
+        <button type="button" class="btn btn-quiet btn-sm" x-show="!flipped" @click="flip()">{{ _('prep2.cards.show') }}</button>
+        <button type="button" class="btn btn-quiet btn-sm deck-rate deck-rate--missed" x-show="flipped" x-cloak @click="rate('missed')">
+          <i class="ph-thin ph-x"></i>{{ _('prep2.cards.missed') }} <span class="tabular-nums text-subtle" x-text="missed"></span>
+        </button>
+        <button type="button" class="btn btn-quiet btn-sm deck-rate deck-rate--got" x-show="flipped" x-cloak @click="rate('got_it')">
+          <i class="ph-thin ph-check"></i>{{ _('prep2.cards.got') }} <span class="tabular-nums text-subtle" x-text="got"></span>
+        </button>
+        <button type="button" class="btn btn-quiet btn-sm deck-arrow" @click="go(1)" aria-label="Next">
+          <i class="ph-thin ph-arrow-right"></i>
+        </button>
+      </div>
+    </div>
+  </template>
+
+  {# end of deck #}
+  <template x-if="done">
+    <div class="card-quiet p-8 flex flex-col justify-center gap-4 h-full">
+      <div class="text-eyebrow">{{ _('prep2.cards.done') }}</div>
+      <p class="text-title"><span class="tabular-nums" x-text="got"></span> {{ _('prep2.cards.got_lbl') }} · <span class="tabular-nums" x-text="missed"></span> {{ _('prep2.cards.missed_lbl') }}</p>
+      <p class="text-body-muted" x-show="missed > 0">{{ _('prep2.cards.done_missed_hint') }}</p>
+      <div class="flex flex-wrap items-center gap-4">
+        <button type="button" class="btn btn-quiet btn-sm" x-show="missed > 0" @click="reviewMissed()">{{ _('prep2.cards.review_missed') }}</button>
+        <button type="button" class="ui-link-quiet" @click="restart()">{{ _('prep2.cards.restart') }}</button>
+      </div>
+    </div>
+  </template>
+</div>
+{% else %}
+  {{ ui.empty_state(_('prep2.getready.empty_questions')) }}
+{% endif %}
