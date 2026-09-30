@@ -65,8 +65,8 @@ def _parse_tags(raw: str) -> list[str]:
 
 # ---------- B1: the bank home ----------
 
-@router.get("/stories")
-async def stories_home(request: Request):
+def bank_context() -> dict:
+    """What the Story Bank partial needs — shared by Profile › Stories."""
     resume, resume_hash, _rid, _txt = _current()
     stories = [_with_strength(s) for s in db.list_stories(resume_hash, status="saved")] if resume_hash else []
     # Distinct tags present in the bank → the filter row.
@@ -75,12 +75,13 @@ async def stories_home(request: Request):
         for t in s.get("tags", []):
             if t not in tags:
                 tags.append(t)
-    return templates.TemplateResponse(
-        request,
-        "pages/stories_home.html",
-        {"active_tab": "prep", "has_resume": resume is not None,
-         "stories": stories, "tags": sorted(tags)},
-    )
+    return {"has_resume": resume is not None, "stories": stories, "tags": sorted(tags)}
+
+
+@router.get("/stories")
+async def stories_home(request: Request):
+    """The Story Bank moved to Profile › Stories (ADR-058) — keep old links working."""
+    return RedirectResponse("/profile?subtab=stories", status_code=303)
 
 
 # ---------- B4: the editor ----------
@@ -248,6 +249,63 @@ async def stories_voice_to_star(request: Request, transcript: str = Form("")):
 
 # ---------- edit / delete (parameterized — declared LAST so literal paths like
 # /stories/strength and /stories/voice aren't captured as {story_id}) ----------
+
+# ---------- Strengthen (ADR-058): clarify the how, restructure, confirm ----------
+
+def _clarifications_for_story(interview_id: int, story_id: int) -> str:
+    """Get Ready's clarifications that belong to this story — the answers to the
+    Clarify questions whose competency the toolkit mapped to this story. Used to
+    pre-fill the 'how' field (the write-back path; the user still confirms)."""
+    from core.prep import brief as prep_brief
+    from core.prep import toolkit as prep_toolkit
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return ""
+    lang = interview.get("lang") or None
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    stories = db.list_stories(interview["resume_hash"], status="saved")
+    picks = prep_toolkit.read_cached_mapping(interview_id, stories, lang=lang) or []
+    comps = {p.competency_id for p in picks if p.story_id == str(story_id)}
+    facts = prep_toolkit.read_facts(interview_id)
+    return "\n".join(facts[q.question] for q in (brief.clarify_questions if brief else [])
+                     if q.competency_id in comps and q.question in facts)
+
+
+@router.get("/stories/{story_id}/strengthen")
+async def story_strengthen(request: Request, story_id: int, next: str = "", iid: int = 0):
+    """One clarifying question per weakness flag (code-computed, no LLM)."""
+    story = db.get_story(story_id)
+    if not story:
+        return _redirect("/stories")
+    strength = story_bank.strength_check(story)
+    flags = [f for f in story_bank.STRENGTHEN_FLAGS if f in strength["flags"]] or ["missing_how"]
+    prefill = {"missing_how": _clarifications_for_story(iid, story_id)} if iid else {}
+    return templates.TemplateResponse(
+        request, "pages/story_strengthen.html",
+        {"active_tab": "prep", "story": story, "flags": flags, "prefill": prefill,
+         "next_url": _safe_next(next), "preview": None},
+    )
+
+
+@router.post("/stories/{story_id}/strengthen")
+async def story_strengthen_preview(request: Request, story_id: int):
+    """Restructure the story with the answers (one LLM call) and show a
+    before/after preview. Nothing is saved until the user confirms."""
+    story = db.get_story(story_id)
+    if not story:
+        return _redirect("/stories")
+    form = await request.form()
+    answers = {f: str(form.get("a_" + f, "")) for f in story_bank.STRENGTHEN_FLAGS}
+    client = GeminiClient(api_key=resolve_api_key())
+    draft = await asyncio.to_thread(story_bank.refine_story, story, answers, client,
+                                    lang=get_output_language())
+    return templates.TemplateResponse(
+        request, "pages/story_strengthen.html",
+        {"active_tab": "prep", "story": story, "flags": [], "prefill": {},
+         "next_url": _safe_next(str(form.get("next", ""))),
+         "preview": draft.to_dict() if draft else None, "failed": draft is None},
+    )
+
 
 @router.post("/stories/{story_id}")
 async def story_update(

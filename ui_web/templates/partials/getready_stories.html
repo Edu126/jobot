@@ -69,6 +69,9 @@
 
       <div class="flex flex-wrap items-center gap-4 pt-1">
         {% if row.story %}
+          {% if row.strength and row.strength.flags %}
+          <a href="/stories/{{ row.story.id }}/strengthen?iid={{ interview.id }}&next={{ ('/interviews/' ~ interview.id ~ '/get-ready#stories') | urlencode }}" class="btn btn-quiet btn-sm">{{ _('prep2.strengthen.link') }}</a>
+          {% endif %}
           <a href="/stories/{{ row.story.id }}/edit?next={{ ('/interviews/' ~ interview.id ~ '/get-ready#stories') | urlencode }}" class="ui-link-quiet">{{ _('prep2.getready.edit_story') }}</a>
         {% elif row.draft %}
           <div id="save-draft-{{ loop.index0 }}">

@@ -10,12 +10,17 @@
       <i class="ph-thin ph-arrow-left"></i>{{ _('prep2.common.back') if next_url else _('prep2.story.back') }}
     </a>
     {% if story and story.id %}
+    <div class="flex items-center gap-4">
+    {% if story.strength and story.strength.flags %}
+    <a href="/stories/{{ story.id }}/strengthen{% if next_url %}?next={{ next_url | urlencode }}{% endif %}" class="btn btn-quiet btn-sm">{{ _('prep2.strengthen.link') }}</a>
+    {% endif %}
     <button type="button"
             class="text-sm text-error/70 hover:text-error inline-flex items-center gap-1"
             hx-delete="/stories/{{ story.id }}"
             hx-confirm="{{ _('prep2.story.delete_confirm') }}">
       <i class="ph-thin ph-trash"></i>{{ _('prep2.story.delete') }}
     </button>
+    </div>
     {% endif %}
   </div>
 

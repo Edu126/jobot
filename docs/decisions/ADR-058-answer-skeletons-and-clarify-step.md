@@ -22,3 +22,11 @@ data — structure what's on the résumé and clarify the how.
 
 ## Consequences
 Cards may show gaps instead of sounding complete — intended: gaps are honest prompts.
+
+## Addendum — Story Bank in Profile + Strengthen (same day)
+The how belongs to the story (account-level, reused by every interview). The Story Bank
+moved to **Profile › Stories** (`/stories` redirects). `strength_check` gained
+`missing_how` (short Action, no method connector). **Strengthen** asks one question per
+flag (example in the placeholder; Get Ready's clarifications pre-fill the how) → one
+`refine_story` call restructures the STAR with ONLY those answers → before/after preview →
+saved on confirm. Editor/strengthen return to where the user came from (`?next=`).

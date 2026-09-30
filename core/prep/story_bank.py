@@ -29,6 +29,7 @@ from . import prompts as P
 
 P5_PROMPT_VERSION = "2026-09-21-draft-stories-v1"
 P6_PROMPT_VERSION = "2026-09-21-voice-star-v1"
+REFINE_PROMPT_VERSION = "2026-09-30-refine-star-v1"
 
 MIN_DRAFTS = 4
 MAX_DRAFTS = 6
@@ -50,11 +51,19 @@ BADGE_LABELS = {
     "needs_result": "Needs a result",
     "needs_number": "Needs a number",
     "needs_owner": "Clarify your role",
+    "needs_how": "Explain how",
 }
 
 _HAS_NUMBER = re.compile(r"\d")
 _WE_WORDS = re.compile(r"\b(we|our|ours|us)\b", re.IGNORECASE)
 _I_WORDS = re.compile(r"\b(i|i'm|i've|i'd|i'll|my|mine|myself)\b", re.IGNORECASE)
+# ADR-058: an Action that names WHAT without HOW ("Created Power BI dashboards to
+# support data preparation") — short and with no method connector. The how is
+# what makes a story credible and is exactly what the résumé leaves out.
+_HOW_WORDS = re.compile(
+    r"\b(by|using|through|via|with|so that|which|automat\w*|mediante|usando|con|a trav[eé]s|para que)\b",
+    re.IGNORECASE)
+_HOW_MIN_WORDS = 18
 
 
 @dataclass
@@ -82,7 +91,8 @@ def strength_check(story: dict) -> dict:
     {flags: [...], badge: "<key>", badge_label: "..."}. Flags:
       - missing_result: the Result is blank;
       - missing_metric: no number anywhere in result/metric;
-      - unclear_personal_role: the Action is 'we' language with no clear 'I'.
+      - unclear_personal_role: the Action is 'we' language with no clear 'I';
+      - missing_how: a short Action with no method ("by / using / through…").
     Badge is the single most important flag (result > owner > number), or
     'strong' when clean. Computed on read so it never drifts from edits."""
     result = str(story.get("result") or "").strip()
@@ -96,11 +106,15 @@ def strength_check(story: dict) -> dict:
         flags.append("missing_metric")
     if action and _WE_WORDS.search(action) and not _I_WORDS.search(action):
         flags.append("unclear_personal_role")
+    if action and len(action.split()) < _HOW_MIN_WORDS and not _HOW_WORDS.search(action):
+        flags.append("missing_how")
 
     if "missing_result" in flags:
         badge = "needs_result"
     elif "unclear_personal_role" in flags:
         badge = "needs_owner"
+    elif "missing_how" in flags:
+        badge = "needs_how"
     elif "missing_metric" in flags:
         badge = "needs_number"
     else:
@@ -271,6 +285,64 @@ def _parse_voice(raw: Any, *, valid_tags: set[str]) -> Optional[StoryDraft]:
         strength=P.band_or_default(raw.get("strength")) if raw.get("strength") else None,
         strength_reason=_none_or_str(raw.get("strength_reason")),
         follow_up_question=_none_or_str(raw.get("follow_up_question")),
+    )
+
+
+# ---------- Strengthen: refine a saved story with the candidate's answers ----------
+
+# One clarifying question per strength flag (code, no LLM) — the "Strengthen"
+# screen asks only these. i18n keys: prep2.strengthen.q.<flag> / .eg.<flag>.
+STRENGTHEN_FLAGS = ("missing_how", "unclear_personal_role", "missing_result", "missing_metric")
+
+
+def refine_story(
+    story: dict, answers: dict[str, str], client: GeminiClient, *, lang: Optional[str] = None,
+) -> Optional[StoryDraft]:
+    """Rewrite a saved STAR story using ONLY the story itself + the candidate's
+    answers to the Strengthen questions (ADR-058). Never adds facts, numbers or
+    tools they didn't give; keeps every number's meaning; the metric appears
+    once. Returns a preview draft (the route saves it only on confirm). None on
+    failure or when there are no answers."""
+    answers = {k: str(v).strip() for k, v in (answers or {}).items() if str(v).strip()}
+    if not answers or client.all_models_exhausted():
+        return None
+    lang = lang if lang is not None else get_output_language()
+    star = "\n".join(f"{k}: {str(story.get(k) or '').strip() or '(empty)'}"
+                     for k in ("title", "situation", "task", "action", "result", "metric"))
+    qa = "\n".join(f"- {k}: {v}" for k, v in answers.items())
+    prompt = f"""You are helping a candidate strengthen one STAR interview story.
+
+{P.RULE_BLOCK}
+- Use ONLY the story and the candidate's answers below. Do not add employers, tools, numbers or results they did not give.
+- Keep every number with exactly the meaning it has. Never add numbers together or re-derive them.
+- Action: what the candidate personally did and HOW (the method, tools, steps), with "I".
+- Result: what changed, and how the action caused it. Put the metric in the Result once — do not repeat it elsewhere.
+- Keep it short: each field 1-2 sentences.
+
+{language_instruction(lang)}
+
+The story now:
+{star}
+
+The candidate's answers (flag → answer):
+{qa}
+
+Return JSON with this exact schema — no prose before or after:
+{{ "title": "string", "situation": "string", "task": "string", "action": "string", "result": "string", "metric": "string | null" }}"""
+    try:
+        raw = client.generate_json(prompt, temperature=0.0)
+    except (QuotaExhaustedError, GeminiError):
+        return None
+    if not isinstance(raw, dict) or not str(raw.get("action", "")).strip():
+        return None
+    return StoryDraft(
+        title=str(raw.get("title") or story.get("title") or "").strip(),
+        situation=str(raw.get("situation", "")).strip(),
+        task=str(raw.get("task", "")).strip(),
+        action=str(raw.get("action", "")).strip(),
+        result=_none_or_str(raw.get("result")),
+        metric=_none_or_str(raw.get("metric")),
+        tags=list(story.get("tags") or []),
     )
 
 

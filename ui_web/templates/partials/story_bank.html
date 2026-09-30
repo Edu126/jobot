@@ -1,17 +1,17 @@
-{% extends "base.html" %}
 {% import "macros/ui.html" as ui %}
-{% block title %}{{ _('prep2.story.bank_title') }}{% endblock %}
-{% block container_class %}max-w-5xl{% endblock %}
-
+{# The Story Bank (ADR-050) — account-level STAR stories, reused by every
+   interview. Lives in Profile › Stories (ADR-058: improving a story once helps
+   every interview). Each story shows its code-computed strength badge; weak
+   ones link to "Strengthen". #}
 {% set badge_pill = {'strong': 'pill-success'} %}
-
-{% block content %}
 <div class="space-y-6" x-data="{ filter: '' }">
-
-  {% call ui.page_header(_('prep2.story.bank_title'), lede=_('prep2.story.bank_subtitle'), back=('/interviews', _('prep2.new.back'))) %}
-    {% if stories %}{{ ui.button(_('prep2.story.add'), variant='primary', icon='ph-plus', href='/stories/new') }}{% endif %}
-  {% endcall %}
-
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="space-y-1">
+      <h2 class="text-title">{{ _('prep2.story.bank_title') }}</h2>
+      <p class="text-body-muted">{{ _('prep2.story.bank_subtitle') }}</p>
+    </div>
+    {% if stories %}{{ ui.button(_('prep2.story.add'), variant='secondary', icon='ph-plus', href='/stories/new?next=' ~ ('/profile?subtab=stories' | urlencode)) }}{% endif %}
+  </div>
   {% if not has_resume %}
     <div class="ui-notice">
       {{ _('prep2.new.no_resume') }}
@@ -41,7 +41,7 @@
         <a href="/stories/voice" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5">
           <i class="ph-thin ph-microphone"></i>{{ _('prep2.story.voice_cta') }}
         </a>
-        <a href="/stories/new" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5">
+        <a href="/stories/new?next={{ '/profile?subtab=stories' | urlencode }}" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5">
           <i class="ph-thin ph-pencil-simple"></i>{{ _('prep2.story.write_cta') }}
         </a>
       </div>
@@ -56,9 +56,9 @@
     {# competency filter #}
     {% if tags %}
     <div class="flex flex-wrap gap-2">
-      <button type="button" @click="filter = ''" class="chip cursor-pointer" :class="filter === '' ? 'chip-accent' : 'chip-neutral'">{{ _('prep2.story.all') }}</button>
+      <button type="button" @click="filter = ''" class="chip cursor-pointer" :class="filter === '' ? 'chip-suggest' : 'chip-neutral'">{{ _('prep2.story.all') }}</button>
       {% for t in tags %}
-      <button type="button" @click="filter = '{{ t }}'" class="chip cursor-pointer" :class="filter === '{{ t }}' ? 'chip-accent' : 'chip-neutral'">{{ t }}</button>
+      <button type="button" @click="filter = '{{ t }}'" class="chip cursor-pointer" :class="filter === '{{ t }}' ? 'chip-suggest' : 'chip-neutral'">{{ t }}</button>
       {% endfor %}
     </div>
     {% endif %}
@@ -66,8 +66,9 @@
     {# story list #}
     <div class="space-y-2">
       {% for s in stories %}
-      <a href="/stories/{{ s.id }}/edit"
-         x-show="filter === '' || {{ s.tags | tojson }}.includes(filter)"
+      <a href="/stories/{{ s.id }}/edit?next={{ '/profile?subtab=stories' | urlencode }}"
+         {# forceescape: tojson leaves " unescaped, which broke this attribute #}
+         x-show="filter === '' || {{ s.tags | tojson | forceescape }}.includes(filter)"
          class="card-quiet block p-4">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
@@ -88,4 +89,3 @@
     </div>
   {% endif %}
 </div>
-{% endblock %}

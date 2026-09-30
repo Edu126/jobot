@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
+{% block title %}{{ _('prep2.strengthen.title') }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+{% block main_class %}py-6{% endblock %}
+
+{# Strengthen a story (ADR-058). Step 1: one question per weakness flag, the
+   example in the placeholder. Step 2: a before/after preview of the STAR
+   restructured with ONLY my answers — saved only when I confirm. #}
+{% block content %}
+<div class="space-y-6">
+  {% set back = next_url or '/stories/' ~ story.id ~ '/edit' %}
+  {% call ui.page_header(_('prep2.strengthen.title'), lede=story.title) %}
+    <a href="{{ back }}" class="ui-link-quiet">{{ _('prep2.common.back') }}</a>
+  {% endcall %}
+
+  {% if preview is none %}
+    {% if failed %}{% call ui.notice(icon='ph-cloud-slash') %}{{ _('prep2.strengthen.failed') }}{% endcall %}{% endif %}
+    <form method="post" action="/stories/{{ story.id }}/strengthen" class="space-y-5 max-w-3xl">
+      <p class="text-body-muted">{{ _('prep2.strengthen.sub') }}</p>
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      {% for f in flags %}
+      <div class="space-y-1.5">
+        <label for="a_{{ f }}" class="font-medium block">{{ _('prep2.strengthen.q.' + f) }}</label>
+        <textarea id="a_{{ f }}" name="a_{{ f }}" rows="3" class="ui-field resize-y"
+                  placeholder="{{ _('prep2.strengthen.eg.' + f) }}">{{ prefill.get(f, '') }}</textarea>
+      </div>
+      {% endfor %}
+      <div class="flex justify-end">{{ ui.button(_('prep2.strengthen.cta'), variant='primary', icon_after='ph-arrow-right', type='submit') }}</div>
+    </form>
+  {% else %}
+    <p class="text-body-muted">{{ _('prep2.strengthen.preview_sub') }}</p>
+    <div class="grid md:grid-cols-2 gap-4">
+      {% for label, src in [(_('prep2.strengthen.before'), story), (_('prep2.strengthen.after'), preview)] %}
+      <div class="card-quiet p-5 space-y-3 {{ 'card-quiet--selected' if loop.last }}">
+        <div class="text-eyebrow">{{ label }}</div>
+        <dl class="star">
+          {% for k in ['situation', 'task', 'action', 'result'] %}
+          <div class="star__row"><dt class="star__key">{{ _('prep2.story.' + k) }}</dt>
+            <dd>{{ src[k] or '—' }}{% if k == 'result' and src.metric and (src.metric | lower) not in ((src[k] or '') | lower) %} <b>({{ src.metric }})</b>{% endif %}</dd></div>
+          {% endfor %}
+        </dl>
+      </div>
+      {% endfor %}
+    </div>
+    <form method="post" action="/stories/{{ story.id }}" hx-post="/stories/{{ story.id }}" hx-target="#strengthen-error"
+          class="flex flex-wrap items-center justify-end gap-4">
+      {% for k in ['title', 'situation', 'task', 'action', 'result'] %}<input type="hidden" name="{{ k }}" value="{{ preview[k] or '' }}">{% endfor %}
+      <input type="hidden" name="metric" value="{{ preview.metric or '' }}">
+      <input type="hidden" name="tags" value="{{ (story.tags or []) | join(',') }}">
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      <span id="strengthen-error" class="text-error text-sm"></span>
+      <a href="{{ back }}" class="ui-link-quiet">{{ _('prep2.strengthen.discard') }}</a>
+      {{ ui.button(_('prep2.strengthen.save'), variant='primary', type='submit') }}
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

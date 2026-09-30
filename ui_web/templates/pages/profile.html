@@ -16,7 +16,7 @@
    ══════════════════════════════════════════════════════════════════ #}
 
 <div class="space-y-6"
-     x-data="{ subtab: 'profile', showReplace: false, showOlder: false }"
+     x-data="{ subtab: '{{ subtab }}', showReplace: false, showOlder: false }"
      x-init="{% if just_regenerated %}$store.toast.show('{{ _('profile.resume.reparsed_toast') }}', 'success'); history.replaceState({}, '', '/profile');{% endif %}">
 
 {% if current %}
@@ -151,6 +151,7 @@
   <div role="tablist" class="tabs tabs-boxed w-fit">
     <button type="button" role="tab" class="tab" :class="subtab === 'profile' ? 'tab-active' : ''" @click="subtab = 'profile'">{{ _('profile.subtab.profile') }}</button>
     <button type="button" role="tab" class="tab" :class="subtab === 'market' ? 'tab-active' : ''" @click="subtab = 'market'">{{ _('profile.subtab.market') }}</button>
+    <button type="button" role="tab" class="tab" :class="subtab === 'stories' ? 'tab-active' : ''" @click="subtab = 'stories'">{{ _('profile.subtab.stories') }}</button>
   </div>
 
   {# ═══════ TAB — My Profile & Skills ═══════ #}
@@ -442,6 +443,9 @@
     </section>
 
   </div> {# ═══ end TAB — My Profile & Skills ═══ #}
+
+  {# ═══════ TAB — Story Bank (ADR-058: moved here from Prep) ═══════ #}
+  <div x-show="subtab === 'stories'" x-cloak>{% include "partials/story_bank.html" %}</div>
 
   {# ═══════ TAB — Market Fit & Gaps ═══════
      Gap map (REQ-019 / ADR-022): the candidate's REAL gaps across ALL scored

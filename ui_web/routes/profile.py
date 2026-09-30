@@ -52,6 +52,7 @@ from core.resume.ats import run_checks
 from core.resume.parser import parse_resume
 
 from ..deps import templates
+from .stories import bank_context as _stories_bank_context
 
 
 # Path we write the API key to when the user edits it from the UI. Sits at
@@ -119,6 +120,9 @@ async def profile_page(request: Request, just_regenerated: int = 0):
             "saved_searches": db.list_saved_searches(),
             "jobot_version": current_version(),
             "just_regenerated": bool(just_regenerated),
+            # Story Bank lives here now (ADR-058) — ?subtab=stories opens it
+            "subtab": request.query_params.get("subtab") if request.query_params.get("subtab") in ("profile", "market", "stories") else "profile",
+            **_stories_bank_context(),
         },
     )
 

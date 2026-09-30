@@ -57,7 +57,7 @@ def _fresh() -> Path:
 
 def test_strength_strong_when_complete():
     out = S.strength_check({"result": "Shipped to 3 regions", "metric": "cut cost 40%",
-                            "action": "I led the migration"})
+                            "action": "I led the migration by moving 40 services to Kubernetes with blue-green deploys"})
     _assert(out["flags"] == [], f"complete story has no flags, got {out}")
     _assert(out["badge"] == "strong" and out["badge_label"] == "Strong", "strong badge")
     print("PASS test_strength_strong_when_complete")
@@ -71,10 +71,41 @@ def test_strength_missing_result_wins():
 
 
 def test_strength_number_detected_in_result():
-    out = S.strength_check({"result": "grew signups by 25%", "action": "I ran the test"})
+    out = S.strength_check({"result": "grew signups by 25%", "action": "I ran an A/B test using Optimizely on the signup page"})
     _assert("missing_metric" not in out["flags"], "number in result counts")
     _assert(out["badge"] == "strong", "has result + number + I → strong")
     print("PASS test_strength_number_detected_in_result")
+
+
+def test_strength_missing_how():
+    """ADR-058: an Action that says WHAT but not HOW is flagged."""
+    out = S.strength_check({"result": "Saved 60+ staff hours per month", "metric": "60h",
+                            "action": "Created Power BI dashboards to support data preparation and resource optimization."})
+    _assert(out["flags"] == ["missing_how"] and out["badge"] == "needs_how", f"what-not-how flagged, got {out}")
+    ok = S.strength_check({"result": "Saved 60h/month", "action": "I automated the weekly pull with Power Query"})
+    _assert("missing_how" not in ok["flags"], "a method connector clears it")
+    print("PASS test_strength_missing_how")
+
+
+def test_refine_story_uses_only_answers():
+    class _C:
+        def __init__(self, payload): self.payload, self.calls, self.prompts = payload, 0, []
+        last_model_used = model_name = "fake"
+        def all_models_exhausted(self): return False
+        def generate_json(self, prompt, *, temperature=None, max_retries=2):
+            self.calls += 1; self.prompts.append(prompt); return self.payload
+    story = {"title": "CRA dashboards", "situation": "s", "task": "t", "action": "Created dashboards",
+             "result": "Saved 60h", "metric": "60h", "tags": ["Data analysis"]}
+    c = _C({"title": "CRA dashboards", "situation": "s", "task": "t",
+            "action": "I automated the weekly pull with Power Query", "result": "Saved 60h/month", "metric": "60h"})
+    d = S.refine_story(story, {"missing_how": "Power Query automation", "missing_metric": "  "}, c, lang="en")
+    _assert(d is not None and d.action.startswith("I automated") and d.tags == ["Data analysis"], "preview built, tags kept")
+    _assert("missing_how: Power Query automation" in c.prompts[0] and "missing_metric" not in c.prompts[0], "blank answers dropped")
+    _assert("Do not add employers, tools, numbers" in c.prompts[0], "no-new-data rule")
+    none = _C({})
+    _assert(S.refine_story(story, {"missing_how": " "}, none, lang="en") is None and none.calls == 0, "no answers → no call")
+    _assert(S.refine_story(story, {"missing_how": "x"}, _C({"action": ""}), lang="en") is None, "empty action → None")
+    print("PASS test_refine_story_uses_only_answers")
 
 
 def test_strength_unclear_role():
@@ -165,6 +196,8 @@ if __name__ == "__main__":
     test_strength_missing_result_wins()
     test_strength_number_detected_in_result()
     test_strength_unclear_role()
+    test_strength_missing_how()
+    test_refine_story_uses_only_answers()
     test_p5_parse_keeps_grounded_filters_tags()
     test_p5_generate()
     test_p6_parse()
