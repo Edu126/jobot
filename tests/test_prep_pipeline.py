@@ -214,17 +214,17 @@ _MAPPING = {
     ]
 }
 _STUDY = {
-    "flashcards": [
-        {"front": "Why this company?", "back": "Series B fintech.", "competency_id": "c1"},
-        {"front": "Bad cid falls to null.", "back": "ok", "competency_id": "c99"},
-        {"front": "", "back": "dropped"},            # no front → dropped
-    ],
-    "talking_points": [
-        {"message": "I scale data teams", "resume_evidence": "led 3 launches", "jd_need": "analytics stack"},
-        {"message": "", "resume_evidence": "x", "jd_need": "y"},  # no message → dropped
+    "answers": [
+        {"question_id": "q1", "answer": "I led the launch across three teams.", "point_to_land": "I align teams"},
+        {"question_id": "q99", "answer": "unknown question id"},     # dangling → dropped
+        {"question_id": "q2", "answer": ""},                          # blank answer → dropped
+        {"question_id": "q1", "answer": "duplicate id"},              # dup → dropped
     ],
     "questions_to_ask": ["What does success look like in 90 days?", "", "How is the team structured?"],
 }
+_QS = [{"id": "q1", "text": "Tell me about a launch.", "type": "behavioral", "competency_id": "c1"},
+       {"id": "q2", "text": "Why us?", "type": "opener", "competency_id": None}]
+_MAP = [{"competency_id": "c1", "story_id": "s1", "angle_for_this_role": "lead with scope"}]
 
 
 # ---- P3 mapping ----
@@ -266,37 +266,46 @@ def test_mapping_fingerprint_invalidates_on_story_edit():
     print("PASS test_mapping_fingerprint_invalidates_on_story_edit")
 
 
-# ---- P4 flashcards ----
+# ---- P4 answer cards (ADR-056) ----
 
-def test_flashcards_parse_and_caps():
-    kit = F._parse_kit(_STUDY, valid_ids={"c1", "c2"})
-    _assert(len(kit.flashcards) == 2, "empty-front flashcard dropped")
-    _assert(kit.flashcards[0].competency_id == "c1", "valid cid kept")
-    _assert(kit.flashcards[1].competency_id is None, "unknown cid → null")
-    _assert(len(kit.talking_points) == 1, "empty-message talking point dropped")
+def test_answers_parse_joins_and_caps():
+    kit = F._parse_kit(_STUDY, valid_qids={"q1", "q2"})
+    _assert([a.question_id for a in kit.answers] == ["q1"], f"dangling/blank/dup dropped, got {kit.answers}")
+    _assert(kit.answers[0].point_to_land == "I align teams", "point to land kept")
     _assert(kit.questions_to_ask == ["What does success look like in 90 days?", "How is the team structured?"],
             "blank question dropped")
     _assert(not kit.is_empty(), "kit with content is not empty")
-    print("PASS test_flashcards_parse_and_caps")
+    print("PASS test_answers_parse_joins_and_caps")
 
 
-def test_flashcards_generate_then_cache():
+def test_answers_prompt_first_person_and_story():
+    brief = {"role_summary": "own analytics", "competencies": _COMPS}
+    prompt = F._build_prompt({"company": "Acme", "role_title": "Analyst"}, brief, _QS, _MAP,
+                             _STORIES, "résumé text", lang="en")
+    _assert("first person" in prompt and "Never use my name" in prompt, "prompt demands first person, no name")
+    _assert('use my story: "Cross-team launch"' in prompt, "mapped story is named on its question")
+    _assert("q2 [opener]: Why us?" in prompt, "every question is listed with its id")
+    print("PASS test_answers_prompt_first_person_and_story")
+
+
+def test_answers_generate_then_cache_and_fingerprint():
     p = _fresh()
     iid = _seed_interview(p)
     interview = db.get_interview(iid, path=p)
-    brief = {"role_summary": "own analytics", "competencies": _COMPS,
-             "company_snapshot": [{"point": "fintech"}]}
+    brief = {"role_summary": "own analytics", "competencies": _COMPS}
     client = _FakeClient(payload=_STUDY)
-    out = F.get_or_generate_flashcards(interview, brief, "résumé text", client, lang="en", path=p)
-    _assert(out is not None and len(out.flashcards) == 2, f"miss generates a kit, got {out}")
-    out2 = F.get_or_generate_flashcards(interview, brief, "résumé text", client, lang="en", path=p)
-    _assert(out2 is not None and client.calls == 1, "cache hit must not re-generate")
-    # a brief with no competencies → None, no call
-    empty_client = _FakeClient(payload=_STUDY)
-    _assert(F.get_or_generate_flashcards(interview, {"competencies": []}, "r", empty_client, lang="en", path=p) is None,
-            "no competencies → None")
-    _assert(empty_client.calls == 0, "no competencies → no generation")
-    print("PASS test_flashcards_generate_then_cache")
+    out = F.get_or_generate_answers(interview, brief, _QS, _MAP, _STORIES, "résumé text", client, lang="en", path=p)
+    _assert(out is not None and len(out.answers) == 1, f"miss generates a kit, got {out}")
+    F.get_or_generate_answers(interview, brief, _QS, _MAP, _STORIES, "résumé text", client, lang="en", path=p)
+    _assert(client.calls == 1, "same inputs → cache hit")
+    remapped = [dict(_MAP[0], story_id="s2")]
+    F.get_or_generate_answers(interview, brief, _QS, remapped, _STORIES, "résumé text", client, lang="en", path=p)
+    _assert(client.calls == 2, "a different story mapping → cache miss (fingerprint)")
+    none_client = _FakeClient(payload=_STUDY)
+    _assert(F.get_or_generate_answers(interview, brief, [], _MAP, _STORIES, "r", none_client, lang="en", path=p) is None,
+            "no questions → None")
+    _assert(none_client.calls == 0, "no questions → no generation")
+    print("PASS test_answers_generate_then_cache_and_fingerprint")
 
 
 if __name__ == "__main__":
@@ -311,6 +320,7 @@ if __name__ == "__main__":
     test_mapping_parse_joins_and_dedup()
     test_mapping_empty_bank_no_llm()
     test_mapping_fingerprint_invalidates_on_story_edit()
-    test_flashcards_parse_and_caps()
-    test_flashcards_generate_then_cache()
+    test_answers_parse_joins_and_caps()
+    test_answers_prompt_first_person_and_story()
+    test_answers_generate_then_cache_and_fingerprint()
     print("all prep-pipeline tests passed")

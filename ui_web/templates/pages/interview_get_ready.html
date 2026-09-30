@@ -5,17 +5,15 @@
 {% block title %}{{ _('prep2.step.get_ready') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
 
-{# Tabs are text-only: an icon on every tab is repetition, not information
-   (design.md §5B — icons mark state, once). #}
+{# Two tabs (ADR-056): the answer-card deck (P2 questions + my answers) and my
+   mapped stories. Text-only — an icon on every tab is repetition (§5B). #}
 {% set tabs = [
-  ('flashcards', _('prep2.getready.tab_flashcards')),
-  ('stories',    _('prep2.getready.tab_stories')),
-  ('questions',  _('prep2.getready.tab_questions')),
-  ('talking',    _('prep2.getready.tab_talking'))
+  ('answers', _('prep2.getready.tab_answers')),
+  ('stories', _('prep2.getready.tab_stories'))
 ] %}
 
 {% block content %}
-<div class="space-y-6" x-data="{ tab: 'flashcards' }">
+<div class="space-y-6" x-data="{ tab: 'answers' }">
 
   {# ---- header + stepper ---- #}
   <div class="space-y-4">
@@ -23,7 +21,7 @@
     {{ steps.stepper('get_ready', interview.id) }}
   </div>
 
-  {# ---- tab bar — scrolls horizontally on mobile (4 tabs don't fit) ---- #}
+  {# ---- tab bar ---- #}
   <div class="seg-tabs flex-nowrap overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
     {% for key, label in tabs %}
     <button id="tab-{{ key }}" type="button" class="seg-tab shrink-0"

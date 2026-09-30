@@ -1,16 +1,22 @@
-"""P4 Flashcards & talking points (ADR-048, REQ-041) — the last of the toolkit
-fan-out. From the brief (P1) + résumé it writes short study material:
+"""P4 Answer cards (ADR-056, REQ-041) — the last toolkit call. It no longer
+invents its own study questions: it ANSWERS the P2 likely questions, in the
+candidate's own voice, so Get Ready is "rehearse what you'll say".
 
-  - flashcards[] (8–12): front = a question the candidate should be able to
-    answer; back = a 1–3 sentence answer grounded only in the inputs;
-  - talking_points[] (5): each ties a résumé strength to a JD need;
+  - answers[] (one per P2 question): question_id (join key back to P2) +
+    answer — 2–4 first-person sentences grounded in the résumé and the story
+    P3 mapped to that question's competency — + point_to_land (one line: the
+    message this answer should leave behind; replaces the old talking points);
   - questions_to_ask[] (3): smart questions the candidate asks the interviewer.
 
-Depends on the brief's content, so — like P3 with the Story Bank — the cache key
-folds a **brief fingerprint** into the version: regenerate the brief and the
-flashcards are a miss, never stale. Cache in `prep_artifacts`
-(interview, 'flashcards', lang, version+fingerprint); temperature=0.0. A
-flashcard competency_id the brief didn't define is nulled (no dangling join).
+Runs AFTER P2 and P3 (it needs their output), so the cache key folds a
+fingerprint of the brief, the questions and the mapping into the version: any of
+them changes → a miss, never stale. Cache in `prep_artifacts`
+(interview, 'answer_cards', lang, version+fingerprint); temperature=0.0. An
+answer whose question_id P2 didn't define is dropped (no dangling join).
+
+History: v1 (2026-09-21) wrote 8–12 free-standing flashcards + talking points.
+Eduardo (2026-09-29): third-person trivia that echoed the Brief; cards should be
+question → MY answer, NotebookLM-style, with self-rating (see card_reviews).
 """
 from __future__ import annotations
 
@@ -25,30 +31,18 @@ from core.settings import get_output_language, language_instruction
 
 from . import prompts as P
 
-PROMPT_VERSION = "2026-09-21-flashcards-v1"
-ARTIFACT_KIND = "flashcards"
+PROMPT_VERSION = "2026-09-30-answers-v2"
+ARTIFACT_KIND = "answer_cards"
 
-MIN_FLASHCARDS = 8
-MAX_FLASHCARDS = 12
-MAX_TALKING_POINTS = 5
+MAX_ANSWERS = 12
 MAX_QUESTIONS_TO_ASK = 3
 
 
 @dataclass
-class Flashcard:
-    front: str
-    back: str
-    competency_id: Optional[str] = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
-class TalkingPoint:
-    message: str
-    resume_evidence: str
-    jd_need: str
+class AnswerCard:
+    question_id: str
+    answer: str
+    point_to_land: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -56,18 +50,19 @@ class TalkingPoint:
 
 @dataclass
 class StudyKit:
-    flashcards: list[Flashcard] = field(default_factory=list)
-    talking_points: list[TalkingPoint] = field(default_factory=list)
+    answers: list[AnswerCard] = field(default_factory=list)
     questions_to_ask: list[str] = field(default_factory=list)
     created_at: str = ""
 
     def is_empty(self) -> bool:
-        return not (self.flashcards or self.talking_points or self.questions_to_ask)
+        return not (self.answers or self.questions_to_ask)
+
+    def by_question(self) -> dict[str, AnswerCard]:
+        return {a.question_id: a for a in self.answers}
 
     def to_dict_for_cache(self) -> dict[str, Any]:
         return {
-            "flashcards": [f.to_dict() for f in self.flashcards],
-            "talking_points": [t.to_dict() for t in self.talking_points],
+            "answers": [a.to_dict() for a in self.answers],
             "questions_to_ask": self.questions_to_ask,
         }
 
@@ -76,37 +71,40 @@ def _resolve_lang(lang: Optional[str]) -> str:
     return lang if lang is not None else get_output_language()
 
 
-def _brief_fingerprint(brief: dict) -> str:
-    """Short digest of the brief content P4 stands on (role summary + the
-    competency ids/names). Any brief change → a flashcards cache miss."""
+def _fingerprint(brief: dict, questions: list[dict], mapping: list[dict]) -> str:
+    """Short digest of everything P4 stands on: the brief (role summary +
+    competency ids/names), the P2 questions (id + text) and the P3 mapping
+    (competency → story). Any change → a cache miss."""
     comps = sorted(
         (str(c.get("id", "")), str(c.get("name", "")))
         for c in (brief.get("competencies") or []) if isinstance(c, dict)
     )
-    blob = json.dumps({"r": str(brief.get("role_summary", "")), "c": comps},
+    qs = [(str(q.get("id", "")), str(q.get("text", ""))) for q in questions if isinstance(q, dict)]
+    mp = sorted(
+        (str(m.get("competency_id", "")), str(m.get("story_id") or ""))
+        for m in mapping if isinstance(m, dict)
+    )
+    blob = json.dumps({"r": str(brief.get("role_summary", "")), "c": comps, "q": qs, "m": mp},
                       ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
 
 
-def _cache_version(brief: dict) -> str:
-    return f"{PROMPT_VERSION}:{_brief_fingerprint(brief)}"
-
-
-def _brief_competency_ids(brief: dict) -> set[str]:
-    return {str(c.get("id", "")).strip() for c in (brief.get("competencies") or [])
-            if isinstance(c, dict)}
+def _cache_version(brief: dict, questions: list[dict], mapping: list[dict]) -> str:
+    return f"{PROMPT_VERSION}:{_fingerprint(brief, questions, mapping)}"
 
 
 def _row_to_kit(row: dict) -> StudyKit:
-    a = row.get("artifact") or {}
-    kit = _parse_kit(a, valid_ids=None)
+    kit = _parse_kit(row.get("artifact") or {}, valid_qids=None)
     kit.created_at = row.get("created_at", "")
     return kit
 
 
-def get_or_generate_flashcards(
+def get_or_generate_answers(
     interview: dict,
     brief: dict,
+    questions: list[dict],
+    mapping: list[dict],
+    stories: list[dict],
     resume_text: str,
     client: GeminiClient,
     *,
@@ -114,17 +112,16 @@ def get_or_generate_flashcards(
     use_cache: bool = True,
     path=db.DB_PATH,
 ) -> Optional[StudyKit]:
-    """Cache-aware entry point. `brief` is P1's cached dict (needs competencies +
-    role_summary); `resume_text` grounds the answers. Returns the study kit,
-    generating + caching on a miss. None on failure, an empty kit, or a brief
-    with no competencies (nothing to build from)."""
+    """Cache-aware entry point. `brief` = P1's cached dict, `questions` = P2 as
+    dicts (id/text/type/competency_id), `mapping` = P3 as dicts
+    (competency_id/story_id/angle_for_this_role), `stories` = the saved Story
+    Bank (to name the mapped story). Returns the kit, generating + caching on a
+    miss. None on failure, an empty kit, or no questions / résumé."""
     interview_id = interview.get("id")
-    if not interview_id or not resume_text.strip():
-        return None
-    if not (brief.get("competencies") if isinstance(brief, dict) else None):
+    if not interview_id or not resume_text.strip() or not questions:
         return None
     lang = _resolve_lang(lang)
-    version = _cache_version(brief)
+    version = _cache_version(brief, questions, mapping)
 
     if use_cache:
         cached = db.get_prep_artifact(interview_id, ARTIFACT_KIND, lang, version, path=path)
@@ -134,7 +131,7 @@ def get_or_generate_flashcards(
     if client.all_models_exhausted():
         return None
 
-    kit = _generate(interview, brief, resume_text, client, lang=lang)
+    kit = _generate(interview, brief, questions, mapping, stories, resume_text, client, lang=lang)
     if kit is None or kit.is_empty():
         return None
 
@@ -146,120 +143,110 @@ def get_or_generate_flashcards(
 
 
 def _generate(
-    interview: dict, brief: dict, resume_text: str, client: GeminiClient, *, lang: str,
+    interview: dict, brief: dict, questions: list[dict], mapping: list[dict],
+    stories: list[dict], resume_text: str, client: GeminiClient, *, lang: str,
 ) -> Optional[StudyKit]:
-    prompt = _build_prompt(interview, brief, resume_text, lang=lang)
+    prompt = _build_prompt(interview, brief, questions, mapping, stories, resume_text, lang=lang)
     try:
         raw = client.generate_json(prompt, temperature=0.0)
     except (QuotaExhaustedError, GeminiError):
         return None
-    return _parse_kit(raw, valid_ids=_brief_competency_ids(brief))
+    valid = {str(q.get("id", "")) for q in questions if isinstance(q, dict)}
+    return _parse_kit(raw, valid_qids=valid)
 
 
-def _build_prompt(interview: dict, brief: dict, resume_text: str, *, lang: str) -> str:
+def _questions_block(questions: list[dict], mapping: list[dict], stories: list[dict]) -> str:
+    """One line per question, with the story P3 mapped to its competency (title
+    + angle) so every answer can lean on the SAME story the Stories tab shows."""
+    by_comp = {str(m.get("competency_id", "")): m for m in mapping if isinstance(m, dict)}
+    titles = {str(s.get("id", "")): str(s.get("title", "")).strip() for s in stories if isinstance(s, dict)}
+    lines: list[str] = []
+    for q in questions:
+        if not isinstance(q, dict) or not str(q.get("text", "")).strip():
+            continue
+        line = f'- {q.get("id")} [{q.get("type", "behavioral")}]: {str(q.get("text")).strip()}'
+        m = by_comp.get(str(q.get("competency_id") or ""))
+        if m and m.get("story_id") and titles.get(str(m["story_id"])):
+            line += f'\n    use my story: "{titles[str(m["story_id"])]}"'
+            if m.get("angle_for_this_role"):
+                line += f' — angle: {str(m["angle_for_this_role"]).strip()}'
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _build_prompt(
+    interview: dict, brief: dict, questions: list[dict], mapping: list[dict],
+    stories: list[dict], resume_text: str, *, lang: str,
+) -> str:
     company = (interview.get("company") or "").strip() or "(unknown company)"
     role = (interview.get("role_title") or "").strip() or "(unknown role)"
     resume = P.clip(resume_text, P.MAX_RESUME_CHARS)
-    brief_block = json.dumps(_brief_for_prompt(brief), ensure_ascii=False, indent=2)
+    comps = P.format_competencies(brief.get("competencies") or [])
 
-    return f"""You are helping a candidate prepare for a {role} interview at {company}.
+    return f"""You are helping me rehearse for a {role} interview at {company}. Write MY answers to the questions the interviewer will most likely ask.
 
 {P.RULE_BLOCK}
+- Write as me, in the first person ("I led…", "In my role at…"). Never use my name, never say "the candidate", never "he/she".
+- Each answer is what I would actually say out loud: 2 to 4 sentences, concrete (the real employer, tools and numbers from my résumé), in a light Situation → Action → Result order.
+- When a question has "use my story", build the answer on that story.
+- If my résumé has no direct evidence for a question, do not invent it: answer honestly with the closest real experience and how it transfers.
 
 {language_instruction(lang)}
 
-Task: Create short study material for this interview.
+Task:
+1. For EVERY question below, write "answer" (my spoken answer) and "point_to_land" (one short line: the one thing the interviewer should remember from this answer). Keep each question's id.
+2. Write {MAX_QUESTIONS_TO_ASK} smart questions I can ask the interviewer at the end, based on the role and the company.
 
-Do this:
-1. Write {MIN_FLASHCARDS} to {MAX_FLASHCARDS} flashcards. Front: a question the candidate should be able to answer (about the role, the company, or their own experience). Back: a short answer in 1-3 sentences, based only on the inputs. Set competency_id to the competency it belongs to (from the brief), or null.
-2. Write {MAX_TALKING_POINTS} talking points: key messages the candidate should land during the interview. Each one ties a résumé strength to a need in the job description.
-3. Write {MAX_QUESTIONS_TO_ASK} smart questions the candidate can ask the interviewer, based on the brief and round type.
+Questions:
+{_questions_block(questions, mapping, stories)}
 
-Brief:
-{brief_block}
+What this role looks for (competencies):
+{comps}
 
-Résumé:
+My résumé:
 ---
 {resume}
 ---
 
 Return JSON with this exact schema — no prose before or after:
 {{
-  "flashcards": [{{ "front": "string", "back": "string", "competency_id": "c1 | null" }}],
-  "talking_points": [{{ "message": "string", "resume_evidence": "string", "jd_need": "string" }}],
+  "answers": [{{ "question_id": "q1", "answer": "string", "point_to_land": "string" }}],
   "questions_to_ask": ["string"]
 }}"""
 
 
-def _brief_for_prompt(brief: dict) -> dict:
-    """A trimmed brief for the prompt — the fields P4 actually uses. Keeps the
-    token cost down vs. dumping the whole cached blob (which carries evidence
-    quotes and friction points P4 doesn't read)."""
-    comps = [
-        {"id": str(c.get("id", "")), "name": str(c.get("name", "")),
-         "what_good_looks_like": str(c.get("what_good_looks_like", ""))}
-        for c in (brief.get("competencies") or []) if isinstance(c, dict)
-    ]
-    snapshot = [
-        {"point": str(p.get("point", ""))}
-        for p in (brief.get("company_snapshot") or []) if isinstance(p, dict)
-    ]
-    return {
-        "role_summary": str(brief.get("role_summary", "")),
-        "company_snapshot": snapshot,
-        "competencies": comps,
-    }
-
-
 # ---------- parsing ----------
 
-def _parse_kit(raw: Any, *, valid_ids: Optional[set[str]]) -> StudyKit:
+def _parse_kit(raw: Any, *, valid_qids: Optional[set[str]]) -> StudyKit:
     if not isinstance(raw, dict):
         return StudyKit()
     return StudyKit(
-        flashcards=_parse_flashcards(raw.get("flashcards"), valid_ids=valid_ids),
-        talking_points=_parse_talking_points(raw.get("talking_points")),
+        answers=_parse_answers(raw.get("answers"), valid_qids=valid_qids),
         questions_to_ask=_parse_str_list(raw.get("questions_to_ask"), MAX_QUESTIONS_TO_ASK),
     )
 
 
-def _parse_flashcards(items: Any, *, valid_ids: Optional[set[str]]) -> list[Flashcard]:
-    out: list[Flashcard] = []
+def _parse_answers(items: Any, *, valid_qids: Optional[set[str]]) -> list[AnswerCard]:
+    """Keep answers that point at a real P2 question (unknown/duplicate ids
+    dropped — no dangling join); blank answers dropped. `valid_qids=None` (the
+    cache-read path) trusts stored ids."""
+    out: list[AnswerCard] = []
+    seen: set[str] = set()
     if not isinstance(items, list):
         return out
     for it in items:
         if not isinstance(it, dict):
             continue
-        front = str(it.get("front", "")).strip()
-        back = str(it.get("back", "")).strip()
-        if not front or not back:
+        qid = str(it.get("question_id", "")).strip()
+        answer = str(it.get("answer", "")).strip()
+        if not qid or not answer or qid in seen:
             continue
-        cid = it.get("competency_id")
-        cid = str(cid).strip() if cid not in (None, "") else None
-        if cid is not None and valid_ids is not None and cid not in valid_ids:
-            cid = None
-        out.append(Flashcard(front=front, back=back, competency_id=cid))
-        if len(out) >= MAX_FLASHCARDS:
-            break
-    return out
-
-
-def _parse_talking_points(items: Any) -> list[TalkingPoint]:
-    out: list[TalkingPoint] = []
-    if not isinstance(items, list):
-        return out
-    for it in items:
-        if not isinstance(it, dict):
+        if valid_qids is not None and qid not in valid_qids:
             continue
-        message = str(it.get("message", "")).strip()
-        if not message:
-            continue
-        out.append(TalkingPoint(
-            message=message,
-            resume_evidence=str(it.get("resume_evidence", "")).strip(),
-            jd_need=str(it.get("jd_need", "")).strip(),
-        ))
-        if len(out) >= MAX_TALKING_POINTS:
+        seen.add(qid)
+        out.append(AnswerCard(question_id=qid, answer=answer,
+                              point_to_land=str(it.get("point_to_land", "")).strip()))
+        if len(out) >= MAX_ANSWERS:
             break
     return out
 

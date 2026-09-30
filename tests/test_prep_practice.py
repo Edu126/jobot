@@ -83,6 +83,17 @@ def test_pick_questions_length_and_focus():
     print("PASS test_pick_questions_length_and_focus")
 
 
+def test_pick_questions_prefer_missed():
+    """ADR-056: answer cards rated "missed" lead the session, right after one opener."""
+    ids = [q["id"] for q in PR.pick_session_questions(_QS, length="quick", prefer_ids={"q4"})]
+    _assert(ids[1] == "q4", f"missed card comes right after the opener, got {ids}")
+    _assert(ids[0] == next(q["id"] for q in _QS if q.get("type") == "opener"), "session still opens with an opener")
+    plain = [q["id"] for q in PR.pick_session_questions(_QS, length="quick")]
+    _assert([q["id"] for q in PR.pick_session_questions(_QS, length="quick", prefer_ids={"zz"})] == plain,
+            "unknown preferred ids change nothing")
+    print("PASS test_pick_questions_prefer_missed")
+
+
 def test_target_seconds():
     _assert(PR.target_seconds_for({"type": "behavioral"}) == 90, "behavioral target")
     _assert(PR.target_seconds_for({"type": "opener"}) == 60, "opener target")
@@ -221,6 +232,7 @@ if __name__ == "__main__":
     test_delivery_metrics()
     test_delivery_length_bands_and_safety()
     test_pick_questions_length_and_focus()
+    test_pick_questions_prefer_missed()
     test_target_seconds()
     test_p7_core_prompt_short_and_toned()
     test_p7_context_turn_carries_questions()

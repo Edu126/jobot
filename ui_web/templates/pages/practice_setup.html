@@ -104,6 +104,8 @@
     <div>
       <label class="text-label block mb-2">{{ _('prep2.setup.focus') }}</label>
       <select name="focus" class="select select-bordered select-sm w-full max-w-xs">
+        {# answer cards rated "Needs work" in Get Ready (ADR-056) lead the session #}
+        {% if missed_count %}<option value="__missed__"{% if focus_default == '__missed__' %} selected{% endif %}>{{ _('prep2.setup.focus_missed', n=missed_count) }}</option>{% endif %}
         <option value="">{{ _('prep2.setup.focus_all') }}</option>
         {% for c in competencies %}
         <option value="{{ c.id }}">{{ c.name }}</option>

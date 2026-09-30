@@ -1,12 +1,13 @@
 """Prep toolkit orchestrator (REQ-041 / ADR-048). Locks down:
 
-  1. build_toolkit runs P1 then fans out P2/P3/P4 — all four artifacts come back,
+  1. build_toolkit runs P1, then P2 ∥ P3, then P4 — all four artifacts come back,
      status advances to toolkit_ready, and the fan-out joins line up (questions /
      mapping / flashcards all use the brief's re-id'd c1/c2);
   2. a failed P1 (empty brief) skips the fan-out entirely and leaves status short
      of toolkit_ready;
   3. use_cache=True on a second build does zero new LLM calls (all cache hits);
-  4. one failing sub-call (P4 raises) degrades to None without sinking the others.
+  4. failing sub-calls degrade to None without sinking the brief (and P4 is
+     skipped when P2 produced no questions).
 
 One MERGED payload feeds every stage — each module's parser reads only its own
 top-level key, so a single fake serves brief+questions+mapping+flashcards.
@@ -88,8 +89,8 @@ _MERGED = {
         {"competency_id": "c1", "story_id": "s1", "why_it_fits": "fits", "angle_for_this_role": "angle"},
         {"competency_id": "c2", "story_id": None},
     ],
-    "flashcards": [{"front": "Why us?", "back": "fintech.", "competency_id": "c1"}],
-    "talking_points": [{"message": "I scale teams", "resume_evidence": "led 3", "jd_need": "stack"}],
+    "answers": [{"question_id": "q2", "answer": "I aligned three teams on one launch.",
+                 "point_to_land": "I align teams"}],
     "questions_to_ask": ["What does success look like in 90 days?"],
 }
 
@@ -122,7 +123,8 @@ def test_build_toolkit_full():
     _assert(res.questions is not None and len(res.questions) == 2, "questions built")
     _assert(res.questions[1].competency_id == "c1", "question join lines up with brief id")
     _assert(res.mapping is not None and res.mapping[0].story_id == "s1", "mapping joins the story")
-    _assert(res.flashcards is not None and len(res.flashcards.flashcards) == 1, "flashcards built")
+    _assert(res.flashcards is not None and [a.question_id for a in res.flashcards.answers] == ["q2"],
+            "answer cards built on the P2 question ids (P4 after P2/P3)")
     _assert(db.get_interview(interview["id"], path=p)["status"] == "toolkit_ready", "status advanced")
     _assert(len(factory.created) == 4, "one client per stage (P1 + P2/P3/P4)")
     print("PASS test_build_toolkit_full")

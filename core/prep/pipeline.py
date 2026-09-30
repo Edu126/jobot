@@ -2,10 +2,11 @@
 behind the New-Interview "generating" screen (Flow A3).
 
 Order is load-bearing: **P1 Brief first** (the user waits on it — the Brief
-screen appears when it's ready), then **P2 Questions / P3 Story-mapping / P4
-Flashcards in parallel** off P1's competencies ("Toolkit still loading" in the
-background). The blocking Gemini calls run in threads (`asyncio.to_thread`) so
-the three fan-out calls overlap on network wait.
+screen appears when it's ready), then **P2 Questions ∥ P3 Story-mapping** off
+P1's competencies, then **P4 Answer cards** — it answers the P2 questions using
+the P3 stories, so it needs both (ADR-056). All in the background ("Toolkit
+still loading"). The blocking Gemini calls run in threads (`asyncio.to_thread`)
+so P2 and P3 overlap on network wait.
 
 Each stage gets its OWN GeminiClient from `make_client` — a shared client has
 mutable per-call state (`last_model_used`) that concurrent calls would clobber,
@@ -57,7 +58,7 @@ async def build_toolkit(
     update_status: bool = True,
     path=db.DB_PATH,
 ) -> ToolkitResult:
-    """Full build: P1 then the P2/P3/P4 fan-out. Returns whatever succeeded.
+    """Full build: P1, then P2 ∥ P3, then P4. Returns whatever succeeded.
     If P1 yields no usable brief, the fan-out is skipped (nothing to hang it
     on) and the result carries only `brief=None`."""
     brief = await _run_brief(
@@ -112,10 +113,10 @@ async def fan_out_toolkit(
     use_cache: bool = True,
     path=db.DB_PATH,
 ) -> tuple[Optional[list[p2.Question]], Optional[list[p3.Mapping]], Optional[p4.StudyKit]]:
-    """P2/P3/P4 in parallel off an already-built brief — the background stage.
-    A route that already holds the brief (from cache) calls this directly.
-    Returns (questions, mapping, flashcards); any element is None if that call
-    failed."""
+    """P2 ∥ P3 off an already-built brief, then P4 on their output — the
+    background stage. A route that already holds the brief (from cache) calls
+    this directly. Returns (questions, mapping, answer_kit); any element is None
+    if that call failed (P4 is skipped when P2 produced no questions)."""
     competencies = [c.to_dict() for c in brief.competencies]
     brief_dict = brief.to_dict_for_cache()
     story_list = stories or []
@@ -127,14 +128,23 @@ async def fan_out_toolkit(
         asyncio.to_thread(
             p3.get_or_generate_mapping, interview, competencies, story_list, make_client(),
             lang=lang, use_cache=use_cache, path=path),
-        asyncio.to_thread(
-            p4.get_or_generate_flashcards, interview, brief_dict, resume_text, make_client(),
-            lang=lang, use_cache=use_cache, path=path),
         return_exceptions=True,
     )
     # A raised exception in any branch degrades to None — a partial toolkit is
     # fine (the tab renders empty); one bad call must not sink the others.
-    return tuple(None if isinstance(r, BaseException) else r for r in results)  # type: ignore[return-value]
+    questions, mapping = (None if isinstance(r, BaseException) else r for r in results)
+
+    kit = None
+    if questions:
+        try:
+            kit = await asyncio.to_thread(
+                p4.get_or_generate_answers, interview, brief_dict,
+                [q.to_dict() for q in questions], [m.to_dict() for m in (mapping or [])],
+                story_list, resume_text, make_client(),
+                lang=lang, use_cache=use_cache, path=path)
+        except Exception:  # noqa: BLE001 — same degrade-to-None contract
+            kit = None
+    return questions, mapping, kit  # type: ignore[return-value]
 
 
 async def _run_brief(

@@ -142,16 +142,25 @@ def _context_block(brief: Optional[dict], persona: str) -> str:
 def pick_session_questions(
     questions: list[dict], *, length: str = DEFAULT_LENGTH,
     focus_competency: Optional[str] = None,
+    prefer_ids: Optional[set[str]] = None,
 ) -> list[dict]:
     """Choose the questions for one session (D6): keep flow order, cap at the
     length preset, and — when a focus competency is set — lead with its questions
-    (openers always allowed through so the session still opens naturally)."""
+    (openers always allowed through so the session still opens naturally).
+    `prefer_ids` (ADR-056: the answer cards rated "missed" in Get Ready) puts
+    those questions right after the openers, the rest follow in flow order."""
     n = SESSION_LENGTHS.get(length, SESSION_LENGTHS[DEFAULT_LENGTH])
     items = [q for q in questions if isinstance(q, dict) and str(q.get("text", "")).strip()]
     if focus_competency:
         focused = [q for q in items if q.get("competency_id") == focus_competency
                    or q.get("type") == "opener"]
         items = focused or items
+    if prefer_ids:
+        openers = [q for q in items if q.get("type") == "opener"][:1]
+        preferred = [q for q in items if q.get("id") in prefer_ids and q not in openers]
+        if preferred:
+            rest = [q for q in items if q not in openers and q not in preferred]
+            items = openers + preferred + rest
     return items[:n]
 
 

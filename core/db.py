@@ -619,6 +619,20 @@ CREATE TABLE IF NOT EXISTS practice_answers (
     created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_practice_answers_session ON practice_answers(session_id);
+
+-- card_reviews (ADR-056): the candidate's self-rating of each Get Ready answer
+-- card (a P2 question). Append-only — the latest row per (interview, question)
+-- is the current rating. `question_text` is kept so a rating never attaches to
+-- a different question if P2 is regenerated and re-uses the q1..qN ids.
+CREATE TABLE IF NOT EXISTS card_reviews (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    interview_id   INTEGER NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+    question_id    TEXT NOT NULL,
+    question_text  TEXT NOT NULL DEFAULT '',
+    rating         TEXT NOT NULL CHECK (rating IN ('got_it', 'missed')),
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_card_reviews_interview ON card_reviews(interview_id, question_id);
 """
 
 _SCHEMA_SQL = (
@@ -2434,6 +2448,42 @@ def save_prep_artifact(
              json.dumps(artifact, ensure_ascii=False), model, now),
         )
     return True
+
+
+# ---------- card_reviews (ADR-056): Get Ready self-ratings ----------
+
+CARD_RATINGS = ("got_it", "missed")
+
+
+def save_card_review(
+    interview_id: int, question_id: str, question_text: str, rating: str,
+    path: Path = DB_PATH,
+) -> bool:
+    """Append one self-rating. Unknown ratings are refused (False)."""
+    if rating not in CARD_RATINGS or not question_id:
+        return False
+    with tx(path) as conn:
+        conn.execute(
+            """INSERT INTO card_reviews (interview_id, question_id, question_text, rating, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (interview_id, question_id, question_text or "", rating, _now()),
+        )
+    return True
+
+
+def latest_card_reviews(interview_id: int, path: Path = DB_PATH) -> dict[str, dict]:
+    """Current rating per question: {question_id: {rating, question_text}} from
+    the latest row for each (append-only table, newest wins)."""
+    with connect(path) as conn:
+        rows = conn.execute(
+            """SELECT question_id, question_text, rating FROM card_reviews
+               WHERE interview_id = ? ORDER BY id""",
+            (interview_id,),
+        ).fetchall()
+    out: dict[str, dict] = {}
+    for r in rows:
+        out[r["question_id"]] = {"rating": r["rating"], "question_text": r["question_text"]}
+    return out
 
 
 # ---------- stories (ADR-050, REQ-041): the account-level Story Bank ----------

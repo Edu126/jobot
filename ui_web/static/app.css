@@ -2392,3 +2392,23 @@ a.stepper-step:hover .stepper-dot { border-color: oklch(var(--n-5)); }
 .ui-meter { width: 6rem; height: 0.375rem; border-radius: 9999px; background: var(--surf-2); overflow: hidden; }
 .ui-captions { height: 46vh; }
 @media (min-width: 1024px) { .ui-captions { height: 60vh; } }
+
+/* ─────────────────────────────────────────────────────────────
+   Answer-card deck (Get Ready, ADR-056). One card at a time, a box in the §7A
+   language; the back is revealed in place (no 3D flip — reading beats motion).
+   ───────────────────────────────────────────────────────────── */
+.deck-card {
+  background: oklch(var(--b1));
+  border: 1px solid var(--hair);
+  border-radius: var(--r-xl);
+  padding: 1.75rem;
+  min-height: 16rem;
+  cursor: pointer;
+  transition: border-color var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+}
+.deck-card:hover { border-color: var(--hair-strong); box-shadow: var(--lift); }
+.deck-card--back, .deck-card--back:hover { cursor: default; box-shadow: none; border-color: var(--hair); }
+.deck-card:focus-visible { outline: 2px solid oklch(var(--p) / 0.45); outline-offset: 2px; }
+.deck-rate { gap: 0.4rem; }
+.deck-rate--got:hover { background: var(--v-strong-tint); color: var(--v-strong-ink); }
+.deck-rate--missed:hover { background: var(--v-stretch-tint); color: var(--v-stretch-ink); }

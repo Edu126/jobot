@@ -41,6 +41,7 @@ from core.settings import get_output_language
 PRACTICE_CONSENT_KEY = "prep_practice_consent"
 
 from ..deps import templates
+from ..i18n import translate as _t
 
 router = APIRouter(tags=["interviews"])
 
@@ -285,10 +286,10 @@ async def interview_brief(request: Request, interview_id: int):
 
 @router.get("/interviews/{interview_id}/get-ready")
 async def interview_get_ready(request: Request, interview_id: int):
-    """Get Ready (Screen 3) — the toolkit shell. Four tabs (Flashcards · Stories
-    · Likely Questions · Talking Points) that lazy-load their P2/P3/P4 fragments
-    (already warmed by the build, generated on a cache miss). Brief must exist —
-    a miss bounces to the generating screen."""
+    """Get Ready (Screen 3) — the toolkit shell. Two tabs (Answer cards · Your
+    stories, ADR-056) that lazy-load their fragments (already warmed by the
+    build, generated on a cache miss). Brief must exist — a miss bounces to the
+    generating screen."""
     interview = db.get_interview(interview_id)
     if not interview:
         return _redirect("/interviews/new")
@@ -320,21 +321,6 @@ def _toolkit_ctx(interview_id: int):
     return interview, brief, resume_text, client, lang
 
 
-@router.get("/interviews/{interview_id}/toolkit/questions")
-async def toolkit_questions(request: Request, interview_id: int):
-    ctx = _toolkit_ctx(interview_id)
-    if ctx is None:
-        return _toolkit_unavailable(request)
-    interview, brief, _resume_text, client, lang = ctx
-    competencies = [c.to_dict() for c in brief.competencies]
-    items = await asyncio.to_thread(
-        prep_questions.get_or_generate_questions, interview, competencies, client, lang=lang)
-    return templates.TemplateResponse(
-        request, "partials/toolkit_questions.html",
-        {"questions": items or [], "competencies": {c["id"]: c["name"] for c in competencies}},
-    )
-
-
 @router.get("/interviews/{interview_id}/toolkit/stories")
 async def toolkit_stories(request: Request, interview_id: int):
     ctx = _toolkit_ctx(interview_id)
@@ -354,35 +340,64 @@ async def toolkit_stories(request: Request, interview_id: int):
     )
 
 
-@router.get("/interviews/{interview_id}/toolkit/flashcards")
-async def toolkit_flashcards(request: Request, interview_id: int):
-    kit = await _study_kit(interview_id)
-    if kit is None:
-        return _toolkit_unavailable(request)
-    return templates.TemplateResponse(
-        request, "partials/toolkit_flashcards.html", {"flashcards": kit.flashcards})
-
-
-@router.get("/interviews/{interview_id}/toolkit/talking")
-async def toolkit_talking(request: Request, interview_id: int):
-    kit = await _study_kit(interview_id)
-    if kit is None:
-        return _toolkit_unavailable(request)
-    return templates.TemplateResponse(
-        request, "partials/toolkit_talking.html",
-        {"talking_points": kit.talking_points, "questions_to_ask": kit.questions_to_ask})
-
-
-async def _study_kit(interview_id: int):
-    """P4 StudyKit for the Flashcards + Talking Points tabs — one cached artifact
-    serves both (a second tab is a cache hit, not a re-generation)."""
+@router.get("/interviews/{interview_id}/toolkit/answers")
+async def toolkit_answers(request: Request, interview_id: int):
+    """Answer cards (ADR-056): each P2 likely question (front) + MY first-person
+    answer from P4 (back) + the candidate's last self-rating. P2 ∥ P3 then P4 —
+    all cache hits after the build warm-up."""
     ctx = _toolkit_ctx(interview_id)
     if ctx is None:
-        return None
+        return _toolkit_unavailable(request)
     interview, brief, resume_text, client, lang = ctx
-    return await asyncio.to_thread(
-        prep_flashcards.get_or_generate_flashcards,
-        interview, brief.to_dict_for_cache(), resume_text, client, lang=lang)
+    competencies = [c.to_dict() for c in brief.competencies]
+    stories = db.list_stories(interview["resume_hash"], status="saved")
+    questions, mapping = await asyncio.gather(
+        asyncio.to_thread(prep_questions.get_or_generate_questions,
+                          interview, competencies, client, lang=lang),
+        asyncio.to_thread(prep_mapping.get_or_generate_mapping,
+                          interview, competencies, stories, GeminiClient(api_key=resolve_api_key()), lang=lang),
+    )
+    if not questions:
+        return _toolkit_unavailable(request)
+    qdicts = [q.to_dict() for q in questions]
+    kit = await asyncio.to_thread(
+        prep_flashcards.get_or_generate_answers, interview, brief.to_dict_for_cache(),
+        qdicts, [m.to_dict() for m in (mapping or [])], stories, resume_text, client, lang=lang)
+    answers = kit.by_question() if kit else {}
+    reviews = db.latest_card_reviews(interview_id)
+    cards = []
+    for q in qdicts:
+        a = answers.get(q["id"])
+        r = reviews.get(q["id"])
+        cards.append({
+            "id": q["id"], "text": q["text"], "type": _t("prep2.qtype." + q["type"]),
+            "why": q.get("why_they_ask", ""), "follow_up": q.get("follow_up", ""),
+            "answer": a.answer if a else "", "point": a.point_to_land if a else "",
+            # a rating only counts for the SAME question text (P2 regen re-uses ids)
+            "rating": r["rating"] if r and r["question_text"] == q["text"] else None,
+        })
+    return templates.TemplateResponse(
+        request, "partials/toolkit_answers.html",
+        {"interview": interview, "cards": cards,
+         "questions_to_ask": kit.questions_to_ask if kit else []})
+
+
+@router.post("/interviews/{interview_id}/cards/{question_id}/review")
+async def card_review(interview_id: int, question_id: str,
+                      rating: str = Form(""), question_text: str = Form("")):
+    """Self-rating of one answer card (ADR-056) — data for the candidate's weak
+    spots and the "practice what I missed" session."""
+    if not db.get_interview(interview_id):
+        return Response(status_code=404)
+    ok = db.save_card_review(interview_id, question_id, question_text, rating)
+    return Response(status_code=204 if ok else 400)
+
+
+def _missed_question_ids(interview_id: int, questions: list[dict]) -> set[str]:
+    """Question ids whose latest self-rating is "missed" (same text only)."""
+    texts = {q.get("id"): q.get("text") for q in questions}
+    return {qid for qid, r in db.latest_card_reviews(interview_id).items()
+            if r["rating"] == "missed" and texts.get(qid) == r["question_text"]}
 
 
 def _toolkit_unavailable(request: Request) -> HTMLResponse:
@@ -406,9 +421,17 @@ async def practice_entry(request: Request, interview_id: int):
         return templates.TemplateResponse(
             request, "pages/practice_consent.html",
             {"active_tab": "prep", "interview": interview, "step": "practice"})
+    # Answer cards rated "missed" in Get Ready (ADR-056) → a pre-selected focus.
+    # Cache-only read of P2: setup must never trigger a generation.
+    qrow = db.get_prep_artifact(interview_id, prep_questions.ARTIFACT_KIND,
+                                lang or get_output_language(), prep_questions.PROMPT_VERSION)
+    qlist = [q for q in ((qrow or {}).get("artifact") or {}).get("questions", []) if isinstance(q, dict)]
+    missed_count = len(_missed_question_ids(interview_id, qlist))
+    focus_default = "__missed__" if (missed_count and request.query_params.get("focus") != "all") else ""
     return templates.TemplateResponse(
         request, "pages/practice_setup.html",
         {"active_tab": "prep", "interview": interview, "step": "practice",
+         "missed_count": missed_count, "focus_default": focus_default,
          "competencies": [c.to_dict() for c in brief.competencies],
          "voice_enabled": prep_live.is_enabled(),
          "voices": prep_live.VOICES, "default_voice": prep_live.DEFAULT_VOICE,
@@ -461,14 +484,17 @@ async def practice_start(
     qdicts = [q.to_dict() for q in (questions or [])]
     if not qdicts:
         return HTMLResponse('<div class="text-error text-sm">We couldn\'t load questions — try again.</div>')
+    missed = focus.strip() == "__missed__"
     picked = prep_practice.pick_session_questions(
-        qdicts, length=length, focus_competency=focus.strip() or None)
+        qdicts, length=length,
+        focus_competency=None if missed else (focus.strip() or None),
+        prefer_ids=_missed_question_ids(interview_id, qdicts) if missed else None)
     # Voice + personality are decoupled: `persona` column stores the personality id.
     personality_id = personality if personality in prep_live.PERSONALITIES else prep_live.DEFAULT_PERSONALITY
     voice_id = voice if voice in prep_live.VOICES else prep_live.DEFAULT_VOICE
     sid = db.create_practice_session(
         interview_id, mode=mode, length=length,
-        focus_competency=focus.strip() or None,
+        focus_competency=None if missed else (focus.strip() or None),
         persona=personality_id, voice=voice_id,
         questions=picked)
     dest = "voice" if (channel == "voice" and prep_live.is_enabled()) else str(sid)
