@@ -287,7 +287,9 @@ async def interview_facts(request: Request, interview_id: int):
     brief = prep_brief.read_cached_brief(interview_id, lang=db.get_interview(interview_id).get("lang") or None)
     qtext = {f.id: f.question for f in (brief.clarify_questions if brief else [])}
     # keyed by the question TEXT (see toolkit.read_facts) — ids are re-used on a rebuild
-    answers = {} if form.get("skip") else {
+    # Skip = go on WITHOUT answering now — it never erases answers already saved
+    # (a skip used to wipe them: Eduardo lost his answers on 2026-09-29).
+    answers = prep_toolkit.read_facts(interview_id) if form.get("skip") else {
         qtext[k[5:]]: str(v) for k, v in form.items() if k.startswith("fact_") and k[5:] in qtext}
     prep_toolkit.save_facts(interview_id, answers, asked=list(qtext.values()))
     return RedirectResponse(f"/interviews/{interview_id}/get-ready", status_code=303)
