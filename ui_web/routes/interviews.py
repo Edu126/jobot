@@ -278,16 +278,17 @@ async def interview_brief(request: Request, interview_id: int):
 
 @router.post("/interviews/{interview_id}/facts")
 async def interview_facts(request: Request, interview_id: int):
-    """The Brief's one CTA (ADR-057): save the candidate's answers to the fact
-    questions (all optional) and go to Get Ready, which writes the toolkit."""
+    """Get Ready's Clarify step (ADR-058): save the candidate's answers to the
+    clarifying questions (all optional; "Skip" posts none) and go back to Get
+    Ready, which then writes the toolkit."""
     if not db.get_interview(interview_id):
         return _redirect("/interviews/new")
     form = await request.form()
     brief = prep_brief.read_cached_brief(interview_id, lang=db.get_interview(interview_id).get("lang") or None)
-    qtext = {f.id: f.question for f in (brief.fact_questions if brief else [])}
+    qtext = {f.id: f.question for f in (brief.clarify_questions if brief else [])}
     # keyed by the question TEXT (see toolkit.read_facts) — ids are re-used on a rebuild
-    answers = {qtext[k[5:]]: str(v) for k, v in form.items()
-               if k.startswith("fact_") and k[5:] in qtext}
+    answers = {} if form.get("skip") else {
+        qtext[k[5:]]: str(v) for k, v in form.items() if k.startswith("fact_") and k[5:] in qtext}
     prep_toolkit.save_facts(interview_id, answers)
     return RedirectResponse(f"/interviews/{interview_id}/get-ready", status_code=303)
 
@@ -307,8 +308,14 @@ async def interview_get_ready(request: Request, interview_id: int):
     db.touch_interview(interview_id)
     stories = db.list_stories(interview["resume_hash"], status="saved")
     toolkit = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang)
-    ctx = {"active_tab": "prep", "interview": interview, "step": "get_ready", "toolkit": toolkit}
-    if toolkit is not None:
+    # Clarify first (ADR-058): until the candidate answers or skips the "how"
+    # questions, show them instead of building; ?clarify=1 reopens them.
+    wants_clarify = request.query_params.get("clarify") == "1"
+    clarify = bool(brief.clarify_questions) and (
+        wants_clarify or (toolkit is None and not prep_toolkit.facts_submitted(interview_id)))
+    ctx = {"active_tab": "prep", "interview": interview, "step": "get_ready", "toolkit": toolkit,
+           "clarify": clarify, "brief": brief, "facts": prep_toolkit.read_facts(interview_id)}
+    if toolkit is not None and not clarify:
         ctx.update(_get_ready_ctx(interview, brief, toolkit, stories))
     return templates.TemplateResponse(request, "pages/interview_get_ready.html", ctx)
 
@@ -338,13 +345,16 @@ def _get_ready_ctx(interview: dict, brief, toolkit, stories: list[dict]) -> dict
     """Join the toolkit with the Story Bank, the brief and the candidate's card
     ratings for the three tabs."""
     reviews = db.latest_card_reviews(interview["id"])
+    frame_tpl = templates.env.get_template("partials/answer_frame.html")
     cards = []
     for q in toolkit.questions:
         r = reviews.get(q.id)
         cards.append({
             "id": q.id, "text": q.text, "type": _t("prep2.qtype." + q.type),
             "why": q.why_they_ask, "follow_up": q.follow_up,
-            "answer": q.answer, "point": q.point_to_land,
+            # the skeleton back, rendered once server-side (escaped; hints → chips)
+            "frame_html": frame_tpl.render(frame=q.frame) if q.frame else "",
+            "needs_input": q.needs_input, "point": q.point_to_land,
             # a rating only counts for the SAME question text (a rebuild re-uses ids)
             "rating": r["rating"] if r and r["question_text"] == q.text else None,
         })

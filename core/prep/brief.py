@@ -26,7 +26,7 @@ from core.settings import get_output_language, language_instruction
 
 from . import prompts as P
 
-PROMPT_VERSION = "2026-09-30-brief-v3"
+PROMPT_VERSION = "2026-09-30-brief-v4"
 ARTIFACT_KIND = "brief"
 
 MIN_COMPETENCIES = 4
@@ -34,7 +34,7 @@ MAX_COMPETENCIES = 6
 MAX_GAPS = 3
 MAX_LENS = 3
 MAX_FRICTION = 3
-MAX_FACT_QUESTIONS = 4
+MAX_CLARIFY_QUESTIONS = 4
 
 
 @dataclass
@@ -69,14 +69,16 @@ class Gap:
 
 
 @dataclass
-class FactQuestion:
-    """A question TO the candidate about a specific the résumé doesn't give
-    (a number, a scope, a result) that this interview will probe. Asked on the
-    Brief before the toolkit is written, so answers can be concrete instead of
-    vague (ADR-057). Answers live in prep_artifacts kind 'facts'."""
+class ClarifyQuestion:
+    """A question TO the candidate about the HOW behind something ALREADY on the
+    résumé that this interview will lean on — the method, the tools, what they
+    personally did, how the action produced the result (ADR-058). Never a request
+    for new achievements: the company already has the résumé; we structure it.
+    Asked as the first step of Get Ready; answers live in prep_artifacts 'facts'."""
     id: str
     question: str
-    example: str = ""   # a short sample answer showing the FORMAT (shown as the placeholder)
+    example: str = ""                    # first-person FORMAT sample (the placeholder)
+    competency_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -90,7 +92,7 @@ class Brief:
     gaps: list[Gap] = field(default_factory=list)
     interviewer_lens: list[str] = field(default_factory=list)
     friction_points: list[str] = field(default_factory=list)
-    fact_questions: list[FactQuestion] = field(default_factory=list)
+    clarify_questions: list[ClarifyQuestion] = field(default_factory=list)
     created_at: str = ""
 
     def is_empty(self) -> bool:
@@ -106,7 +108,7 @@ class Brief:
             "gaps": [g.to_dict() for g in self.gaps],
             "interviewer_lens": self.interviewer_lens,
             "friction_points": self.friction_points,
-            "fact_questions": [f.to_dict() for f in self.fact_questions],
+            "clarify_questions": [f.to_dict() for f in self.clarify_questions],
         }
 
 
@@ -211,7 +213,7 @@ Do this:
 5. List up to {MAX_GAPS} gaps. For each gap, give one concrete prep action and the competency id it belongs to (or null).
 6. Based on the interviewer's title (if given) and the round type, list what this interviewer likely cares about in {MAX_LENS} bullets. If no title is given, base it on the round type only.
 7. List up to {MAX_FRICTION} likely friction points (tough topics they may push on).
-8. Write up to {MAX_FACT_QUESTIONS} short questions to ASK THE CANDIDATE about specifics this interview will probe but the résumé does not state — a number, a budget or team size, a scope, a concrete result. Address the candidate as "you". Keep each question to one short sentence. For each, write "example": a one-line sample answer in the first person that shows the FORMAT of a good answer (e.g. "I managed a $2M yearly budget across 3 programs"). The example is only an illustration of the format — use round, generic numbers, never facts from the résumé. Only ask about things the résumé leaves vague; if it is already specific, ask fewer.
+8. Write up to {MAX_CLARIFY_QUESTIONS} short CLARIFYING questions to ask the candidate about items ALREADY on the résumé that this interview will lean on. Ask HOW: the method or process they used, the tools, what they personally did, or how the action led to the result. Never ask for new achievements or new numbers. Address the candidate as "you"; one short sentence each; set competency_id. For each, write "example": a one-line first-person sample that shows the FORMAT of a good answer (e.g. "I pulled weekly SAP extracts into Power BI and reviewed variances every Monday"). The example only illustrates the format — generic wording, never facts from the résumé. If the résumé already explains the how, ask fewer.
 
 Round type: {round_type}. Length: {length} minutes.
 Interviewer title: {interviewer}
@@ -241,7 +243,7 @@ Return JSON with this exact schema — no prose before or after:
   "gaps": [{{ "competency_id": "c1 | null", "gap": "string", "action": "string" }}],
   "interviewer_lens": ["string"],
   "friction_points": ["string"],
-  "fact_questions": [{{ "question": "string", "example": "string" }}]
+  "clarify_questions": [{{ "question": "string", "example": "string", "competency_id": "c1 | null" }}]
 }}"""
 
 
@@ -257,13 +259,14 @@ def _parse_brief(raw: Any) -> Brief:
         gaps=_parse_gaps(raw.get("gaps")),
         interviewer_lens=_parse_str_list(raw.get("interviewer_lens"), MAX_LENS),
         friction_points=_parse_str_list(raw.get("friction_points"), MAX_FRICTION),
-        fact_questions=_parse_fact_questions(raw.get("fact_questions")),
+        clarify_questions=_parse_clarify(raw.get("clarify_questions")),
     )
 
 
-def _parse_fact_questions(items: Any) -> list[FactQuestion]:
-    """Keep non-blank questions, re-id f1..fN (the answer join key), cap."""
-    out: list[FactQuestion] = []
+def _parse_clarify(items: Any) -> list[ClarifyQuestion]:
+    """Keep non-blank questions, re-id f1..fN, cap. competency_id is validated
+    against the brief by the caller's join (unknown ids are harmless here)."""
+    out: list[ClarifyQuestion] = []
     if not isinstance(items, list):
         return out
     for it in items:
@@ -271,8 +274,10 @@ def _parse_fact_questions(items: Any) -> list[FactQuestion]:
         if not q:
             continue
         ex = str(it.get("example", "")).strip() if isinstance(it, dict) else ""
-        out.append(FactQuestion(id=f"f{len(out) + 1}", question=q, example=ex))
-        if len(out) >= MAX_FACT_QUESTIONS:
+        cid = str(it.get("competency_id") or "").strip() if isinstance(it, dict) else ""
+        out.append(ClarifyQuestion(id=f"f{len(out) + 1}", question=q, example=ex,
+                                   competency_id=cid if cid and cid.lower() != "null" else None))
+        if len(out) >= MAX_CLARIFY_QUESTIONS:
             break
     return out
 

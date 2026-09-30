@@ -158,47 +158,25 @@
   </section>
   {% endif %}
 
-  {# ---- fact questions + the ONE primary action (ADR-057). The résumé leaves
-     some specifics out; answering (optional) makes the answer cards concrete.
-     The CTA submits the answers and starts the one toolkit call. ---- #}
-  <form method="post" action="/interviews/{{ interview.id }}/facts">
-    {% if brief.fact_questions %}
-    <section class="mt-10 pt-8 border-t border-base-300 brief-row">
-      <div class="brief-rail">
-        <h2 class="brief-label">{{ _('prep2.brief.facts') }}</h2>
-        <p class="text-sm text-body-muted mt-1.5">{{ _('prep2.brief.facts_sub') }}</p>
-      </div>
-      <div class="md:col-span-3 space-y-5">
-        {% for f in brief.fact_questions %}
-        <div class="space-y-1.5">
-          <label for="fact_{{ f.id }}" class="font-medium block">{{ f.question }}</label>
-          {# the example lives IN the placeholder — "something like this goes here" #}
-          <textarea id="fact_{{ f.id }}" name="fact_{{ f.id }}" rows="2" class="ui-field resize-y"
-                    placeholder="{{ (_('prep2.brief.fact_eg') ~ ' ' ~ f.example) if f.example else _('prep2.brief.fact_ph') }}">{{ facts.get(f.question, '') }}</textarea>
-        </div>
-        {% endfor %}
-      </div>
-    </section>
-    {% endif %}
-
-    <div class="mt-10 pt-8 border-t border-base-300 flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center gap-3">
-        {% if interview.jd_text %}
-          <button type="button" @click="showJd = !showJd"
-                  class="text-sm text-body-muted hover:text-base-content inline-flex items-center gap-1">
-            <i class="ph-thin ph-file-text"></i>{{ _('prep2.brief.view_jd') }}
-          </button>
-        {% endif %}
-        {% if interview.source_url %}
-          <a href="{{ interview.source_url }}" target="_blank" rel="noopener"
-             class="text-sm text-body-muted hover:text-base-content inline-flex items-center gap-1">
-            <i class="ph-thin ph-arrow-up-right"></i>{{ _('prep2.brief.view_posting') }}
-          </a>
-        {% endif %}
-      </div>
-      {{ ui.button(_('prep2.brief.continue'), variant='primary', icon_after='ph-arrow-right', type='submit') }}
+  {# ---- footer: the page's ONE primary action (§2A.6), after the read. The
+     Brief is read-only; clarifying questions live in Get Ready (ADR-058). ---- #}
+  <div class="mt-10 pt-8 border-t border-base-300 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      {% if interview.jd_text %}
+        <button type="button" @click="showJd = !showJd"
+                class="text-sm text-body-muted hover:text-base-content inline-flex items-center gap-1">
+          <i class="ph-thin ph-file-text"></i>{{ _('prep2.brief.view_jd') }}
+        </button>
+      {% endif %}
+      {% if interview.source_url %}
+        <a href="{{ interview.source_url }}" target="_blank" rel="noopener"
+           class="text-sm text-body-muted hover:text-base-content inline-flex items-center gap-1">
+          <i class="ph-thin ph-arrow-up-right"></i>{{ _('prep2.brief.view_posting') }}
+        </a>
+      {% endif %}
     </div>
-  </form>
+    {{ ui.button(_('prep2.brief.continue'), variant='primary', icon_after='ph-arrow-right', href='/interviews/' ~ interview.id ~ '/get-ready') }}
+  </div>
 
   {# collapsible JD #}
   {% if interview.jd_text %}

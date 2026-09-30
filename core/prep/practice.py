@@ -40,7 +40,7 @@ DEFAULT_LENGTH = "standard"
 
 # Per-question speaking target (seconds) by question type — the "target" the
 # delivery length band is measured against. Behavioral answers run longer.
-TARGET_SECONDS = {"opener": 60, "behavioral": 90, "situational": 90, "technical": 75}
+TARGET_SECONDS = {"opener": 60, "behavioral": 90, "approach": 90, "situational": 90, "technical": 75}
 DEFAULT_TARGET = 90
 
 MAX_ANSWER_CHARS = 6000

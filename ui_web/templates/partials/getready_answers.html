@@ -24,6 +24,7 @@
               <span class="chip chip-neutral" x-text="card && card.type"></span>
               <span x-show="card && card.rating === 'got_it'" x-cloak class="chip chip-applied">{{ _('prep2.cards.got') }}</span>
               <span x-show="card && card.rating === 'missed'" x-cloak class="chip chip-gap">{{ _('prep2.cards.missed') }}</span>
+              <span x-show="card && !card.rating && card.needs_input" x-cloak class="chip chip-neutral">{{ _('prep2.cards.needs_input') }}</span>
             </div>
             <p class="text-title flip-question" x-text="card && card.text"></p>
             <span class="text-sm text-subtle">{{ _('prep2.cards.tap') }}</span>
@@ -31,9 +32,9 @@
           {# back — my answer #}
           <div class="flip-face flip-back">
             <div class="space-y-4">
-              <div class="text-eyebrow">{{ _('prep2.cards.my_answer') }}</div>
-              <p class="leading-relaxed" x-show="card && card.answer" x-text="card && card.answer"></p>
-              <p class="text-body-muted" x-show="card && !card.answer">{{ _('prep2.cards.no_answer') }}</p>
+              <div x-show="card && card.frame_html" x-html="card && card.frame_html"></div>
+              <p class="text-body-muted" x-show="card && !card.frame_html">{{ _('prep2.cards.no_answer') }}</p>
+              <p class="text-sm text-subtle" x-show="card && card.needs_input">{{ _('prep2.cards.hint_help') }}</p>
               <p class="ui-kv" x-show="card && card.point"><b>{{ _('prep2.cards.point') }}</b><span x-text="card && card.point"></span></p>
               <p class="ui-inset text-sm" x-show="card && card.follow_up"><b class="font-semibold">{{ _('prep2.getready.follow_up') }}</b> <span x-text="card && card.follow_up"></span></p>
               <p class="text-sm text-body-muted" x-show="card && card.why">{{ _('prep2.getready.why_ask') }} <span x-text="card && card.why"></span></p>

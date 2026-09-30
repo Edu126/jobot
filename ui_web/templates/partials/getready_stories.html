@@ -49,7 +49,9 @@
         {% for k in ['situation', 'task', 'action', 'result'] %}
         <div class="star__row">
           <dt class="star__key">{{ _('prep2.story.' + k) }}</dt>
-          <dd>{% if star[k] %}{{ star[k] }}{% if k == 'result' and star.metric %} <span class="font-semibold">({{ star.metric }})</span>{% endif %}{% else %}<span class="text-subtle">—</span>{% endif %}</dd>
+          {# the metric is shown only when the Result doesn't already say it (the
+             "Saved 60+… (Saved 60+…)" echo); hint slots render as chips #}
+          <dd>{% if star[k] %}{{ star[k] | hints }}{% if k == 'result' and star.metric and (star.metric | lower) not in (star[k] | lower) %} <span class="font-semibold">({{ star.metric }})</span>{% endif %}{% else %}<span class="text-subtle">—</span>{% endif %}</dd>
         </div>
         {% endfor %}
       </dl>

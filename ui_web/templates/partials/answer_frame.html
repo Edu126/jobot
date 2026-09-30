@@ -1,0 +1,11 @@
+{# The back of an answer card (ADR-058): the skeleton's fixed sections with
+   dash bullets; [[hint: …]] slots render as dashed chips to fill in with my
+   own words. Rendered server-side per card and shown via x-html. #}
+<div class="frame">
+  {% for sec in frame %}
+  <div class="frame__sec">
+    <div class="frame__label">{{ _('prep2.frame.' + sec.section) }}</div>
+    <ul class="ui-list">{% for pt in sec.points %}<li>{{ pt | hints }}</li>{% endfor %}</ul>
+  </div>
+  {% endfor %}
+</div>

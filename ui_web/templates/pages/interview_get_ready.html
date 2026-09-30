@@ -19,7 +19,9 @@
     {{ steps.stepper('get_ready', interview.id) }}
   {% endcall %}
 
-  {% if toolkit is none %}
+  {% if clarify %}
+  <div class="gr-panel">{% include "partials/getready_clarify.html" %}</div>
+  {% elif toolkit is none %}
   {# ---- not written yet: ONE honest loading state, then reload ---- #}
   <div class="gr-panel">
     <div class="card-quiet p-8 flex flex-col items-center justify-center text-center gap-4 h-full"
@@ -33,7 +35,10 @@
 
   <div class="flex flex-wrap items-center justify-between gap-3">
     {{ ui.seg_tabs([('answers', _('prep2.getready.tab_answers'), none), ('stories', _('prep2.getready.tab_stories'), none), ('ask', _('prep2.getready.tab_ask'), none)], 'tab') }}
-    {{ ui.button(_('prep2.getready.start_practice'), variant='primary', icon_after='ph-arrow-right', href='/interviews/' ~ interview.id ~ '/practice') }}
+    <div class="flex items-center gap-4">
+      {% if brief.clarify_questions %}<a href="?clarify=1" class="ui-link-quiet">{{ _('prep2.clarify.edit') }}</a>{% endif %}
+      {{ ui.button(_('prep2.getready.start_practice'), variant='primary', icon_after='ph-arrow-right', href='/interviews/' ~ interview.id ~ '/practice') }}
+    </div>
   </div>
 
   <div class="gr-panel" x-show="tab === 'answers'">{% include "partials/getready_answers.html" %}</div>

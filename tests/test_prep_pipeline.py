@@ -71,8 +71,8 @@ _BRIEF = {
     ],
     "interviewer_lens": ["cares about impact", "", "cares about rigor", "extra", "over-cap"],
     "friction_points": ["gap in fintech domain"],
-    "fact_questions": [
-        {"question": "How large was the budget you managed?", "example": "I managed a $2M yearly budget"},
+    "clarify_questions": [
+        {"question": "How did you track the budget?", "example": "I managed a $2M yearly budget", "competency_id": "c1"},
         {"question": "", "example": "dropped: blank"},
         "What tools did you use for forecasting?",
     ],
@@ -121,13 +121,15 @@ def test_band_or_default():
     print("PASS test_band_or_default")
 
 
-def test_brief_fact_questions():
+def test_brief_clarify_questions():
     b = B._parse_brief(_BRIEF)
-    _assert([f.id for f in b.fact_questions] == ["f1", "f2"], f"blank dropped, re-id f1..fN, got {b.fact_questions}")
-    _assert(b.fact_questions[0].example.startswith("I managed"), "format example kept")
-    _assert(b.fact_questions[1].question.startswith("What tools"), "a bare string is accepted")
-    _assert(b.to_dict_for_cache()["fact_questions"][0]["id"] == "f1", "cached with ids")
-    print("PASS test_brief_fact_questions")
+    _assert([f.id for f in b.clarify_questions] == ["f1", "f2"], f"blank dropped, re-id f1..fN, got {b.clarify_questions}")
+    _assert(b.clarify_questions[0].example.startswith("I managed"), "format example kept")
+    _assert(b.clarify_questions[0].competency_id == "c1" and b.clarify_questions[1].competency_id is None,
+            "competency id kept; a bare string has none")
+    _assert(b.clarify_questions[1].question.startswith("What tools"), "a bare string is accepted")
+    _assert(b.to_dict_for_cache()["clarify_questions"][0]["id"] == "f1", "cached with ids")
+    print("PASS test_brief_clarify_questions")
 
 
 # ---- end to end ----
@@ -159,7 +161,7 @@ if __name__ == "__main__":
     test_brief_parse_reids_and_bands()
     test_brief_no_competencies_is_empty()
     test_band_or_default()
-    test_brief_fact_questions()
+    test_brief_clarify_questions()
     test_brief_generate_then_cache()
     test_empty_brief_returns_none()
     print("all prep-pipeline tests passed")

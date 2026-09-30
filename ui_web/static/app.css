@@ -2460,3 +2460,21 @@ a.stepper-arrow:hover { background: var(--surf-3); }
 @media (min-width: 640px) { .star__row { grid-template-columns: 7rem minmax(0, 1fr); gap: 1rem; } }
 .star__key { font-family: var(--font-display); font-weight: 600; color: oklch(var(--p)); }
 .star dd { margin: 0; line-height: 1.55; }
+
+/* Answer skeleton (ADR-058) — sections with dash bullets; a hint slot is a
+   dashed chip: "fill this in with your own words". */
+.frame { display: grid; gap: 1rem; }
+.frame__sec { display: grid; gap: 0.4rem; }
+.frame__label { font-family: var(--font-display); font-weight: 600; color: oklch(var(--p)); }
+.frame .ui-list { gap: 0.4rem; }
+.ui-hint {
+  display: inline; padding: 0.05rem 0.45rem; margin: 0 0.1rem;
+  border: 1px dashed oklch(var(--wa) / 0.7); border-radius: var(--r-sm);
+  background: oklch(var(--wa) / 0.08); color: oklch(var(--bc) / 0.84);
+  font-size: 0.875em; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+}
+.ui-hint::before { content: "✎ "; color: oklch(var(--wa)); }
+
+/* Clarify step (ADR-058) — fits the Get Ready panel; the fields scroll inside. */
+.clarify { display: flex; flex-direction: column; gap: 1.25rem; min-height: 0; }
+.clarify__fields { display: grid; gap: 1.1rem; overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 2px; max-width: 48rem; }

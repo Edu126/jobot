@@ -57,17 +57,22 @@ _BRIEF = {
         {"id": "c2", "name": "Stakeholders", "what_good_looks_like": "aligns", "resume_match": "needs_work"},
         {"id": "c3", "name": "Reporting", "what_good_looks_like": "clear", "resume_match": "strong"},
     ],
-    "fact_questions": [{"id": "f1", "question": "How big was the budget?", "why": "scale"}],
+    "clarify_questions": [{"id": "f1", "question": "How big was the budget?", "example": "scale"}],
 }
 _TOOLKIT = {
     "questions": [
         {"text": "Tell me about yourself.", "type": "opener", "competency_id": None,
-         "why_they_ask": "warm up", "follow_up": "why us?", "answer": "I lead finance analytics.",
-         "point_to_land": "finance + data"},
-        {"text": "A budget you owned?", "type": "trivia", "competency_id": "c1",
-         "why_they_ask": "scale", "follow_up": "overruns?", "answer": "I owned a $2M budget.",
-         "point_to_land": "I own budgets"},
-        {"text": "Bad competency.", "type": "behavioral", "competency_id": "c99", "answer": "x"},
+         "why_they_ask": "warm up", "follow_up": "why us?", "point_to_land": "finance + data",
+         "frame": [{"section": "now", "points": ["I lead finance analytics at CRA."]},
+                   {"section": "why_here", "points": ["Housing mission."]}]},
+        {"text": "How do you approach managing budgets?", "type": "approach", "competency_id": "c1",
+         "why_they_ask": "scale", "follow_up": "overruns?", "point_to_land": "I own budgets",
+         "frame": [{"section": "approach", "points": ["I split opex and capex [[hint: your cadence — e.g. monthly variance review]]",
+                                                      "I give each cost driver an owner", "p3", "p4 over cap"]},
+                   {"section": "situation", "points": ["not in the approach template"]},
+                   {"section": "result", "points": ["$3M+ in savings"]}]},
+        {"text": "Bad competency.", "type": "trivia", "competency_id": "c99",
+         "frame": [{"section": "action", "points": ["We ensured alignment effectively."]}]},
         {"text": "", "type": "opener"},
     ],
     "stories": [
@@ -110,9 +115,14 @@ def test_parse_validates_joins():
     tk = T._parse_toolkit(_payload_with(7), valid_comps={"c1", "c2", "c3"}, valid_stories={"7"},
                           all_comps=["c1", "c2", "c3"])
     _assert([q.id for q in tk.questions] == ["q1", "q2", "q3"], f"dense re-id, blank dropped: {tk.questions}")
-    _assert(tk.questions[1].type == "behavioral", "bad type → behavioral")
-    _assert(tk.questions[2].competency_id is None, "unknown competency → null")
-    _assert(tk.questions[1].answer.startswith("I owned"), "first-person answer kept")
+    q_open, q_how, q_bad = tk.questions
+    _assert(q_how.type == "approach", "approach type kept")
+    _assert([f["section"] for f in q_how.frame] == ["approach", "result"], f"template sections only, got {q_how.frame}")
+    _assert(len(q_how.frame[0]["points"]) == T.MAX_POINTS, "bullets capped")
+    _assert(q_how.needs_input and not q_how.filler, "a hint slot → needs_input")
+    _assert(q_bad.type == "behavioral" and q_bad.competency_id is None, "bad type → behavioral, unknown comp → null")
+    _assert(q_bad.filler == ["effectively", "ensured alignment"] and q_bad.needs_input, "filler detected → needs_input")
+    _assert(not q_open.needs_input, "a clean skeleton needs no input")
     by = {s.competency_id: s for s in tk.stories}
     _assert(list(by) == ["c1", "c2", "c3"], f"dup/unknown dropped, missing added, got {list(by)}")
     _assert(by["c1"].story_id == "7" and by["c1"].angle_for_this_role == "lead with $", "valid story kept")
@@ -123,6 +133,17 @@ def test_parse_validates_joins():
     print("PASS test_parse_validates_joins")
 
 
+def test_hints_split_and_prompt_rules():
+    _assert(T.split_hints("I track opex [[hint: cadence]] and more") ==
+            [("t", "I track opex "), ("h", "cadence"), ("t", " and more")], "hint split")
+    _assert(T.split_hints("unclosed [[hint: x") == [("t", "unclosed [[hint: x")], "unclosed hint stays text")
+    prompt = T._build_prompt({"company": "C", "role_title": "R"}, _BRIEF, [], {}, "résumé", lang="en")
+    _assert("NOT prose" in prompt and "[[hint:" in prompt, "skeleton + hint slot instructions")
+    _assert('approach / situational → "approach"' in prompt, "per-type sections spelled out")
+    _assert("Never use these filler words" in prompt, "filler ban")
+    print("PASS test_hints_split_and_prompt_rules")
+
+
 def test_prompt_first_person_facts_and_ids():
     p = _fresh()
     interview, stories, sid = _seed(p)
@@ -131,7 +152,8 @@ def test_prompt_first_person_facts_and_ids():
             "keyed by question text; blank answers dropped")
     prompt = T._build_prompt(interview, _BRIEF, stories, T.read_facts(interview["id"], path=p), "résumé", lang="en")
     _assert("first person" in prompt and "Never use my name" in prompt, "first person, no name")
-    _assert("Q: How big was the budget?" in prompt and "A (my own words): $4M across 3 programs" in prompt,
+    _assert("MY CLARIFICATIONS" in prompt and "Q: How big was the budget?" in prompt
+            and "A (my own words): $4M across 3 programs" in prompt,
             "fact answers in context")
     _assert("Never add numbers together" in prompt and "not \"25% of the budget\"" in prompt,
             "number-fidelity rule present")
@@ -163,7 +185,7 @@ def test_generate_cache_and_fingerprint():
 
 _MERGED = dict(_BRIEF, **{"company_snapshot": [], "gaps": [], "interviewer_lens": [], "friction_points": []})
 _MERGED["competencies"] = [dict(c, id="x" + c["id"]) for c in _BRIEF["competencies"]]  # P1 re-ids to c1..c3
-_MERGED["fact_questions"] = [{"question": "How big was the budget?", "why": "scale"}]
+_MERGED["clarify_questions"] = [{"question": "How big was the budget?", "example": "scale"}]
 
 
 def _merged(sid: int) -> dict:
@@ -211,6 +233,7 @@ def test_toolkit_failure_degrades():
 
 if __name__ == "__main__":
     test_parse_validates_joins()
+    test_hints_split_and_prompt_rules()
     test_prompt_first_person_facts_and_ids()
     test_generate_cache_and_fingerprint()
     test_pipeline_two_calls_then_cache_and_reads()

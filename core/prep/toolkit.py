@@ -8,7 +8,10 @@ picture (P4 answered questions it hadn't written, with stories it hadn't
 picked). One call with the full context writes all of it consistently:
 
   - questions[] (8–10): the likely questions in interview flow order, each with
-    why they ask it, one follow-up, MY first-person answer and the point to land;
+    why they ask it, one follow-up, the point to land and an answer SKELETON
+    (ADR-058): bullets under fixed sections chosen by question type in code, in
+    my first person, with a visible [[hint: …]] slot wherever the inputs don't
+    say HOW — never generic filler;
   - stories[] (one per competency): the best Story Bank story for it (+ why and
     the angle for this role), or — when none fits — a STAR draft built from the
     résumé that the candidate can save to the bank;
@@ -36,7 +39,7 @@ from core.settings import get_output_language, language_instruction
 from . import brief as p1
 from . import prompts as P
 
-PROMPT_VERSION = "2026-09-30-toolkit-v2"
+PROMPT_VERSION = "2026-09-30-toolkit-v3"
 ARTIFACT_KIND = "toolkit"
 FACTS_KIND = "facts"
 FACTS_VERSION = "v2"   # v2 stores the question text with each answer
@@ -44,8 +47,32 @@ FACTS_VERSION = "v2"   # v2 stores the question text with each answer
 MIN_QUESTIONS = 8
 MAX_QUESTIONS = 10
 MAX_QUESTIONS_TO_ASK = 4
-VALID_TYPES = ("opener", "behavioral", "situational", "technical")
+VALID_TYPES = ("opener", "behavioral", "approach", "situational", "technical")
 DEFAULT_TYPE = "behavioral"
+
+# Answer skeletons (ADR-058) — the SECTIONS are fixed in code per question type;
+# the model only fills bullets. A "how do you approach…" question answered as a
+# STAR narrative was the root of the vague cards (it never states the method).
+FRAMES: dict[str, tuple[str, ...]] = {
+    "approach":    ("approach", "example", "result"),      # how do you…?  method first
+    "situational": ("approach", "example", "result"),      # what would you do if…?
+    "behavioral":  ("situation", "action", "result"),      # tell me about a time…
+    "opener":      ("now", "before", "why_here"),          # tell me about yourself / why us
+    "technical":   ("what", "how_i_used_it", "example"),
+}
+MAX_POINTS = 3
+
+# Filler that sounds complete but says nothing — the phrases Eduardo flagged
+# ("strict financial oversight", "rigorous tracking") and their kin. Detected
+# in code; a card containing any is marked needs_input.
+FILLER_PHRASES = (
+    "strict oversight", "strict financial oversight", "rigorous", "rigorously",
+    "effectively", "closely tracked", "closely monitored", "ensured alignment",
+    "ensure alignment", "best practices", "proven track record", "robust",
+    "seamless", "leveraged", "meticulous", "various stakeholders",
+    "de manera efectiva", "riguros", "supervisión estricta", "mejores prácticas",
+)
+HINT_OPEN, HINT_CLOSE = "[[hint:", "]]"
 
 
 @dataclass
@@ -58,8 +85,11 @@ class ToolkitQuestion:
     competency_id: Optional[str]
     why_they_ask: str = ""
     follow_up: str = ""
-    answer: str = ""
     point_to_land: str = ""
+    # [{section, points: [str]}] — points may carry [[hint: …]] slots
+    frame: list[dict] = field(default_factory=list)
+    needs_input: bool = False          # a hint slot or a filler phrase is present
+    filler: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -118,6 +148,12 @@ def read_facts(interview_id: int, *, path=db.DB_PATH) -> dict[str, str]:
     row = db.get_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, path=path)
     a = (row or {}).get("artifact")
     return {str(k): str(v).strip() for k, v in a.items() if str(v).strip()} if isinstance(a, dict) else {}
+
+
+def facts_submitted(interview_id: int, *, path=db.DB_PATH) -> bool:
+    """True once the candidate answered OR skipped the Clarify step (the row
+    exists, possibly empty) — Get Ready then builds instead of asking again."""
+    return db.get_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, path=path) is not None
 
 
 def save_facts(interview_id: int, answers: dict[str, str], *, path=db.DB_PATH) -> None:
@@ -266,7 +302,8 @@ def _build_prompt(interview: dict, brief: dict, stories: list[dict], facts: dict
     return f"""You are my interview coach. I have a {round_type} interview for {role} at {company}. Build my Get Ready toolkit in one pass, using everything below.
 
 {P.RULE_BLOCK}
-- Write every answer AS ME, in the first person ("I led…", "At CRA I…"). Never use my name, never "the candidate", never "he/she".
+- Write AS ME, in the first person ("I led…", "At CRA I…"). Never use my name, never "the candidate", never "he/she".
+- Structure what is already in my résumé and my answers — never add new achievements, employers, tools or numbers.
 - Be concrete: use the real employers, tools, numbers and results from my résumé and from MY ANSWERS below. MY ANSWERS are authoritative — prefer them over the résumé.
 - Keep every number with EXACTLY the meaning it has in my words or my résumé. Never add numbers together, never turn a number into a share of something else (no "X% of the budget" unless I said so), never re-derive or round. Example: if I wrote "the forecast savings were 15% and I delivered an extra 10%", say exactly that — not "25% of the budget".
 - If my wording is ambiguous, stay close to my words instead of reinterpreting them.
@@ -277,17 +314,25 @@ def _build_prompt(interview: dict, brief: dict, stories: list[dict], facts: dict
 Task:
 A. QUESTIONS — write {MIN_QUESTIONS} to {MAX_QUESTIONS} questions this interview will most likely include, in the order a real interview flows.
    - Mix for the round type: screening = mostly openers and motivation + 1-2 behavioral; behavioral = one per competency; technical = role knowledge + 1-2 behavioral; case = situational/problem-solving; hiring_manager = behavioral + situational + one "first 90 days"; final_panel = a harder mix.
-   - For each: type (opener | behavioral | situational | technical), competency_id (from the brief, or null for an opener), why they ask it (one sentence), one likely follow-up.
-   - For each: "answer" = what I would say out loud, 2 to 4 sentences, light Situation → Action → Result, built on the story you picked for that competency in B when there is one. And "point_to_land" = the one thing the interviewer should remember (one short line).
+   - type: "opener" (about me / why here), "behavioral" (tell me about a time…), "approach" (how do you…? / what is your process for…?), "situational" (what would you do if…?), "technical" (role knowledge).
+   - competency_id (from the brief, or null for an opener), why they ask it (one sentence), one likely follow-up, and "point_to_land" (one short line: what the interviewer must remember).
+   - "frame": an answer SKELETON — NOT prose. Use EXACTLY these sections for the type, in this order, 1 to {MAX_POINTS} bullets each, each bullet at most 14 words, in my first person:
+       approach / situational → "approach" (the concrete method or steps I use — name them), "example" (one real case from my résumé or stories), "result"
+       behavioral → "situation", "action" (what I personally did, how), "result"
+       opener → "now", "before", "why_here"
+       technical → "what", "how_i_used_it", "example"
+   - The skeleton must ANSWER THE QUESTION ASKED: if it asks "how", the first section says how.
+   - When the inputs don't say HOW I did something (the method, the tool, my personal step, how the action produced the result), DO NOT fill the gap with generic words. Write a hint slot instead: [[hint: what to add — e.g. a concrete example]]. Example bullet: "I track opex and capex against forecast [[hint: your cadence/tool — e.g. monthly variance review in Power BI]]".
+   - Never use these filler words: strict oversight, rigorous, effectively, closely tracked, closely monitored, ensured alignment, best practices, proven track record, robust, seamless, leveraged.
 B. STORIES — for EVERY competency in the brief:
    - pick the best story from my Story Bank (story_id), say in one sentence why it fits and one sentence how to angle it for this role;
-   - if no saved story fits, set story_id null and write "draft": a STAR story from my résumé (and my answers) for this competency — title, situation, task, action (what I did, with "I"), result, metric (a number only if it is in the inputs, else null). If the résumé has nothing usable, set draft null.
+   - if no saved story fits, set story_id null and write "draft": a STAR story from my résumé (and my answers) for this competency — title, situation, task, action (what I did, with "I"), result, metric (a number only if it is in the inputs, else null). Where the inputs don't say HOW (the method, or how the action produced the result), put a [[hint: …]] slot in that field instead of generic words. Do not repeat the metric inside the result. If the résumé has nothing usable, set draft null.
 C. QUESTIONS TO ASK — {MAX_QUESTIONS_TO_ASK - 1} to {MAX_QUESTIONS_TO_ASK} questions I can ask at the end. Keep them SHORT and plain: one sentence, at most 15 words, easy to remember under pressure — smart, not complicated. For each: why it is a good question (one short sentence), and "shows" = what asking it shows about me (2-4 words, e.g. "strategic thinking").
 
 The brief (competencies use these ids):
 {_brief_block(brief)}
 
-MY ANSWERS to your questions about specifics the résumé doesn't state (authoritative — keep their meaning exactly):
+MY CLARIFICATIONS — how I did things the résumé only names (authoritative — keep their meaning exactly; use them to fill the "how"):
 {_facts_block(facts)}
 
 My Story Bank (use these story ids):
@@ -306,8 +351,9 @@ My résumé:
 Return JSON with this exact schema — no prose before or after:
 {{
   "questions": [
-    {{ "text": "string", "type": "opener | behavioral | situational | technical", "competency_id": "c1 | null",
-       "why_they_ask": "string", "follow_up": "string", "answer": "string", "point_to_land": "string" }}
+    {{ "text": "string", "type": "opener | behavioral | approach | situational | technical", "competency_id": "c1 | null",
+       "why_they_ask": "string", "follow_up": "string", "point_to_land": "string",
+       "frame": [{{ "section": "approach", "points": ["string"] }}] }}
   ],
   "stories": [
     {{ "competency_id": "c1", "story_id": "12 | null", "why_it_fits": "string | null",
@@ -361,14 +407,63 @@ def _parse_questions(items: Any, valid_comps: Optional[set[str]]) -> list[Toolki
         if cid is not None and valid_comps is not None and cid not in valid_comps:
             cid = None
         qid = _s(it.get("id")) if valid_comps is None and _s(it.get("id")) else f"q{len(out) + 1}"
+        frame = _parse_frame(it.get("frame"), qtype)
+        filler = find_filler(" ".join(pt for sec in frame for pt in sec["points"]))
+        has_hint = any(HINT_OPEN in pt for sec in frame for pt in sec["points"])
         out.append(ToolkitQuestion(
             id=qid, text=text, type=qtype, competency_id=cid,
             why_they_ask=_s(it.get("why_they_ask")), follow_up=_s(it.get("follow_up")),
-            answer=_s(it.get("answer")), point_to_land=_s(it.get("point_to_land")),
+            point_to_land=_s(it.get("point_to_land")),
+            frame=frame, filler=filler, needs_input=bool(filler) or has_hint or not frame,
         ))
         if len(out) >= MAX_QUESTIONS:
             break
     return out
+
+
+def _parse_frame(items: Any, qtype: str) -> list[dict]:
+    """Keep only the sections the type's template allows, in template order;
+    ≤ MAX_POINTS non-blank bullets each. Sections the model invented are
+    dropped; missing ones are simply absent (the card is then needs_input)."""
+    allowed = FRAMES.get(qtype, FRAMES[DEFAULT_TYPE])
+    by_sec: dict[str, list[str]] = {}
+    for it in items if isinstance(items, list) else []:
+        if not isinstance(it, dict):
+            continue
+        sec = _s(it.get("section")).lower()
+        if sec not in allowed or sec in by_sec:
+            continue
+        pts = it.get("points")
+        pts = [_s(x) for x in (pts if isinstance(pts, list) else [pts]) if _s(x)]
+        if pts:
+            by_sec[sec] = pts[:MAX_POINTS]
+    return [{"section": sec, "points": by_sec[sec]} for sec in allowed if sec in by_sec]
+
+
+def find_filler(text: str) -> list[str]:
+    """Banned filler phrases present in `text` (case-insensitive), in list order."""
+    low = (text or "").lower()
+    return [f for f in FILLER_PHRASES if f in low]
+
+
+def split_hints(text: str) -> list[tuple[str, str]]:
+    """Split a bullet into [('t', text) | ('h', hint)] segments for rendering.
+    An unclosed [[hint: is treated as plain text (never swallow content)."""
+    out: list[tuple[str, str]] = []
+    rest = text or ""
+    while True:
+        i = rest.find(HINT_OPEN)
+        j = rest.find(HINT_CLOSE, i + len(HINT_OPEN)) if i >= 0 else -1
+        if i < 0 or j < 0:
+            if rest:
+                out.append(("t", rest))
+            return out
+        if rest[:i]:
+            out.append(("t", rest[:i]))
+        hint = rest[i + len(HINT_OPEN):j].strip()
+        if hint:
+            out.append(("h", hint))
+        rest = rest[j + len(HINT_CLOSE):]
 
 
 def _parse_draft(d: Any) -> Optional[dict]:

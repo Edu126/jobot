@@ -41,6 +41,20 @@ templates.env.globals["static_url"] = static_url
 # when unset (background renders, tests). See ui_web/i18n.py.
 from . import i18n as _i18n  # noqa: E402
 templates.env.globals["_"] = _i18n.translate
+
+
+def _hints_filter(text):
+    """Render a string with [[hint: …]] slots (ADR-058) as safe HTML: the text is
+    escaped, each hint becomes a dashed "fill this in" chip."""
+    from markupsafe import Markup, escape
+    from core.prep.toolkit import split_hints
+    parts = []
+    for kind, val in split_hints(str(text or "")):
+        parts.append(f'<span class="ui-hint">{escape(val)}</span>' if kind == "h" else str(escape(val)))
+    return Markup("".join(parts))
+
+
+templates.env.filters["hints"] = _hints_filter
 templates.env.globals["current_ui_language"] = _i18n.current_ui_language
 
 # Settings accessor — `{{ get_setting('home_country') }}` in templates.
