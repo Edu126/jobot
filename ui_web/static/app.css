@@ -2477,4 +2477,9 @@ a.stepper-arrow:hover { background: var(--surf-3); }
 
 /* Clarify step (ADR-058) — fits the Get Ready panel; the fields scroll inside. */
 .clarify { display: flex; flex-direction: column; gap: 1.25rem; min-height: 0; }
-.clarify__fields { display: grid; gap: 1.1rem; overflow-y: auto; min-height: 0; flex: 1 1 auto; padding: 2px; max-width: 48rem; }
+/* Two columns on desktop so 4 questions fit the viewport without a scrollbar;
+   if it must scroll, the bar sits at the panel's edge (no max-width on the
+   scroller — that parked it mid-page, 2026-09-29). */
+.clarify__fields { display: grid; gap: 1.25rem 2rem; overflow-y: auto; min-height: 0; flex: 1 1 auto;
+  padding: 2px; align-content: start; }
+@media (min-width: 1024px) { .clarify__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

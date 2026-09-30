@@ -289,7 +289,7 @@ async def interview_facts(request: Request, interview_id: int):
     # keyed by the question TEXT (see toolkit.read_facts) — ids are re-used on a rebuild
     answers = {} if form.get("skip") else {
         qtext[k[5:]]: str(v) for k, v in form.items() if k.startswith("fact_") and k[5:] in qtext}
-    prep_toolkit.save_facts(interview_id, answers)
+    prep_toolkit.save_facts(interview_id, answers, asked=list(qtext.values()))
     return RedirectResponse(f"/interviews/{interview_id}/get-ready", status_code=303)
 
 
@@ -312,7 +312,8 @@ async def interview_get_ready(request: Request, interview_id: int):
     # questions, show them instead of building; ?clarify=1 reopens them.
     wants_clarify = request.query_params.get("clarify") == "1"
     clarify = bool(brief.clarify_questions) and (
-        wants_clarify or (toolkit is None and not prep_toolkit.facts_submitted(interview_id)))
+        wants_clarify or not prep_toolkit.facts_submitted(
+            interview_id, [q.question for q in brief.clarify_questions]))
     ctx = {"active_tab": "prep", "interview": interview, "step": "get_ready", "toolkit": toolkit,
            "clarify": clarify, "brief": brief, "facts": prep_toolkit.read_facts(interview_id)}
     if toolkit is not None and not clarify:

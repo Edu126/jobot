@@ -163,6 +163,21 @@ def test_prompt_first_person_facts_and_ids():
     print("PASS test_prompt_first_person_facts_and_ids")
 
 
+def test_facts_submitted_tracks_the_question_set():
+    p = _fresh()
+    interview, _stories, _sid = _seed(p)
+    iid, qs = interview["id"], ["How did you track spend?", "Which tool?"]
+    _assert(not T.facts_submitted(iid, qs, path=p), "nothing saved yet")
+    T.save_facts(iid, {}, asked=qs, path=p)
+    _assert(T.facts_submitted(iid, qs, path=p), "skip counts for this set")
+    _assert(not T.facts_submitted(iid, ["A new question?"], path=p), "a new question set asks again")
+    _assert(T.read_facts(iid, path=p) == {}, "the marker is never read as an answer")
+    T.save_facts(iid, {"How did you track spend?": "weekly SAP pull"}, path=p)   # legacy row, no marker
+    _assert(T.facts_submitted(iid, qs, path=p), "a legacy row answering these questions counts")
+    _assert(not T.facts_submitted(iid, ["Other?"], path=p), "…but not for other questions")
+    print("PASS test_facts_submitted_tracks_the_question_set")
+
+
 def test_generate_cache_and_fingerprint():
     p = _fresh()
     interview, stories, sid = _seed(p)
@@ -235,6 +250,7 @@ if __name__ == "__main__":
     test_parse_validates_joins()
     test_hints_split_and_prompt_rules()
     test_prompt_first_person_facts_and_ids()
+    test_facts_submitted_tracks_the_question_set()
     test_generate_cache_and_fingerprint()
     test_pipeline_two_calls_then_cache_and_reads()
     test_toolkit_failure_degrades()

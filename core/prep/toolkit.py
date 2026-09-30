@@ -147,19 +147,37 @@ def read_facts(interview_id: int, *, path=db.DB_PATH) -> dict[str, str]:
     can never attach an old answer to a different question. {} when none."""
     row = db.get_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, path=path)
     a = (row or {}).get("artifact")
-    return {str(k): str(v).strip() for k, v in a.items() if str(v).strip()} if isinstance(a, dict) else {}
+    return ({str(k): str(v).strip() for k, v in a.items() if not str(k).startswith("__") and str(v).strip()}
+            if isinstance(a, dict) else {})
 
 
-def facts_submitted(interview_id: int, *, path=db.DB_PATH) -> bool:
-    """True once the candidate answered OR skipped the Clarify step (the row
-    exists, possibly empty) — Get Ready then builds instead of asking again."""
-    return db.get_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, path=path) is not None
+def _asked_key(questions: list[str]) -> str:
+    return hashlib.sha1("\n".join(sorted(q.strip() for q in questions)).encode("utf-8")).hexdigest()[:12]
 
 
-def save_facts(interview_id: int, answers: dict[str, str], *, path=db.DB_PATH) -> None:
-    """`answers` = {question_text: answer}. Blank answers are dropped."""
+def facts_submitted(interview_id: int, questions: list[str], *, path=db.DB_PATH) -> bool:
+    """True once the candidate answered OR skipped THIS set of Clarify questions.
+    Keyed by the questions asked, not just "a row exists": answers given to an
+    older set (a regenerated Brief) must not skip the step — that bug built the
+    cards before Eduardo saw the new questions (2026-09-29)."""
+    row = db.get_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, path=path)
+    a = (row or {}).get("artifact")
+    if not isinstance(a, dict):
+        return False
+    if "__asked__" in a:
+        return a["__asked__"] == _asked_key(questions)
+    # rows saved before the marker existed: answered if they answer THESE questions
+    return any(q in a for q in questions)
+
+
+def save_facts(interview_id: int, answers: dict[str, str], *, asked: Optional[list[str]] = None,
+               path=db.DB_PATH) -> None:
+    """`answers` = {question_text: answer}; blank answers dropped. `asked` = the
+    question set shown (answered or skipped) — see facts_submitted."""
     clean = {str(k).strip(): str(v).strip()[:P.MAX_NOTES_CHARS]
              for k, v in answers.items() if str(k).strip() and str(v).strip()}
+    if asked is not None:
+        clean["__asked__"] = _asked_key(asked)
     db.save_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, clean, path=path)
 
 

@@ -27,6 +27,10 @@ from core.settings import get_output_language, language_instruction
 from . import prompts as P
 
 PROMPT_VERSION = "2026-09-30-brief-v4"
+# NOTE 2026-09-29: the clarify-question wording rules (one thing per question,
+# concrete examples) changed WITHOUT a bump on purpose — a bump regenerates every
+# brief and orphans the answers people already gave to the current questions.
+# New interviews get the new rules; bump when the brief schema itself changes.
 ARTIFACT_KIND = "brief"
 
 MIN_COMPETENCIES = 4
@@ -213,7 +217,8 @@ Do this:
 5. List up to {MAX_GAPS} gaps. For each gap, give one concrete prep action and the competency id it belongs to (or null).
 6. Based on the interviewer's title (if given) and the round type, list what this interviewer likely cares about in {MAX_LENS} bullets. If no title is given, base it on the round type only.
 7. List up to {MAX_FRICTION} likely friction points (tough topics they may push on).
-8. Write up to {MAX_CLARIFY_QUESTIONS} short CLARIFYING questions to ask the candidate about items ALREADY on the résumé that this interview will lean on. Ask HOW: the method or process they used, the tools, what they personally did, or how the action led to the result. Never ask for new achievements or new numbers. Address the candidate as "you"; one short sentence each; set competency_id. For each, write "example": a one-line first-person sample that shows the FORMAT of a good answer (e.g. "I pulled weekly SAP extracts into Power BI and reviewed variances every Monday"). The example only illustrates the format — generic wording, never facts from the résumé. If the résumé already explains the how, ask fewer.
+8. Write up to {MAX_CLARIFY_QUESTIONS} short CLARIFYING questions to ask the candidate about items ALREADY on the résumé that this interview will lean on. Ask HOW: the method or process, the tools, what they personally did, or how the action led to the result. ONE thing per question — never "X, and Y?". Never ask for new achievements or new numbers. Address the candidate as "you"; one short sentence; set competency_id.
+   For each, write "example": a one-line first-person answer that shows what a SPECIFIC answer looks like — it must contain a concrete method or tool, a cadence or step, and the effect ("I did X using Y every Z, so W"). It may use the tools and the context named in the résumé, but never claim a new achievement or a number that isn't there (write "N hours" / "X%" as a visible placeholder instead). Bad (vague): "I met with stakeholders and built dashboards." Good: "Every Monday I pulled the SAP labour extract into Power Query, flagged teams above forecast, and sent leads a 1-page view — so planning moved from gut feel to data." If the résumé already explains the how, ask fewer.
 
 Round type: {round_type}. Length: {length} minutes.
 Interviewer title: {interviewer}
