@@ -2,6 +2,7 @@
 {% import "macros/ui.html" as ui %}
 {% import "partials/interview_stepper.html" as steps %}
 {% import "partials/prep_macros.html" as pm %}
+{% import "partials/getready_substeps.html" as sub %}
 {% block title %}{{ _('prep2.step.get_ready') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
 {% block main_class %}py-6{% endblock %}
@@ -18,6 +19,8 @@
   {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), size='sm') %}
     {{ steps.stepper('get_ready', interview.id) }}
   {% endcall %}
+
+  {% if brief.clarify_questions %}{{ sub.substeps('cards', interview.id) }}{% endif %}
 
   {% if toolkit is none %}
   {# ---- not written yet: ONE honest loading state, then reload ---- #}

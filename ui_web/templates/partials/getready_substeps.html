@@ -1,0 +1,12 @@
+{# Get Ready's two sub-steps (2026-10-01): the quick questions are an
+   intermediate step INSIDE Get Ready, before the answer cards. `current` ∈
+   questions | cards. Both link (questions → re-open, cards → the deck). #}
+{% macro substeps(current, iid) %}
+<nav class="substeps" aria-label="Get Ready">
+  <a href="/interviews/{{ iid }}/check-in" class="substeps__item{% if current == 'questions' %} is-on{% endif %}">
+    <span class="substeps__n">1</span>{{ _('prep2.checkin.title') }}</a>
+  <span class="substeps__line"></span>
+  <a href="/interviews/{{ iid }}/get-ready" class="substeps__item{% if current == 'cards' %} is-on{% endif %}">
+    <span class="substeps__n">2</span>{{ _('prep2.getready.tab_answers') }}</a>
+</nav>
+{% endmacro %}

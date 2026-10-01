@@ -34,16 +34,17 @@ from core.prep import answer_judge as AJ  # noqa: E402
 from core.prep import toolkit as T  # noqa: E402
 
 
-def _load(db: Path, interview_id: int) -> tuple[list[tuple[str, dict]], dict[str, str], str]:
+def _load(db: Path, interview_id: int, since: str = "") -> tuple[list[tuple[str, dict]], dict[str, str], str]:
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     arms = [(r["prompt_version"], json.loads(r["artifact_json"])) for r in conn.execute(
         "SELECT prompt_version, artifact_json FROM prep_artifacts WHERE interview_id=? AND kind='toolkit' "
-        "ORDER BY created_at", (interview_id,))]
+        "AND created_at >= ? ORDER BY created_at", (interview_id, since))]
     frow = conn.execute(
         "SELECT artifact_json FROM prep_artifacts WHERE interview_id=? AND kind='facts' ORDER BY created_at DESC LIMIT 1",
         (interview_id,)).fetchone()
     facts = json.loads(frow["artifact_json"]) if frow else {}
+    facts = {k: v for k, v in facts.items() if not str(k).startswith("__")} if isinstance(facts, dict) else {}
     iv = conn.execute("SELECT resume_id FROM interviews WHERE id=?", (interview_id,)).fetchone()
     resume = ""
     if iv and iv["resume_id"]:
@@ -60,9 +61,10 @@ def main() -> int:
     ap.add_argument("--interview", required=True, type=int)
     ap.add_argument("--export-dir", type=Path)
     ap.add_argument("--resume-file", type=Path, help="résumé text if the DB copy lacks it")
+    ap.add_argument("--since", default="", help="only toolkits created at/after this ISO time")
     a = ap.parse_args()
 
-    arms, facts, resume = _load(a.db, a.interview)
+    arms, facts, resume = _load(a.db, a.interview, a.since)
     if a.resume_file:
         resume = a.resume_file.read_text(encoding="utf-8")
     if not arms:

@@ -71,6 +71,10 @@ FILLER_PHRASES = (
     "ensure alignment", "best practices", "proven track record", "robust",
     "seamless", "leveraged", "meticulous", "various stakeholders",
     "de manera efectiva", "riguros", "supervisión estricta", "mejores prácticas",
+    # flagged by the interviewer judge on 2026-10-01
+    "actionable insights", "informed decisions", "trusted partnerships", "drive results",
+    "value-add", "synergy", "strategic decisions", "maintained budget performance",
+    "decisiones informadas", "insights accionables",
 )
 HINT_OPEN, HINT_CLOSE = "[[hint:", "]]"
 
@@ -165,19 +169,24 @@ def facts_submitted(interview_id: int, questions: list[str], *, path=db.DB_PATH)
     if not isinstance(a, dict):
         return False
     if "__asked__" in a:
-        return a["__asked__"] == _asked_key(questions)
+        # done = this exact set was shown AND either answered or explicitly skipped
+        # (a marker with no answers and no skip is the state the old skip bug left)
+        answered = any(not str(k).startswith("__") and str(v).strip() for k, v in a.items())
+        return a["__asked__"] == _asked_key(questions) and (answered or a.get("__skipped__") == "1")
     # rows saved before the marker existed: answered if they answer THESE questions
     return any(q in a for q in questions)
 
 
 def save_facts(interview_id: int, answers: dict[str, str], *, asked: Optional[list[str]] = None,
-               path=db.DB_PATH) -> None:
+               skipped: bool = False, path=db.DB_PATH) -> None:
     """`answers` = {question_text: answer}; blank answers dropped. `asked` = the
     question set shown (answered or skipped) — see facts_submitted."""
     clean = {str(k).strip(): str(v).strip()[:P.MAX_NOTES_CHARS]
              for k, v in answers.items() if str(k).strip() and str(v).strip()}
     if asked is not None:
         clean["__asked__"] = _asked_key(asked)
+    if skipped:
+        clean["__skipped__"] = "1"
     db.save_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, clean, path=path)
 
 
@@ -342,7 +351,7 @@ A. QUESTIONS — write {MIN_QUESTIONS} to {MAX_QUESTIONS} questions this intervi
    - The skeleton must ANSWER THE QUESTION ASKED: if it asks "how", the first section says how.
    - Write each bullet as a FULL SENTENCE so that a section's bullets, joined together, read as one natural spoken paragraph (it is shown that way).
    - When the inputs don't say HOW I did something (the method, the tool, my personal step, how the action produced the result), DO NOT fill the gap with generic words. Write a hint slot instead: [[hint: what to add — e.g. a concrete example]]. Example bullet: "I track opex and capex against forecast [[hint: your cadence/tool — e.g. monthly variance review in Power BI]]".
-   - Never use these filler words: strict oversight, rigorous, effectively, closely tracked, closely monitored, ensured alignment, best practices, proven track record, robust, seamless, leveraged.
+   - Never use these filler words: strict oversight, rigorous, effectively, closely tracked, closely monitored, ensured alignment, best practices, proven track record, robust, seamless, leveraged, actionable insights, informed decisions, trusted partnerships, drive results.
 B. STORIES — for EVERY competency in the brief:
    - pick the best story from my Story Bank (story_id), say in one sentence why it fits and one sentence how to angle it for this role;
    - if no saved story fits, set story_id null and write "draft": a STAR story from my résumé (and my answers) for this competency — title, situation, task, action (what I did, with "I"), result, metric (a number only if it is in the inputs, else null). Where the inputs don't say HOW (the method, or how the action produced the result), put a [[hint: …]] slot in that field instead of generic words. Do not repeat the metric inside the result. If the résumé has nothing usable, set draft null.

@@ -172,7 +172,9 @@ def test_facts_submitted_tracks_the_question_set():
     iid, qs = interview["id"], ["How did you track spend?", "Which tool?"]
     _assert(not T.facts_submitted(iid, qs, path=p), "nothing saved yet")
     T.save_facts(iid, {}, asked=qs, path=p)
-    _assert(T.facts_submitted(iid, qs, path=p), "skip counts for this set")
+    _assert(not T.facts_submitted(iid, qs, path=p), "a marker with no answers and no skip is NOT done (old skip bug)")
+    T.save_facts(iid, {}, asked=qs, skipped=True, path=p)
+    _assert(T.facts_submitted(iid, qs, path=p), "an explicit skip counts for this set")
     _assert(not T.facts_submitted(iid, ["A new question?"], path=p), "a new question set asks again")
     _assert(T.read_facts(iid, path=p) == {}, "the marker is never read as an answer")
     T.save_facts(iid, {"How did you track spend?": "weekly SAP pull"}, path=p)   # legacy row, no marker

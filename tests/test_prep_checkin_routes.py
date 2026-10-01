@@ -38,7 +38,8 @@ def main() -> int:
     R.prep_brief.read_cached_brief = lambda i, lang=None: brief
     R.prep_toolkit.facts_submitted = lambda i, qs: state["submitted"]
     R.prep_toolkit.read_facts = lambda i: dict(state["facts"])
-    R.prep_toolkit.save_facts = lambda i, a, asked=None: state.update(saved={"answers": dict(a), "asked": asked})
+    R.prep_toolkit.save_facts = lambda i, a, asked=None, skipped=False: state.update(
+        saved={"answers": dict(a), "asked": asked, "skipped": skipped})
     app = FastAPI()
     app.include_router(R.router)
     c = TestClient(app)
@@ -50,10 +51,11 @@ def main() -> int:
 
     c.post("/interviews/3/facts", data={"skip": "1", "fact_f1": "typed but skipped"}, follow_redirects=False)
     _assert(state["saved"]["answers"] == {"Q1?": "existing"}, "skip keeps saved answers, ignores the form")
-    _assert(state["saved"]["asked"] == ["Q1?", "Q2?"], "skip still marks this question set as done")
+    _assert(state["saved"]["asked"] == ["Q1?", "Q2?"] and state["saved"]["skipped"], "skip marks this set as skipped")
 
     c.post("/interviews/3/facts", data={"fact_f2": "new answer"}, follow_redirects=False)
-    _assert(state["saved"]["answers"] == {"Q2?": "new answer"}, "submit saves what was typed, keyed by question text")
+    _assert(state["saved"]["answers"] == {"Q2?": "new answer"} and not state["saved"]["skipped"],
+            "submit saves what was typed, keyed by question text; not a skip")
 
     r = c.post("/interviews/3/facts/add", data={"key": "How? — your cadence", "answer": "monthly review"})
     _assert(r.status_code == 204, "gap saved")

@@ -2,6 +2,7 @@
 {% import "macros/ui.html" as ui %}
 {% import "partials/interview_stepper.html" as steps %}
 {% import "partials/prep_macros.html" as pm %}
+{% import "partials/getready_substeps.html" as sub %}
 {% block title %}{{ _('prep2.checkin.title') }} · {{ interview.company }}{% endblock %}
 {% block container_class %}max-w-5xl{% endblock %}
 {% block main_class %}py-6{% endblock %}
@@ -12,7 +13,9 @@
    / Back. The last screen recaps and writes (or rewrites) the answers. #}
 {% block content %}
 {% set qs = brief.clarify_questions %}
-<div class="gr-shell" x-data="{ i: 0, n: {{ qs | length }},
+{# NOT .gr-shell: that shell has a fixed height; a long answer pushed the Next
+   button under the footer, which then took its clicks (2026-10-01). #}
+<div class="space-y-6" x-data="{ i: 0, n: {{ qs | length }},
        answered() { return [...this.$root.querySelectorAll('textarea')].filter(t => t.value.trim()).length },
        go(d) { this.i = Math.max(0, Math.min(this.n, this.i + d)); this.$nextTick(() => this.$root.querySelector('textarea[data-i=\'' + this.i + '\']')?.focus()) } }"
      @keydown.window.meta.enter.prevent="go(1)" @keydown.window.ctrl.enter.prevent="go(1)">
@@ -20,6 +23,7 @@
   {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), size='sm') %}
     {{ steps.stepper('get_ready', interview.id) }}
   {% endcall %}
+  {{ sub.substeps('questions', interview.id) }}
 
   <form id="checkin" method="post" action="/interviews/{{ interview.id }}/facts" class="checkin">
     <div class="space-y-1.5">

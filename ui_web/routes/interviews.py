@@ -291,7 +291,8 @@ async def interview_facts(request: Request, interview_id: int):
     # (a skip used to wipe them: Eduardo lost his answers on 2026-09-29).
     answers = prep_toolkit.read_facts(interview_id) if form.get("skip") else {
         qtext[k[5:]]: str(v) for k, v in form.items() if k.startswith("fact_") and k[5:] in qtext}
-    prep_toolkit.save_facts(interview_id, answers, asked=list(qtext.values()))
+    prep_toolkit.save_facts(interview_id, answers, asked=list(qtext.values()),
+                            skipped=bool(form.get("skip")))
     return RedirectResponse(f"/interviews/{interview_id}/get-ready", status_code=303)
 
 
