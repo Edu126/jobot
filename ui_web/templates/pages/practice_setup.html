@@ -3,67 +3,76 @@
 {% import "macros/ui.html" as ui %}
 {% import "partials/interview_stepper.html" as steps %}
 {% block title %}{{ _('prep2.step.practice') }} · {{ interview.company }}{% endblock %}
-{% block container_class %}max-w-3xl{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
 {% block main_class %}py-6{% endblock %}
 
 {% block content %}
-{# C2 — pre-session setup. Mode / length / focus. (Mic test lands with the voice
-   layer; this round is written practice.) #}
-<div class="space-y-6">
-  <div class="space-y-4">
-    {% call ui.page_header(_('prep2.setup.heading'), lede=(interview.role_title or _('prep2.gen.the_role')) ~ '  ·  ' ~ pm.iv_meta(interview), size='sm') %}{{ steps.stepper('practice', interview.id) }}{% endcall %}
-  </div>
+{# Practice /1 — pre-session setup. Same frame as Brief / Get Ready (max-w-5xl,
+   role-title header + stepper) and, on desktop, the whole form fits one
+   viewport above the footer: settings sit in a two-column grid (answer|mode ·
+   voice|style · length|focus), the note + Start share the last row. #}
+<div class="space-y-5">
+  {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), size='sm') %}
+    {{ steps.stepper('practice', interview.id) }}
+  {% endcall %}
 
+  {# voice: picking one in the dropdown plays its sample (no separate ▸ button) #}
   <form hx-post="/interviews/{{ interview.id }}/practice/start" hx-target="#setup-error" hx-swap="innerHTML"
-        x-data="{ mode: 'simulate', length: 'standard', channel: '{{ 'voice' if voice_enabled else 'text' }}' }" class="card-quiet p-5 space-y-5">
+        x-data="{ mode: 'simulate', length: 'standard', channel: '{{ 'voice' if voice_enabled else 'text' }}',
+                  voice: '{{ default_voice }}', personality: '{{ default_personality }}', _audio: null,
+                  play(){
+                    if (this._audio) { this._audio.pause(); this._audio = null; }
+                    const a = new Audio('/interviews/practice/voice-sample/' + this.voice);
+                    this._audio = a;
+                    a.play().catch(() => {}); } }"
+        class="card-quiet p-5 space-y-5">
 
-    {# channel — only when live voice is configured #}
-    {% if voice_enabled %}
-    <div>
-      <label class="text-label block mb-2">{{ _('prep2.setup.channel') }}</label>
-      <input type="hidden" name="channel" :value="channel">
-      <div class="grid sm:grid-cols-2 gap-2">
-        {% for key in ['voice', 'text'] %}
-        <button type="button" @click="channel = '{{ key }}'" class="ui-option"
-                :class="channel === '{{ key }}' && 'ui-option--on'">
-          <div class="text-body-strong">{{ _('prep2.setup.channel_' + key) }}</div>
-          <div class="text-sm text-body-muted mt-1">{{ _('prep2.setup.channel_' + key + '_sub') }}</div>
-        </button>
-        {% endfor %}
+    <div class="grid lg:grid-cols-2 gap-x-6 gap-y-5">
+      {# channel — only when live voice is configured #}
+      {% if voice_enabled %}
+      <div>
+        <label class="text-label block mb-2">{{ _('prep2.setup.channel') }}</label>
+        <input type="hidden" name="channel" :value="channel">
+        <div class="grid grid-cols-2 gap-2">
+          {% for key in ['voice', 'text'] %}
+          <button type="button" @click="channel = '{{ key }}'" class="ui-option"
+                  :class="channel === '{{ key }}' && 'ui-option--on'">
+            <div class="text-body-strong">{{ _('prep2.setup.channel_' + key) }}</div>
+            <div class="text-sm text-body-muted mt-0.5">{{ _('prep2.setup.channel_' + key + '_sub') }}</div>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <input type="hidden" name="channel" value="text">
+      {% endif %}
+
+      {# mode #}
+      <div>
+        <label class="text-label block mb-2">{{ _('prep2.setup.mode') }}</label>
+        <input type="hidden" name="mode" :value="mode">
+        <div class="grid grid-cols-2 gap-2">
+          {% for key in ['simulate', 'study'] %}
+          <button type="button" @click="mode = '{{ key }}'" class="ui-option"
+                  :class="mode === '{{ key }}' && 'ui-option--on'">
+            <div class="text-body-strong">{{ _('prep2.setup.mode_' + key) }}</div>
+            <div class="text-sm text-body-muted mt-0.5">{{ _('prep2.setup.mode_' + key + '_sub') }}</div>
+          </button>
+          {% endfor %}
+        </div>
       </div>
     </div>
-    {% else %}
-    <input type="hidden" name="channel" value="text">
-    {% endif %}
 
-    {# voice + personality — TWO decoupled dropdowns, only on the voice channel.
-       Voice = timbre (click ▸ to hear it, auto-previews on change); personality =
-       the interviewer's manner (drives the P7 prompt). #}
+    {# voice (timbre) + interviewer style (manner → P7 prompt) — voice channel only #}
     {% if voice_enabled %}
-    <div x-show="channel === 'voice'" x-cloak
-         x-data="{ voice: '{{ default_voice }}', personality: '{{ default_personality }}', sampling: false, _audio: null,
-                   play(){
-                     if (this._audio) { this._audio.pause(); this._audio = null; }
-                     this.sampling = true;
-                     const a = new Audio('/interviews/practice/voice-sample/' + this.voice);
-                     this._audio = a;
-                     a.onended = () => { this.sampling = false; };
-                     a.onerror = () => { this.sampling = false; };
-                     a.play().catch(() => { this.sampling = false; }); } }"
-         class="grid sm:grid-cols-2 gap-3">
+    <div x-show="channel === 'voice'" x-cloak class="grid lg:grid-cols-2 gap-x-6 gap-y-5">
       <div>
         <label class="text-label block mb-2">{{ _('prep2.setup.voice_pick') }}</label>
-        <div class="flex items-center gap-2">
-          <select name="voice" x-model="voice" @change="play()" class="select select-bordered select-sm w-full">
-            {% for vid, m in voices.items() %}
-            <option value="{{ vid }}">{{ m[1] }} · {{ m[0] }}</option>
-            {% endfor %}
-          </select>
-          <button type="button" @click="play()" title="{{ _('prep2.setup.voice_preview') }}"
-                  class="btn btn-quiet btn-sm shrink-0">
-            <i class="ph-thin" :class="sampling ? 'ph-speaker-high animate-pulse' : 'ph-play'"></i>
-          </button>
-        </div>
+        <select name="voice" x-model="voice" @change="play()" class="select select-bordered select-sm w-full">
+          {% for vid, m in voices.items() %}
+          <option value="{{ vid }}">{{ m[1] }} · {{ m[0] }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div>
         <label class="text-label block mb-2">{{ _('prep2.setup.personality_pick') }}</label>
@@ -76,49 +85,37 @@
     </div>
     {% endif %}
 
-    {# mode #}
-    <div>
-      <label class="text-label block mb-2">{{ _('prep2.setup.mode') }}</label>
-      <input type="hidden" name="mode" :value="mode">
-      <div class="grid sm:grid-cols-2 gap-2">
-        {% for key in ['simulate', 'study'] %}
-        <button type="button" @click="mode = '{{ key }}'" class="ui-option"
-                :class="mode === '{{ key }}' && 'ui-option--on'">
-          <div class="text-body-strong">{{ _('prep2.setup.mode_' + key) }}</div>
-          <div class="text-sm text-body-muted mt-1">{{ _('prep2.setup.mode_' + key + '_sub') }}</div>
-        </button>
-        {% endfor %}
+    <div class="grid lg:grid-cols-2 gap-x-6 gap-y-5">
+      {# length — a MODE switch → seg-tabs (salmon is never a control, §2) #}
+      <div>
+        <label class="text-label block mb-2">{{ _('prep2.setup.length') }}</label>
+        <input type="hidden" name="length" :value="length">
+        {{ ui.seg_tabs([('quick', _('prep2.setup.len_quick') ~ ' · 3', none), ('standard', _('prep2.setup.len_standard') ~ ' · 5', none), ('full', _('prep2.setup.len_full') ~ ' · 8', none)], 'length') }}
+      </div>
+
+      {# focus #}
+      <div>
+        <label class="text-label block mb-2">{{ _('prep2.setup.focus') }}</label>
+        <select name="focus" class="select select-bordered select-sm w-full">
+          {# answer cards rated "Needs work" in Get Ready (ADR-056) lead the session #}
+          {% if missed_count %}<option value="__missed__"{% if focus_default == '__missed__' %} selected{% endif %}>{{ _('prep2.setup.focus_missed', n=missed_count) }}</option>{% endif %}
+          <option value="">{{ _('prep2.setup.focus_all') }}</option>
+          {% for c in competencies %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
       </div>
     </div>
 
-    {# length #}
-    <div>
-      <label class="text-label block mb-2">{{ _('prep2.setup.length') }}</label>
-      <input type="hidden" name="length" :value="length">
-      {# a MODE switch → seg-tabs (was salmon chips: salmon is for the one
-         celebration moment, never a control, §2) #}
-      {{ ui.seg_tabs([('quick', _('prep2.setup.len_quick') ~ ' · 3', none), ('standard', _('prep2.setup.len_standard') ~ ' · 5', none), ('full', _('prep2.setup.len_full') ~ ' · 8', none)], 'length') }}
-    </div>
-
-    {# focus #}
-    <div>
-      <label class="text-label block mb-2">{{ _('prep2.setup.focus') }}</label>
-      <select name="focus" class="select select-bordered select-sm w-full max-w-xs">
-        {# answer cards rated "Needs work" in Get Ready (ADR-056) lead the session #}
-        {% if missed_count %}<option value="__missed__"{% if focus_default == '__missed__' %} selected{% endif %}>{{ _('prep2.setup.focus_missed', n=missed_count) }}</option>{% endif %}
-        <option value="">{{ _('prep2.setup.focus_all') }}</option>
-        {% for c in competencies %}
-        <option value="{{ c.id }}">{{ c.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="ui-notice" x-show="channel === 'text'">{{ _('prep2.setup.written_note') }}</div>
-    <div class="ui-notice" x-show="channel === 'voice'" x-cloak>{{ _('prep2.setup.voice_note') }}</div>
-
-    <div class="flex items-center gap-3 pt-1">
-      {{ ui.button(_('prep2.setup.start'), variant='primary', icon_after='ph-arrow-right', type='submit') }}
-      <span id="setup-error" class="text-error text-sm"></span>
+    <div class="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-base-300/70">
+      <p class="text-sm text-body-muted min-w-0">
+        <span x-show="channel === 'text'">{{ _('prep2.setup.written_note') }}</span>
+        <span x-show="channel === 'voice'" x-cloak>{{ _('prep2.setup.voice_note') }}</span>
+      </p>
+      <div class="flex items-center gap-3">
+        <span id="setup-error" class="text-error text-sm"></span>
+        {{ ui.button(_('prep2.setup.start'), variant='primary', icon_after='ph-arrow-right', type='submit') }}
+      </div>
     </div>
   </form>
 </div>
