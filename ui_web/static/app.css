@@ -2475,17 +2475,31 @@ a.stepper-arrow:hover { background: var(--surf-3); }
 }
 .ui-hint::before { content: "✎ "; color: oklch(var(--wa)); }
 
-/* Clarify step (ADR-058) — fits the Get Ready panel; the fields scroll inside. */
-.clarify { display: flex; flex-direction: column; gap: 1.25rem; min-height: 0; }
-/* One question per row (Eduardo 2026-09-29: two columns read odd). On desktop
-   each row is question | answer, like the Brief's rail — compact enough that 4
-   rows fit; if they don't, the list scrolls with the bar at the panel edge. */
-.clarify__fields { display: grid; gap: 0; overflow-y: auto; min-height: 0; flex: 1 1 auto;
-  padding: 2px; align-content: start; }
-.clarify__row { display: grid; gap: 0.5rem; padding: 1rem 0; border-top: 1px solid var(--hair); }
-.clarify__row:first-child { border-top: 0; padding-top: 0; }
-@media (min-width: 1024px) {
-  .clarify__row { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 2rem; align-items: start; }
+/* Check-in (ADR-058 rev. 2026-10-01) — one question per screen. */
+.checkin { display: flex; flex-direction: column; gap: 1.5rem; max-width: 46rem; }
+.checkin__step { display: grid; gap: 1rem; }
+.checkin__field { field-sizing: content; min-height: 6rem; max-height: 18rem; resize: none; font-size: 1.0625rem; }
+.checkin__dots { display: flex; gap: 0.4rem; }
+.checkin__dots span { width: 1.75rem; height: 0.25rem; border-radius: 9999px; background: var(--surf-3); transition: background var(--dur-2) ease; }
+.checkin__dots span.is-done { background: oklch(var(--p) / 0.45); }
+.checkin__dots span.is-on { background: oklch(var(--p)); }
+
+/* Answer card back as a script (2026-10-01): paragraphs, not headed sections.
+   The structure letter (S·T·A·R / A·E·R …) sits faintly in the margin. */
+.script { display: grid; gap: 0.9rem; }
+.script__para { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: 0.5rem; align-items: baseline; }
+.script__para p { margin: 0; line-height: 1.65; }
+.script__cue {
+  font-family: var(--font-display); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em;
+  color: oklch(var(--n-4)); text-align: center; cursor: help;
 }
-/* the answer grows with what you type — no scrollbar inside the field */
-.clarify .ui-field { field-sizing: content; min-height: 3.25rem; max-height: 12rem; resize: none; }
+.script__takeaway {
+  margin: 0.4rem 0 0; padding-top: 0.9rem; border-top: 1px solid var(--hair);
+  font-style: italic; color: oklch(var(--bc) / 0.84);
+}
+.ui-hint--btn { cursor: pointer; font: inherit; font-size: 0.875em; }
+.ui-hint--btn:hover { background: oklch(var(--wa) / 0.16); }
+
+/* Fill a ✎ gap on the card back */
+.gap-editor { display: grid; gap: 0.5rem; padding: 0.85rem 1rem; background: var(--surf-1); border-radius: var(--r-md); }
+.gap-editor .ui-field { field-sizing: content; min-height: 3.25rem; resize: none; }

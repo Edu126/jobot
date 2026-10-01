@@ -295,6 +295,22 @@ async def interview_facts(request: Request, interview_id: int):
     return RedirectResponse(f"/interviews/{interview_id}/get-ready", status_code=303)
 
 
+@router.post("/interviews/{interview_id}/facts/add")
+async def interview_facts_add(interview_id: int, key: str = Form(""), answer: str = Form("")):
+    """Fill one ✎ gap right on an answer card: append {"<card question> — <hint>":
+    answer} to the facts, keeping every existing answer and the asked-marker.
+    The cards use it on the next rebuild ("Update my cards")."""
+    interview = db.get_interview(interview_id)
+    if not interview or not key.strip() or not answer.strip():
+        return Response(status_code=400)
+    brief = prep_brief.read_cached_brief(interview_id, lang=interview.get("lang") or None)
+    facts = prep_toolkit.read_facts(interview_id)
+    facts[key.strip()[:300]] = answer.strip()
+    prep_toolkit.save_facts(interview_id, facts,
+                            asked=[q.question for q in (brief.clarify_questions if brief else [])])
+    return Response(status_code=204)
+
+
 @router.get("/interviews/{interview_id}/get-ready")
 async def interview_get_ready(request: Request, interview_id: int):
     """Get Ready (Screen 3) — three tabs (Answer cards · Your stories · Questions
@@ -309,18 +325,40 @@ async def interview_get_ready(request: Request, interview_id: int):
         return _redirect(f"/interviews/{interview_id}/generating")
     db.touch_interview(interview_id)
     stories = db.list_stories(interview["resume_hash"], status="saved")
+    # The quick questions come first (ADR-058 rev. 2026-10-01): until this set is
+    # answered or skipped, Get Ready hands off to the focused check-in page.
+    # (?clarify=1 is the old "Edit clarifications" link — same destination.)
+    if request.query_params.get("clarify") == "1" or (
+            brief.clarify_questions and not prep_toolkit.facts_submitted(
+                interview_id, [q.question for q in brief.clarify_questions])):
+        return _redirect(f"/interviews/{interview_id}/check-in")
     toolkit = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang)
-    # Clarify first (ADR-058): until the candidate answers or skips the "how"
-    # questions, show them instead of building; ?clarify=1 reopens them.
-    wants_clarify = request.query_params.get("clarify") == "1"
-    clarify = bool(brief.clarify_questions) and (
-        wants_clarify or not prep_toolkit.facts_submitted(
-            interview_id, [q.question for q in brief.clarify_questions]))
     ctx = {"active_tab": "prep", "interview": interview, "step": "get_ready", "toolkit": toolkit,
-           "clarify": clarify, "brief": brief, "facts": prep_toolkit.read_facts(interview_id)}
-    if toolkit is not None and not clarify:
+           "brief": brief}
+    if toolkit is not None:
         ctx.update(_get_ready_ctx(interview, brief, toolkit, stories))
     return templates.TemplateResponse(request, "pages/interview_get_ready.html", ctx)
+
+
+@router.get("/interviews/{interview_id}/check-in")
+async def interview_checkin(request: Request, interview_id: int):
+    """A few quick questions (ADR-058 rev.) — the bridge from the Brief to the
+    answer cards: one question at a time, about the HOW behind résumé items.
+    Also the target of "Improve my answers" (prefilled; rewrites the cards)."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return _redirect("/interviews/new")
+    lang = interview.get("lang") or get_output_language()
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    if brief is None:
+        return _redirect(f"/interviews/{interview_id}/generating")
+    if not brief.clarify_questions:
+        return _redirect(f"/interviews/{interview_id}/get-ready")
+    stories = db.list_stories(interview["resume_hash"], status="saved")
+    improving = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang) is not None
+    return templates.TemplateResponse(request, "pages/interview_checkin.html", {
+        "active_tab": "prep", "interview": interview, "step": "get_ready", "brief": brief,
+        "facts": prep_toolkit.read_facts(interview_id), "improving": improving})
 
 
 @router.post("/interviews/{interview_id}/toolkit/build")
@@ -356,7 +394,7 @@ def _get_ready_ctx(interview: dict, brief, toolkit, stories: list[dict]) -> dict
             "id": q.id, "text": q.text, "type": _t("prep2.qtype." + q.type),
             "why": q.why_they_ask, "follow_up": q.follow_up,
             # the skeleton back, rendered once server-side (escaped; hints → chips)
-            "frame_html": frame_tpl.render(frame=q.frame) if q.frame else "",
+            "frame_html": frame_tpl.render(frame=q.frame, point=q.point_to_land) if q.frame else "",
             "needs_input": q.needs_input, "point": q.point_to_land,
             # a rating only counts for the SAME question text (a rebuild re-uses ids)
             "rating": r["rating"] if r and r["question_text"] == q.text else None,
@@ -372,7 +410,8 @@ def _get_ready_ctx(interview: dict, brief, toolkit, stories: list[dict]) -> dict
             "competency": c, "pick": p, "story": story, "draft": None if story else (p.draft if p else None),
             "strength": prep_story_bank.strength_check(star) if star else None,
         })
-    return {"cards": cards, "story_rows": story_rows, "ask": toolkit.questions_to_ask}
+    gaps = sum(str(sec).count(prep_toolkit.HINT_OPEN) for q in toolkit.questions for sec in q.frame)
+    return {"cards": cards, "story_rows": story_rows, "ask": toolkit.questions_to_ask, "gaps": gaps}
 
 
 @router.post("/interviews/{interview_id}/cards/{question_id}/review")

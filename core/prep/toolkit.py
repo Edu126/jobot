@@ -39,7 +39,7 @@ from core.settings import get_output_language, language_instruction
 from . import brief as p1
 from . import prompts as P
 
-PROMPT_VERSION = "2026-09-30-toolkit-v3"
+PROMPT_VERSION = "2026-10-01-toolkit-v4"
 ARTIFACT_KIND = "toolkit"
 FACTS_KIND = "facts"
 FACTS_VERSION = "v2"   # v2 stores the question text with each answer
@@ -56,7 +56,7 @@ DEFAULT_TYPE = "behavioral"
 FRAMES: dict[str, tuple[str, ...]] = {
     "approach":    ("approach", "example", "result"),      # how do you…?  method first
     "situational": ("approach", "example", "result"),      # what would you do if…?
-    "behavioral":  ("situation", "action", "result"),      # tell me about a time…
+    "behavioral":  ("situation", "task", "action", "result"),  # tell me about a time… (full STAR)
     "opener":      ("now", "before", "why_here"),          # tell me about yourself / why us
     "technical":   ("what", "how_i_used_it", "example"),
 }
@@ -336,10 +336,11 @@ A. QUESTIONS — write {MIN_QUESTIONS} to {MAX_QUESTIONS} questions this intervi
    - competency_id (from the brief, or null for an opener), why they ask it (one sentence), one likely follow-up, and "point_to_land" (one short line: what the interviewer must remember).
    - "frame": an answer SKELETON — NOT prose. Use EXACTLY these sections for the type, in this order, 1 to {MAX_POINTS} bullets each, each bullet at most 14 words, in my first person:
        approach / situational → "approach" (the concrete method or steps I use — name them), "example" (one real case from my résumé or stories), "result"
-       behavioral → "situation", "action" (what I personally did, how), "result"
+       behavioral → "situation", "task" (what I was responsible for / the goal — one sentence), "action" (what I personally did, how), "result"
        opener → "now", "before", "why_here"
        technical → "what", "how_i_used_it", "example"
    - The skeleton must ANSWER THE QUESTION ASKED: if it asks "how", the first section says how.
+   - Write each bullet as a FULL SENTENCE so that a section's bullets, joined together, read as one natural spoken paragraph (it is shown that way).
    - When the inputs don't say HOW I did something (the method, the tool, my personal step, how the action produced the result), DO NOT fill the gap with generic words. Write a hint slot instead: [[hint: what to add — e.g. a concrete example]]. Example bullet: "I track opex and capex against forecast [[hint: your cadence/tool — e.g. monthly variance review in Power BI]]".
    - Never use these filler words: strict oversight, rigorous, effectively, closely tracked, closely monitored, ensured alignment, best practices, proven track record, robust, seamless, leveraged.
 B. STORIES — for EVERY competency in the brief:

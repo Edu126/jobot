@@ -30,3 +30,14 @@ moved to **Profile › Stories** (`/stories` redirects). `strength_check` gained
 flag (example in the placeholder; Get Ready's clarifications pre-fill the how) → one
 `refine_story` call restructures the STAR with ONLY those answers → before/after preview →
 saved on confirm. Editor/strengthen return to where the user came from (`?next=`).
+
+## Addendum 2 — made for humans (2026-10-01)
+- **Card back reads as a script**: one paragraph per section (bullets written as
+  sentences), the structure as a faint margin letter (S·T·A·R / A·E·R …) instead of
+  headings; the point to land closes it. Behavioral answers are full **STAR** again
+  (Task had been folded into Situation).
+- **Check-in** replaces "Step 1 of Get Ready": a focused page between the Brief and
+  the cards, one question per screen (Next / Skip this one / Back, ⌘↵), recap, then
+  "Write my answers". "Edit clarifications" → **"Improve my answers · n gaps"**.
+- **Fill a ✎ gap on the card**: click the chip → inline field → saved to the facts →
+  "Update my cards (n)" rewrites them.

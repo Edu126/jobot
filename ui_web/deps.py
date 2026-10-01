@@ -43,14 +43,20 @@ from . import i18n as _i18n  # noqa: E402
 templates.env.globals["_"] = _i18n.translate
 
 
-def _hints_filter(text):
+def _hints_filter(text, clickable=False):
     """Render a string with [[hint: …]] slots (ADR-058) as safe HTML: the text is
-    escaped, each hint becomes a dashed "fill this in" chip."""
+    escaped, each hint becomes a dashed "fill this in" chip. `clickable` makes it
+    a button carrying the hint (answer cards: fill the gap right there)."""
     from markupsafe import Markup, escape
     from core.prep.toolkit import split_hints
     parts = []
     for kind, val in split_hints(str(text or "")):
-        parts.append(f'<span class="ui-hint">{escape(val)}</span>' if kind == "h" else str(escape(val)))
+        if kind != "h":
+            parts.append(str(escape(val)))
+        elif clickable:
+            parts.append(f'<button type="button" class="ui-hint ui-hint--btn" data-hint="{escape(val)}">{escape(val)}</button>')
+        else:
+            parts.append(f'<span class="ui-hint">{escape(val)}</span>')
     return Markup("".join(parts))
 
 

@@ -1,11 +1,14 @@
-{# The back of an answer card (ADR-058): the skeleton's fixed sections with
-   dash bullets; [[hint: …]] slots render as dashed chips to fill in with my
-   own words. Rendered server-side per card and shown via x-html. #}
-<div class="frame">
+{# The back of an answer card — a script you could read aloud (2026-10-01).
+   Each section is ONE paragraph (its bullets joined as sentences); the STAR /
+   approach structure stays as a quiet letter in the margin (full label on
+   hover) instead of headings that chopped the answer into parts. The point to
+   land closes it like a takeaway. ✎ gaps are buttons: click to fill them in. #}
+<div class="script">
   {% for sec in frame %}
-  <div class="frame__sec">
-    <div class="frame__label">{{ _('prep2.frame.' + sec.section) }}</div>
-    <ul class="ui-list">{% for pt in sec.points %}<li>{{ pt | hints }}</li>{% endfor %}</ul>
+  <div class="script__para">
+    <span class="script__cue" title="{{ _('prep2.frame.' + sec.section) }}">{{ _('prep2.frame_short.' + sec.section) }}</span>
+    <p>{% for pt in sec.points %}{{ pt | hints(clickable=True) }}{% if not loop.last %} {% endif %}{% endfor %}</p>
   </div>
   {% endfor %}
+  {% if point %}<p class="script__takeaway">{{ point }}</p>{% endif %}
 </div>

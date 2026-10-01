@@ -19,9 +19,7 @@
     {{ steps.stepper('get_ready', interview.id) }}
   {% endcall %}
 
-  {% if clarify %}
-  <div class="gr-panel">{% include "partials/getready_clarify.html" %}</div>
-  {% elif toolkit is none %}
+  {% if toolkit is none %}
   {# ---- not written yet: ONE honest loading state, then reload ---- #}
   <div class="gr-panel">
     <div class="card-quiet p-8 flex flex-col items-center justify-center text-center gap-4 h-full"
@@ -35,8 +33,14 @@
 
   <div class="flex flex-wrap items-center justify-between gap-3">
     {{ ui.seg_tabs([('answers', _('prep2.getready.tab_answers'), none), ('stories', _('prep2.getready.tab_stories'), none), ('ask', _('prep2.getready.tab_ask'), none)], 'tab') }}
-    <div class="flex items-center gap-4">
-      {% if brief.clarify_questions %}<a href="?clarify=1" class="ui-link-quiet">{{ _('prep2.clarify.edit') }}</a>{% endif %}
+    <div class="flex items-center gap-4" x-data="{ added: 0 }" @gap-added.window="added++">
+      {# details added on the cards change the fingerprint → reloading Get Ready
+         rewrites the cards with them (one loading state) #}
+      <a href="/interviews/{{ interview.id }}/get-ready" class="ui-link-quiet" x-show="added" x-cloak>{{ _('prep2.gap.update') }} (<span x-text="added"></span>)</a>
+      {# "Improve my answers" (was "Edit clarifications" — named for the system, not
+         the outcome). The gap count turns it into a nudge with a reason. #}
+      {% if brief.clarify_questions %}<a href="/interviews/{{ interview.id }}/check-in" class="ui-link-quiet"
+         title="{{ _('prep2.improve.title') }}">{{ _('prep2.improve.link') }}{% if gaps %} · {{ _('prep2.improve.gaps', n=gaps) }}{% endif %}</a>{% endif %}
       {{ ui.button(_('prep2.getready.start_practice'), variant='primary', icon_after='ph-arrow-right', href='/interviews/' ~ interview.id ~ '/practice') }}
     </div>
   </div>

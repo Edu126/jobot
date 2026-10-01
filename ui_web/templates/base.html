@@ -724,6 +724,29 @@
       // Cards come from a <script type="application/json" x-ref="data">.
       Alpine.data('answerDeck', (interviewId) => ({
         cards: [], order: [], i: 0, flipped: false, done: false,
+        gap: null, gapText: '', gapSaved: {},
+        // a ✎ chip on the back → fill that gap right there (ADR-058 rev.)
+        onBackClick(e) {
+          const b = e.target.closest('[data-hint]');
+          if (!b) {   // not a gap: a click on the back flips it back (unless typing in the editor)
+            if (!e.target.closest('.gap-editor')) this.flip();
+            return;
+          }
+          if (!this.card) return;
+          this.gap = b.dataset.hint; this.gapText = '';
+          this.$nextTick(() => this.$refs.gapField?.focus());
+        },
+        saveGap() {
+          const c = this.card; if (!c || !this.gap || !this.gapText.trim()) return;
+          const key = `${c.text} — ${this.gap}`;
+          fetch(`/interviews/${interviewId}/facts/add`, {
+            method: 'POST', body: new URLSearchParams({ key, answer: this.gapText }),
+          }).then(r => {
+            if (!r.ok) return;
+            this.gapSaved[key] = true; this.gap = null; this.gapText = '';
+            window.dispatchEvent(new CustomEvent('gap-added'));
+          }).catch(() => {});
+        },
         init() {
           try { this.cards = JSON.parse(this.$refs.data.textContent) || []; } catch (e) { this.cards = []; }
           this.order = this.cards.map((_, k) => k);
@@ -734,6 +757,7 @@
         visible() { return this.$el.offsetParent !== null; },
         flip() { if (this.card) this.flipped = !this.flipped; },
         go(d) {
+          this.gap = null;
           const n = this.i + d;
           if (n < 0) return;
           if (n >= this.order.length) { this.done = true; return; }

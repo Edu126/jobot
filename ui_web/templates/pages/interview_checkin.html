@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
+{% import "partials/interview_stepper.html" as steps %}
+{% import "partials/prep_macros.html" as pm %}
+{% block title %}{{ _('prep2.checkin.title') }} · {{ interview.company }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+{% block main_class %}py-6{% endblock %}
+
+{# A few quick questions (ADR-058 rev. 2026-10-01) — the bridge from the Brief to
+   the answer cards. One question per screen, like a conversation, not a form:
+   the question big, a concrete example in the placeholder, Next / Skip this one
+   / Back. The last screen recaps and writes (or rewrites) the answers. #}
+{% block content %}
+{% set qs = brief.clarify_questions %}
+<div class="gr-shell" x-data="{ i: 0, n: {{ qs | length }},
+       answered() { return [...this.$root.querySelectorAll('textarea')].filter(t => t.value.trim()).length },
+       go(d) { this.i = Math.max(0, Math.min(this.n, this.i + d)); this.$nextTick(() => this.$root.querySelector('textarea[data-i=\'' + this.i + '\']')?.focus()) } }"
+     @keydown.window.meta.enter.prevent="go(1)" @keydown.window.ctrl.enter.prevent="go(1)">
+
+  {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), size='sm') %}
+    {{ steps.stepper('get_ready', interview.id) }}
+  {% endcall %}
+
+  <form id="checkin" method="post" action="/interviews/{{ interview.id }}/facts" class="checkin">
+    <div class="space-y-1.5">
+      <div class="text-eyebrow">{{ _('prep2.checkin.eyebrow') }}</div>
+      <p class="text-body-muted">{{ _('prep2.checkin.sub') }}</p>
+    </div>
+
+    {# progress — one dot per question + the recap #}
+    <div class="checkin__dots" aria-hidden="true">
+      {% for f in qs %}<span :class="i === {{ loop.index0 }} ? 'is-on' : (i > {{ loop.index0 }} ? 'is-done' : '')"></span>{% endfor %}
+    </div>
+
+    {% for f in qs %}
+    <div class="checkin__step" x-show="i === {{ loop.index0 }}" {% if not loop.first %}x-cloak{% endif %}>
+      <div class="text-sm text-subtle">{{ _('prep2.checkin.count', i=loop.index, n=qs | length) }}</div>
+      <label for="fact_{{ f.id }}" class="text-title block">{{ f.question }}</label>
+      <textarea id="fact_{{ f.id }}" name="fact_{{ f.id }}" data-i="{{ loop.index0 }}" rows="3" class="ui-field checkin__field"
+                placeholder="{{ (_('prep2.brief.fact_eg') ~ ' ' ~ f.example) if f.example else _('prep2.brief.fact_ph') }}">{{ facts.get(f.question, '') }}</textarea>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <button type="button" class="btn btn-quiet btn-sm" @click="go(-1)" :disabled="i === 0" aria-label="{{ _('prep2.common.back') }}"><i class="ph-thin ph-arrow-left"></i></button>
+        <div class="flex items-center gap-4">
+          <button type="button" class="ui-link-quiet" @click="go(1)">{{ _('prep2.checkin.skip_one') }}</button>
+          <button type="button" class="btn btn-primary btn-sm inline-flex items-center gap-1.5" @click="go(1)">{{ _('prep2.checkin.next') }}<i class="ph-thin ph-arrow-right"></i></button>
+        </div>
+      </div>
+      <p class="text-sm text-subtle hidden md:block">{{ _('prep2.checkin.kbd') }}</p>
+    </div>
+    {% endfor %}
+
+    {# recap #}
+    <div class="checkin__step" x-show="i === n" x-cloak>
+      <p class="text-title"><span x-text="answered()"></span> {{ _('prep2.checkin.of') }} {{ qs | length }} {{ _('prep2.checkin.answered') }}</p>
+      <p class="text-body-muted">{{ _('prep2.checkin.recap') }}</p>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <button type="button" class="btn btn-quiet btn-sm" @click="go(-1)"><i class="ph-thin ph-arrow-left"></i>{{ _('prep2.common.back') }}</button>
+        {{ ui.button(_('prep2.checkin.rewrite') if improving else _('prep2.checkin.write'), variant='primary', icon_after='ph-arrow-right', type='submit') }}
+      </div>
+    </div>
+  </form>
+
+  {# skip everything — its OWN form, so it can never be an implicit submit #}
+  <form method="post" action="/interviews/{{ interview.id }}/facts" class="text-right">
+    <input type="hidden" name="skip" value="1">
+    <button type="submit" class="ui-link-quiet">{{ _('prep2.checkin.skip_all') }}</button>
+  </form>
+</div>
+{% endblock %}

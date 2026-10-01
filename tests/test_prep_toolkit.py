@@ -123,6 +123,9 @@ def test_parse_validates_joins():
     _assert(q_bad.type == "behavioral" and q_bad.competency_id is None, "bad type → behavioral, unknown comp → null")
     _assert(q_bad.filler == ["effectively", "ensured alignment"] and q_bad.needs_input, "filler detected → needs_input")
     _assert(not q_open.needs_input, "a clean skeleton needs no input")
+    _assert(T.FRAMES["behavioral"] == ("situation", "task", "action", "result"), "behavioral is full STAR (the T is back)")
+    beh = T._parse_frame([{"section": s_, "points": [s_]} for s_ in ("result", "task", "situation", "action")], "behavioral")
+    _assert([f["section"] for f in beh] == ["situation", "task", "action", "result"], "STAR order enforced")
     by = {s.competency_id: s for s in tk.stories}
     _assert(list(by) == ["c1", "c2", "c3"], f"dup/unknown dropped, missing added, got {list(by)}")
     _assert(by["c1"].story_id == "7" and by["c1"].angle_for_this_role == "lead with $", "valid story kept")

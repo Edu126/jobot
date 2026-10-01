@@ -30,12 +30,22 @@
             <span class="text-sm text-subtle">{{ _('prep2.cards.tap') }}</span>
           </div>
           {# back — my answer #}
-          <div class="flip-face flip-back">
+          <div class="flip-face flip-back" @click.stop="onBackClick($event)">
             <div class="space-y-4">
               <div x-show="card && card.frame_html" x-html="card && card.frame_html"></div>
+              {# fill a ✎ gap right here — saved to my details; used on "Update my cards" #}
+              <div x-show="gap" x-cloak class="gap-editor">
+                <label class="text-sm font-medium" for="gap-field" x-text="gap"></label>
+                <textarea id="gap-field" x-ref="gapField" x-model="gapText" rows="2" class="ui-field"
+                          placeholder="{{ _('prep2.gap.ph') }}" @keydown.meta.enter.prevent="saveGap()" @keydown.ctrl.enter.prevent="saveGap()"></textarea>
+                <div class="flex items-center justify-end gap-4">
+                  <button type="button" class="ui-link-quiet" @click="gap = null">{{ _('prep2.gap.cancel') }}</button>
+                  <button type="button" class="btn btn-quiet btn-sm" @click="saveGap()">{{ _('prep2.gap.save') }}</button>
+                </div>
+              </div>
+              <p class="text-sm text-subtle" x-show="card && Object.keys(gapSaved).some(k => k.startsWith(card.text + ' — '))" x-cloak>✓ {{ _('prep2.gap.added') }}</p>
               <p class="text-body-muted" x-show="card && !card.frame_html">{{ _('prep2.cards.no_answer') }}</p>
-              <p class="text-sm text-subtle" x-show="card && card.needs_input">{{ _('prep2.cards.hint_help') }}</p>
-              <p class="ui-kv" x-show="card && card.point"><b>{{ _('prep2.cards.point') }}</b><span x-text="card && card.point"></span></p>
+              <p class="text-sm text-subtle" x-show="card && card.needs_input && !gap">{{ _('prep2.cards.hint_help') }}</p>
               <p class="ui-inset text-sm" x-show="card && card.follow_up"><b class="font-semibold">{{ _('prep2.getready.follow_up') }}</b> <span x-text="card && card.follow_up"></span></p>
               <p class="text-sm text-body-muted" x-show="card && card.why">{{ _('prep2.getready.why_ask') }} <span x-text="card && card.why"></span></p>
             </div>
