@@ -17,9 +17,27 @@
   {% endcall %}
 
   {# voice: picking one in the dropdown plays its sample (no separate ▸ button) #}
+  {# Start on the voice channel asks for the mic HERE (a real click), so /2 can
+     connect straight away — no "Ready when you are" gate in between. #}
   <form hx-post="/interviews/{{ interview.id }}/practice/start" hx-target="#setup-error" hx-swap="innerHTML"
+        hx-trigger="go" @submit.prevent="start($el)" @htmx:after-request="starting = false"
         x-data="{ mode: 'simulate', length: 'standard', channel: '{{ 'voice' if voice_enabled else 'text' }}',
-                  voice: '{{ default_voice }}', personality: '{{ default_personality }}', _audio: null,
+                  voice: '{{ default_voice }}', personality: '{{ default_personality }}', _audio: null, starting: false,
+                  async start(form){
+                    if (this.starting) return;
+                    this.starting = true;
+                    if (this._audio) { this._audio.pause(); this._audio = null; }
+                    if (this.channel === 'voice') {
+                      try {
+                        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        s.getTracks().forEach(t => t.stop());
+                      } catch (e) {
+                        this.starting = false;
+                        document.getElementById('setup-error').textContent = this.$refs.micDenied.textContent;
+                        return;
+                      }
+                    }
+                    htmx.trigger(form, 'go'); },
                   play(){
                     if (this._audio) { this._audio.pause(); this._audio = null; }
                     const a = new Audio('/interviews/practice/voice-sample/' + this.voice);
@@ -113,8 +131,9 @@
         <span x-show="channel === 'voice'" x-cloak>{{ _('prep2.setup.voice_note') }}</span>
       </p>
       <div class="flex items-center gap-3">
+        <span x-ref="micDenied" hidden>{{ _('prep2.live.mic_denied') }}</span>
         <span id="setup-error" class="text-error text-sm"></span>
-        {{ ui.button(_('prep2.setup.start'), variant='primary', icon_after='ph-arrow-right', type='submit') }}
+        {{ ui.button(_('prep2.setup.start'), variant='primary', icon_after='ph-arrow-right', type='submit', attrs={':disabled': 'starting'}) }}
       </div>
     </div>
   </form>

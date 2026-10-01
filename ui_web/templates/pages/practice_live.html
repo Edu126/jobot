@@ -35,8 +35,16 @@
       <a :href="textUrl" class="btn btn-primary btn-sm">{{ _('prep2.live.use_text') }}</a></div>
   </div>
 
-  {# start gate — a real gesture unlocks audio + mic #}
-  <div x-show="!started && !failed" x-cloak class="card-quiet p-8 text-center space-y-4">
+  {# auto-start: the Start click on setup (/1) already granted the mic and, in
+     Chromium, carries audio permission across the navigation → connect on load. #}
+  <div x-show="!needsTap && !started && !failed" class="min-h-[50vh] flex flex-col items-center justify-center text-center gap-6">
+    <div class="gen-orb" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="text-masthead">{{ _('prep2.live.connecting') }}</div>
+  </div>
+
+  {# fallback gate — only when the browser still wants a click on THIS page
+     before it plays audio (Safari, a reload, a direct link) #}
+  <div x-show="needsTap && !started && !failed" x-cloak class="card-quiet p-8 text-center space-y-4">
     <i class="ph-thin ph-microphone-stage text-4xl text-primary"></i>
     <div>
       <div class="text-masthead">{{ _('prep2.live.ready_title') }}</div>
@@ -351,6 +359,21 @@
           listening: '{{ _('prep2.live.listening') }}',
           ending: '{{ _('prep2.build.title') }}'
         }[this.state] || '';
+      },
+
+      needsTap: false,
+
+      // Auto-start on load when audio is already allowed (setup's Start click);
+      // otherwise fall back to the tap gate.
+      async init() {
+        let ok = false;
+        try {
+          const probe = new (window.AudioContext || window.webkitAudioContext)();
+          await Promise.race([probe.resume(), new Promise(r => setTimeout(r, 400))]);
+          ok = probe.state === 'running';
+          probe.close();
+        } catch (_) {}
+        if (ok) this.begin(); else this.needsTap = true;
       },
 
       async begin() {
