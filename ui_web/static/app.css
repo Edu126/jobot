@@ -2410,6 +2410,15 @@ a.stepper-arrow:hover { background: var(--surf-3); }
 .live-cue__q { animation: live-cue-in var(--dur-2) var(--ease-out); }
 @keyframes live-cue-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .voice-orb-wrap--sm { width: 9rem; }
+/* Call bar (under the stepper): mic-with-level · End, one quiet pill — like a
+   video-call control strip. Ending is an exit, not the page's primary action. */
+.live-bar { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem; border: 1px solid var(--hair); border-radius: 9999px; background: oklch(var(--b1)); }
+.live-bar__btn { display: inline-flex; align-items: center; gap: 0.5rem; height: 2rem; padding: 0 0.85rem; border-radius: 9999px; font-size: 0.875rem; color: oklch(var(--bc)); transition: background var(--dur-1) ease; }
+.live-bar__btn:hover { background: var(--surf-2); }
+.live-bar__btn--off { color: oklch(var(--n-5)); }
+.live-bar__sep { width: 1px; height: 1.25rem; background: var(--hair); }
+.live-bar__meter { width: 3rem; height: 0.25rem; border-radius: 9999px; background: var(--surf-2); overflow: hidden; }
+.live-bar__meter > span { display: block; height: 100%; background: oklch(var(--p)); transition: width 75ms linear; }
 @media (min-width: 1024px) and (min-height: 640px) {
   .live-shell { height: calc(100dvh - 4rem - 3rem - 4rem); }
   .live-stage { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); }
