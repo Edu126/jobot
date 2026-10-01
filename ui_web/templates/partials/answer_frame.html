@@ -8,7 +8,7 @@
   {% for sec in frame %}
   <div class="script__para">
     <span class="script__cue">{{ _('prep2.frame.' + sec.section) }}</span>
-    <p>{% for pt in sec.points %}{{ pt | hints(clickable=True) }}{% if not loop.last %} {% endif %}{% endfor %}</p>
+    <p>{% for pt in sec.points %}{{ pt | hints(clickable=(clickable if clickable is defined else True)) }}{% if not loop.last %} {% endif %}{% endfor %}</p>
   </div>
   {% endfor %}
   {% if point %}<p class="script__takeaway">{{ point }}</p>{% endif %}

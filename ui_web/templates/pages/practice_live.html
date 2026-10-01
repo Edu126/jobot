@@ -93,8 +93,31 @@
       </div>
     </div>
 
-    {# right: live conversation — its own scroll (shorter on mobile) #}
-    <div class="card-quiet p-4 ui-captions overflow-y-auto" x-ref="captions">
+    {# right: [With my answers] the prepared answer for the question the coach is
+       on (tracked from its words, in order) · the live conversation #}
+    <div class="flex flex-col gap-4 min-w-0">
+    {% if session.mode == 'study' %}
+    {% set qs = session.questions or [] %}
+    <div class="ui-notice space-y-2 live-cue overflow-y-auto">
+      <div class="flex items-center justify-between gap-3">
+        <div class="text-eyebrow">{{ _('prep2.run.cue') }}</div>
+        <span x-show="qIndex >= 0" x-cloak class="text-sm text-subtle tabular-nums">{{ _('prep2.run.question') }} <span x-text="qIndex + 1"></span> / {{ qs | length }}</span>
+      </div>
+      <p x-show="qIndex < 0" class="text-body-muted text-sm">{{ _('prep2.live.cue_wait') }}</p>
+      {% for q in qs %}
+      <div x-show="qIndex === {{ loop.index0 }}" x-cloak class="space-y-2">
+        <p class="text-body-strong">{{ q.text }}</p>
+        {% if q.frame %}
+          {% with frame=q.frame, point=q.point_to_land, clickable=false %}{% include "partials/answer_frame.html" %}{% endwith %}
+        {% else %}
+          <p class="text-body-muted text-sm">{{ _('prep2.live.cue_none') }}</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <script type="application/json" id="live-questions">{{ qs | map(attribute='text') | list | tojson }}</script>
+    {% endif %}
+    <div class="card-quiet p-4 ui-captions overflow-y-auto{% if session.mode == 'study' %} ui-captions--short{% endif %}" x-ref="captions">
       <div class="space-y-2">
         <template x-for="(c, i) in turns" :key="i">
           <div class="flex" :class="c.role === 'coach' ? 'justify-start' : 'justify-end'">
@@ -111,6 +134,7 @@
         </div>
         <div x-show="turns.length === 0" class="text-center text-sm text-body-muted py-6">{{ _('prep2.live.waiting') }}</div>
       </div>
+    </div>
     </div>
   </div>
 </div>
@@ -362,10 +386,32 @@
       },
 
       needsTap: false,
+      qIndex: -1, _qWords: [],          // "With my answers": which question the coach is on
+
+      // content-word stems of a question (lower-case, ≥4 letters, minus filler)
+      _words(t) {
+        const stop = new Set(['what','when','where','which','that','this','with','your','have','about','would','could','tell','time','there','their','they','were','from','into','some','more','them','then','than','been','does','like','just','also','how','you']);
+        return (t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter(w => w.length >= 4 && !stop.has(w)).map(w => w.slice(0, 4));  // crude stem: working ≈ work
+      },
+      // Advance qIndex when the coach's current turn covers most of the NEXT
+      // question's content words (or the one after, if it skipped one).
+      _trackQuestion(text) {
+        if (!this._qWords.length) return;
+        const said = new Set(this._words(text));
+        for (let j = this.qIndex + 1; j <= Math.min(this.qIndex + 2, this._qWords.length - 1); j++) {
+          const w = this._qWords[j]; if (!w.length) continue;
+          const hit = w.filter(x => said.has(x)).length / w.length;
+          if (hit >= 0.5) { this.qIndex = j; return; }
+        }
+      },
 
       // Auto-start on load when audio is already allowed (setup's Start click);
       // otherwise fall back to the tap gate.
       async init() {
+        try {
+          const el = document.getElementById('live-questions');
+          if (el) this._qWords = JSON.parse(el.textContent).map(t => [...new Set(this._words(t))]);
+        } catch (_) {}
         let ok = false;
         try {
           const probe = new (window.AudioContext || window.webkitAudioContext)();
@@ -536,6 +582,7 @@
       pushTurn(role, text) {
         const last = this.turns[this.turns.length - 1];
         if (last && last.role === role) last.text += text; else this.turns.push({ role, text });
+        if (role === 'coach') this._trackQuestion(this.turns[this.turns.length - 1].text);
         this.$nextTick(() => { const el = this.$refs.captions; if (el) el.scrollTop = el.scrollHeight; });
       },
 

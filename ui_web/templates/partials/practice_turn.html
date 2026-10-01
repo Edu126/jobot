@@ -15,13 +15,18 @@
   {# the question #}
   <p class="text-title">{{ turn.question.text }}</p>
 
-  {# study cue (only in Study mode) #}
+  {# "With my answers" (study): the prepared answer from Get Ready for THIS
+     question; falls back to the competency cue when the card has no script #}
   {% if turn.cue %}
-  <div class="ui-notice space-y-1.5">
+  <div class="ui-notice space-y-2">
     <div class="text-eyebrow">{{ _('prep2.run.cue') }}</div>
-    {% if turn.cue.competency %}<div><b class="font-semibold">{{ turn.cue.competency }}</b> — {{ turn.cue.what_good }}</div>{% endif %}
-    {% if turn.cue.story_title %}<div>{{ _('prep2.run.use_story') }} <b class="font-semibold">{{ turn.cue.story_title }}</b></div>{% endif %}
-    <div class="text-body-muted">{{ _('prep2.run.star_hint') }}</div>
+    {% if turn.question.frame %}
+      {% with frame=turn.question.frame, point=turn.question.point_to_land, clickable=false %}{% include "partials/answer_frame.html" %}{% endwith %}
+    {% else %}
+      {% if turn.cue.competency %}<div><b class="font-semibold">{{ turn.cue.competency }}</b> — {{ turn.cue.what_good }}</div>{% endif %}
+      {% if turn.cue.story_title %}<div>{{ _('prep2.run.use_story') }} <b class="font-semibold">{{ turn.cue.story_title }}</b></div>{% endif %}
+      <div class="text-body-muted">{{ _('prep2.run.star_hint') }}</div>
+    {% endif %}
   </div>
   {% endif %}
 
