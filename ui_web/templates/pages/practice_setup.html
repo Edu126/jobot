@@ -88,7 +88,7 @@
         <label class="text-label block mb-2">{{ _('prep2.setup.voice_pick') }}</label>
         <select name="voice" x-model="voice" @change="play()" class="select select-bordered select-sm w-full">
           {% for vid, m in voices.items() %}
-          <option value="{{ vid }}">{{ m[1] }} · {{ m[0] }}</option>
+          <option value="{{ vid }}">{{ m[2] }} — {{ m[1] | lower }}, {{ m[0] }}</option>
           {% endfor %}
         </select>
       </div>

@@ -12,7 +12,7 @@
    P7 prompt + voice + config). The model conducts the whole interview with
    automatic VAD — hands-free, barge-in, live transcript. Audio never touches our
    server (GOV-008). Falls back to the text runner on any failure. #}
-<div class="space-y-6"
+<div class="live-shell"
      x-data="liveRunner({
         tokenUrl: '/interviews/{{ interview.id }}/practice/{{ session.id }}/live-token',
         audioUrl: '/interviews/{{ interview.id }}/practice/{{ session.id }}/audio',
@@ -21,12 +21,35 @@
         model: '{{ live_model }}'
      })">
 
-  <div class="space-y-4">
-    {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview, _('prep2.setup.mode_' + session.mode)), size='sm') %}
-      <span class="pill pill-neutral inline-flex items-center gap-1"><span class="pill-dot live"></span>{{ _('prep2.run.ai_coach') }}</span>
-      {{ steps.stepper('practice', interview.id) }}
-    {% endcall %}
-  </div>
+  {# header: coach + stepper; the session controls sit right under the stepper
+     (space reserved from the start — `invisible`, not x-show — so nothing moves
+     when the session begins) #}
+  {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview, _('prep2.setup.mode_' + session.mode)), size='sm') %}
+    <div class="flex flex-col items-end gap-3">
+      <div class="flex items-center gap-2">
+        <span class="pill pill-neutral inline-flex items-center gap-1"><span class="pill-dot live"></span>{{ coach_name }}</span>
+        {{ steps.stepper('practice', interview.id) }}
+      </div>
+      <div class="flex items-center gap-4" :class="(started && !failed && !building) || 'invisible'">
+        <span class="text-sm text-body-muted" x-text="stateLabel"></span>
+        <div class="flex items-center gap-2 text-sm" :class="micLive ? 'text-primary' : 'text-subtle'">
+          <i class="ph-fill" :class="micLive ? 'ph-microphone' : 'ph-microphone-slash'"></i>
+          <div class="ui-meter">
+            <div class="h-full bg-primary transition-[width] duration-75" :style="`width:${Math.min(100, Math.max(0, (Math.sqrt(level)-0.12)*260))}%`"></div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" @click="toggleMute()" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5">
+            <i class="ph-thin" :class="muted ? 'ph-microphone-slash' : 'ph-microphone'"></i>
+            <span x-text="muted ? '{{ _('prep2.live.unmute') }}' : '{{ _('prep2.live.mute') }}'"></span>
+          </button>
+          <button type="button" @click="endSession()" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
+            <i class="ph-thin ph-flag-checkered"></i>{{ _('prep2.live.end') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  {% endcall %}
 
   {# failure → text runner #}
   <div x-show="failed" x-cloak class="ui-notice ui-notice--icon">
@@ -67,45 +90,45 @@
     </div>
   </div>
 
-  {# ---- session: orb (left) · live conversation (right) ---- #}
+  {# ---- session stage — fixed frame; every region scrolls inside itself ----
+     With my answers: orb + conversation (left) · prepared answer (right, full height).
+     No help:         orb (left) · conversation (right). #}
   <div x-show="started && !failed && !building" x-cloak
-       class="grid lg:grid-cols-[20rem_1fr] gap-6 items-stretch">
-
-    {# left: orb + state + mic VU + controls #}
-    <div class="flex flex-col items-center gap-4 py-2">
-      <div class="voice-orb-wrap" aria-hidden="true"><canvas x-ref="orb" class="voice-orb"></canvas></div>
-      <div class="text-sm text-body-muted text-center" x-text="stateLabel"></div>
-      <div class="flex items-center gap-2 text-sm" :class="micLive ? 'text-primary' : 'text-subtle'">
-        <i class="ph-fill" :class="micLive ? 'ph-microphone' : 'ph-microphone-slash'"></i>
-        <div class="ui-meter">
-          <div class="h-full bg-primary transition-[width] duration-75" :style="`width:${Math.min(100, Math.max(0, (Math.sqrt(level)-0.12)*260))}%`"></div>
+       class="live-stage grid lg:grid-cols-[22rem_minmax(0,1fr)] gap-6">
+  {% if session.mode == 'study' %}
+    {% set qs = session.questions or [] %}
+    <div class="flex flex-col gap-4 min-h-0">
+      <div class="flex justify-center"><div class="voice-orb-wrap voice-orb-wrap--sm" aria-hidden="true"><canvas x-ref="orb" class="voice-orb"></canvas></div></div>
+      <div class="card-quiet p-4 overflow-y-auto live-captions" x-ref="captions">
+        <div class="space-y-2">
+          <template x-for="(c, i) in turns" :key="i">
+            <div class="flex" :class="c.role === 'coach' ? 'justify-start' : 'justify-end'">
+              <div class="ui-bubble" :class="c.role === 'coach' ? 'ui-bubble--coach' : 'ui-bubble--me'">
+                <span x-text="c.text"></span>
+              </div>
+            </div>
+          </template>
+          {# live "listening" cue on the candidate side so you can see the mic is capturing you #}
+          <div x-show="micLive" x-cloak class="flex justify-end">
+            <div class="ui-bubble chip-fresh inline-flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>{{ _('prep2.live.listening') }}
+            </div>
+          </div>
+          <div x-show="turns.length === 0" class="text-center text-sm text-body-muted py-6">{{ _('prep2.live.waiting') }}</div>
         </div>
-        <span x-text="micLive ? '{{ _('prep2.live.mic_on') }}' : '{{ _('prep2.live.muted_lbl') }}'"></span>
-      </div>
-      <div class="flex items-center gap-2 mt-auto pt-2">
-        <button type="button" @click="toggleMute()" class="btn btn-quiet btn-sm inline-flex items-center gap-1.5">
-          <i class="ph-thin" :class="muted ? 'ph-microphone-slash' : 'ph-microphone'"></i>
-          <span x-text="muted ? '{{ _('prep2.live.unmute') }}' : '{{ _('prep2.live.mute') }}'"></span>
-        </button>
-        <button type="button" @click="endSession()" class="btn btn-primary btn-sm inline-flex items-center gap-1.5">
-          <i class="ph-thin ph-flag-checkered"></i>{{ _('prep2.live.end') }}
-        </button>
       </div>
     </div>
 
-    {# right: [With my answers] the prepared answer for the question the coach is
-       on (tracked from its words, in order) · the live conversation #}
-    <div class="flex flex-col gap-4 min-w-0">
-    {% if session.mode == 'study' %}
-    {% set qs = session.questions or [] %}
-    <div class="ui-notice space-y-2 live-cue overflow-y-auto">
+    {# the prepared answer for the question the coach is on (tracked from its
+       words, in order) — same box from the start; only its content changes #}
+    <div class="ui-notice live-cue flex flex-col gap-3 overflow-y-auto">
       <div class="flex items-center justify-between gap-3">
         <div class="text-eyebrow">{{ _('prep2.run.cue') }}</div>
         <span x-show="qIndex >= 0" x-cloak class="text-sm text-subtle tabular-nums">{{ _('prep2.run.question') }} <span x-text="qIndex + 1"></span> / {{ qs | length }}</span>
       </div>
       <p x-show="qIndex < 0" class="text-body-muted text-sm">{{ _('prep2.live.cue_wait') }}</p>
       {% for q in qs %}
-      <div x-show="qIndex === {{ loop.index0 }}" x-cloak class="space-y-2">
+      <div x-show="qIndex === {{ loop.index0 }}" x-cloak class="space-y-3 live-cue__q">
         <p class="text-body-strong">{{ q.text }}</p>
         {% if q.frame %}
           {% with frame=q.frame, point=q.point_to_land, clickable=false %}{% include "partials/answer_frame.html" %}{% endwith %}
@@ -116,26 +139,29 @@
       {% endfor %}
     </div>
     <script type="application/json" id="live-questions">{{ qs | map(attribute='text') | list | tojson }}</script>
-    {% endif %}
-    <div class="card-quiet p-4 ui-captions overflow-y-auto{% if session.mode == 'study' %} ui-captions--short{% endif %}" x-ref="captions">
-      <div class="space-y-2">
-        <template x-for="(c, i) in turns" :key="i">
-          <div class="flex" :class="c.role === 'coach' ? 'justify-start' : 'justify-end'">
-            <div class="ui-bubble" :class="c.role === 'coach' ? 'ui-bubble--coach' : 'ui-bubble--me'">
-              <span x-text="c.text"></span>
+  {% else %}
+    <div class="flex items-center justify-center">
+      <div class="voice-orb-wrap" aria-hidden="true"><canvas x-ref="orb" class="voice-orb"></canvas></div>
+    </div>
+    <div class="card-quiet p-4 overflow-y-auto live-captions" x-ref="captions">
+        <div class="space-y-2">
+          <template x-for="(c, i) in turns" :key="i">
+            <div class="flex" :class="c.role === 'coach' ? 'justify-start' : 'justify-end'">
+              <div class="ui-bubble" :class="c.role === 'coach' ? 'ui-bubble--coach' : 'ui-bubble--me'">
+                <span x-text="c.text"></span>
+              </div>
+            </div>
+          </template>
+          {# live "listening" cue on the candidate side so you can see the mic is capturing you #}
+          <div x-show="micLive" x-cloak class="flex justify-end">
+            <div class="ui-bubble chip-fresh inline-flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>{{ _('prep2.live.listening') }}
             </div>
           </div>
-        </template>
-        {# live "listening" cue on the candidate side so you can see the mic is capturing you #}
-        <div x-show="micLive" x-cloak class="flex justify-end">
-          <div class="ui-bubble chip-fresh inline-flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>{{ _('prep2.live.listening') }}
-          </div>
+          <div x-show="turns.length === 0" class="text-center text-sm text-body-muted py-6">{{ _('prep2.live.waiting') }}</div>
         </div>
-        <div x-show="turns.length === 0" class="text-center text-sm text-body-muted py-6">{{ _('prep2.live.waiting') }}</div>
       </div>
-    </div>
-    </div>
+  {% endif %}
   </div>
 </div>
 

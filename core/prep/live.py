@@ -39,14 +39,16 @@ _TOKEN_SESSION_START_MIN = 2
 
 # The 5 most human-sounding Gemini prebuilt voices (from the 30-voice set), timbre
 # only — no personality baked in. Chosen for warm/natural/conversational character
-# over the bright/firm/excitable ones that read synthetic. {value: (gender, timbre)}.
-# Gender is *perceived* (Google doesn't label it); Eduardo auditions via the ▸ preview.
+# over the bright/firm/excitable ones that read synthetic. {value: (gender, timbre, name)}.
+# Gender is *perceived* (Google doesn't label it). Each voice carries a human first
+# name the coach introduces itself with (Eduardo 2026-10-01: more personal than
+# "your AI interview coach").
 VOICES = {
-    "Sulafat": ("female", "Warm"),
-    "Callirrhoe": ("female", "Easy-going"),
-    "Achird": ("male", "Friendly"),
-    "Enceladus": ("male", "Breathy"),
-    "Charon": ("male", "Deep"),
+    "Sulafat": ("female", "Warm", "Maya"),
+    "Callirrhoe": ("female", "Easy-going", "Claire"),
+    "Achird": ("male", "Friendly", "Daniel"),
+    "Enceladus": ("male", "Breathy", "Theo"),
+    "Charon": ("male", "Deep", "Marcus"),
 }
 DEFAULT_VOICE = "Sulafat"
 
@@ -70,11 +72,16 @@ PERSONALITIES = {
 DEFAULT_PERSONALITY = "neutral"
 
 
+def coach_name(voice: str) -> str:
+    """The first name the coach uses for this voice."""
+    return VOICES.get(voice, VOICES[DEFAULT_VOICE])[2]
+
+
 def personality_meta(personality_id: str) -> dict:
     return PERSONALITIES.get(personality_id, PERSONALITIES[DEFAULT_PERSONALITY])
 
 
-_SAMPLE_LINE = "Hi, I'm your interview coach. Let's get you ready — take a breath, and we'll begin."
+_SAMPLE_LINE = "Hi, I'm {name}, your interview coach. Let's get you ready — take a breath, and we'll begin."
 
 
 def _log(*a) -> None:
@@ -105,7 +112,7 @@ async def voice_sample_wav(voice: str) -> Optional[bytes]:
     and cached on disk (so the picker can play it). None if voice unavailable."""
     if voice not in VOICES or not is_enabled():
         return None
-    cache = _samples_dir() / f"{voice}.wav"
+    cache = _samples_dir() / f"{voice}-named.wav"   # -named: the line now says the coach's name
     if cache.exists():
         return cache.read_bytes()
 
@@ -121,7 +128,7 @@ async def voice_sample_wav(voice: str) -> Optional[bytes]:
     try:
         async with client.aio.live.connect(model=live_model(), config=config) as sess:
             await sess.send_client_content(
-                turns=t.Content(role="user", parts=[t.Part(text=_SAMPLE_LINE)]),
+                turns=t.Content(role="user", parts=[t.Part(text=_SAMPLE_LINE.format(name=coach_name(voice)))]),
                 turn_complete=True)
             async for resp in sess.receive():
                 sc = getattr(resp, "server_content", None)
@@ -195,6 +202,7 @@ def _config(interview: dict, lang: str, personality_id: str = DEFAULT_PERSONALIT
         response_modalities=["AUDIO"],
         system_instruction=t.Content(parts=[t.Part(
             text=interviewer_system_prompt(interview, lang=LIVE_LANG,
+                                           coach_name=coach_name(voice_name),
                                            style=pers["style"]))]),
         input_audio_transcription=t.AudioTranscriptionConfig(),
         output_audio_transcription=t.AudioTranscriptionConfig(),

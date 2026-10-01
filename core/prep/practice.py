@@ -70,7 +70,8 @@ def interviewer_system_prompt(
     role = (interview.get("role_title") or "the role").strip()
     company = (interview.get("company") or "the company").strip()
     round_type = (interview.get("round_type") or "screening").strip()
-    who = f"You are {coach_name}, a professional interviewer" if coach_name else "You are a professional interviewer"
+    who = f"You are {coach_name}, an interview coach" if coach_name else "You are an interview coach"
+    me = f"you're {coach_name}, their interview coach" if coach_name else "you're their interview coach"
     style_line = f"\nYour interviewing style: {style}" if style else ""
     return f"""{who} for the role of {role} at {company}. This is a {round_type} round.
 You are an AI practice interviewer. If asked, say so.{style_line}
@@ -78,7 +79,7 @@ You are an AI practice interviewer. If asked, say so.{style_line}
 {language_instruction(lang)}
 Speak and conduct the ENTIRE interview in English, even if the candidate answers in another language (gently continue in English).
 
-You conduct this as a natural spoken conversation. The candidate/company context + your question list arrive as a first message — then greet the candidate in one short sentence (you're their AI interview coach, here to talk through their fit for {role} at {company}) and begin.
+You conduct this as a natural spoken conversation. The candidate/company context + your question list arrive as a first message — then greet the candidate in one short sentence ({me}, here to talk through their fit for {role} at {company}) and begin.
 
 How to behave:
 - Name the role and company only in that greeting. Afterward refer to them lightly ("the role", "here", "this position") — do NOT restate the full role title and company each turn.

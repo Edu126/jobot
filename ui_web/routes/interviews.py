@@ -608,7 +608,8 @@ async def practice_voice(request: Request, interview_id: int, session_id: int):
     return templates.TemplateResponse(
         request, "pages/practice_live.html",
         {"active_tab": "prep", "interview": interview, "session": session,
-         "step": "practice", "live_model": prep_live.live_model()})
+         "step": "practice", "live_model": prep_live.live_model(),
+         "coach_name": prep_live.coach_name(session.get("voice") or prep_live.DEFAULT_VOICE)})
 
 
 @router.post("/interviews/{interview_id}/practice/{session_id}/live-token")
