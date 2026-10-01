@@ -11,8 +11,9 @@ plus the delivery metrics that are computed in CODE, never by the model.
   - `delivery_metrics`: seconds / words-per-minute / filler count / length band
     — REAL numbers, computed here (the model is unreliable at counting, per the
     pack). This is the one place real numbers are honest (design brief §4).
-  - P9 `session_debrief`: the end-of-session takeaway, per-competency bands, top
-    3 actions, stories to revisit, and the next drill.
+  - P9 `session_debrief`: the end-of-session takeaway, top 3 actions, stories
+    to revisit, and the next drill. Competency bands + the 0–100 session score
+    are built in CODE from evidence-gated checks (session_score, ADR-059).
 
 Session shaping (`pick_session_questions`, lengths, targets) is code too. These
 are per-session one-shots — NOT cached by prompt_version (each session is
@@ -29,10 +30,11 @@ from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
 from core.settings import get_output_language, language_instruction
 
 from . import prompts as P
+from . import session_score as SS
 
 P7_PROMPT_VERSION = "2026-09-21-interviewer-v1"
-P8_PROMPT_VERSION = "2026-09-21-answer-eval-v1"
-P9_PROMPT_VERSION = "2026-09-21-debrief-v1"
+P8_PROMPT_VERSION = "2026-10-01-answer-eval-v2-checks"
+P9_PROMPT_VERSION = "2026-10-01-debrief-v2-evidence"
 
 # Session length presets (D6/C2): Quick · Standard · Full round.
 SESSION_LENGTHS = {"quick": 3, "standard": 5, "full": 8}
@@ -205,6 +207,7 @@ class AnswerEval:
     what_worked: dict       # {quote, why}
     fix: str
     stronger_version: Optional[str] = None
+    evidence: Optional[dict] = None   # session_score.grade_item output (ADR-059)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -237,7 +240,8 @@ def evaluate_answer(
         raw = client.generate_json(prompt, temperature=0.0)
     except (QuotaExhaustedError, GeminiError):
         return None
-    return _parse_eval(raw, question_id=str(question.get("id", "")))
+    return _parse_eval(raw, question_id=str(question.get("id", "")),
+                       transcript=transcript, competency_id=question.get("competency_id"))
 
 
 def _build_p8_prompt(question, competency, story, transcript, seconds, target, *, lang) -> str:
@@ -263,6 +267,14 @@ Rate each item as strong, solid, or needs_work:
 4. result_evidence: Is there a concrete result or number?
 5. relevance: Does it show the competency this question tests?
 
+Then answer five YES/NO checks for the competency this question tests. Be strict: when unsure, answer false.
+- answered: they actually answered the question. Rambling, "I don't know", off-topic, or repeating the question = false.
+- example: ONE specific real situation (when, where, what project). Generic habits ("I usually…", "I would…") = false.
+- own_actions: what THEY personally did, not only "we" or the team.
+- result: what happened because of their actions.
+- quantified: a real number (money, %, time, people, volume).
+- evidence_quote: the candidate's EXACT words (8–30 words) that best support the checks. Copy, do not paraphrase. Empty if nothing relevant.
+
 Then:
 - Overall band for the answer.
 - One thing that worked (quote a short part of the answer).
@@ -283,6 +295,8 @@ Return JSON with this exact schema — no prose before or after:
 {{
   "ratings": {{ "answered_the_question": "strong|solid|needs_work", "structure": "...",
     "personal_action": "...", "result_evidence": "...", "relevance": "..." }},
+  "checks": {{ "answered": false, "example": false, "own_actions": false, "result": false, "quantified": false }},
+  "evidence_quote": "string",
   "overall": "strong|solid|needs_work",
   "what_worked": {{ "quote": "string", "why": "string" }},
   "fix": "string",
@@ -290,9 +304,24 @@ Return JSON with this exact schema — no prose before or after:
 }}"""
 
 
-def _parse_eval(raw: Any, *, question_id: str) -> Optional[AnswerEval]:
+def _parse_eval(raw: Any, *, question_id: str, transcript: str = "",
+                competency_id: Optional[str] = None) -> Optional[AnswerEval]:
     if not isinstance(raw, dict):
         return None
+    overall = P.band_or_default(raw.get("overall"))
+    evidence = None
+    if isinstance(raw.get("checks"), dict):
+        # ADR-059: the answer's band comes from the verified checks, not the
+        # model's holistic call (which rounded junk up to "solid").
+        evidence = SS.grade_item({
+            "competency_id": competency_id or "_",
+            "asked": True,
+            "quote": raw.get("evidence_quote") or "",
+            "checks": raw["checks"],
+            "missing": raw.get("fix") or "",
+        }, transcript)
+        if evidence:
+            overall = SS.band_for(evidence["points"])
     ratings_in = raw.get("ratings") if isinstance(raw.get("ratings"), dict) else {}
     ratings = {k: P.band_or_default(ratings_in.get(k)) for k in _RATING_KEYS}
     ww_in = raw.get("what_worked") if isinstance(raw.get("what_worked"), dict) else {}
@@ -303,10 +332,11 @@ def _parse_eval(raw: Any, *, question_id: str) -> Optional[AnswerEval]:
     return AnswerEval(
         question_id=question_id,
         ratings=ratings,
-        overall=P.band_or_default(raw.get("overall")),
+        overall=overall,
         what_worked=what_worked,
         fix=str(raw.get("fix", "")).strip(),
         stronger_version=stronger,
+        evidence=evidence,
     )
 
 
@@ -319,6 +349,10 @@ class Debrief:
     top_actions: list[str] = field(default_factory=list)
     stories_to_revisit: list[dict] = field(default_factory=list)  # [{story_id, why}]
     next_drill: dict = field(default_factory=dict)                # {competency_id|null, question_id|null, reason}
+    # ADR-059 — code-built from evidence; None on legacy/failed parses.
+    score: Optional[int] = None
+    verdict_key: str = ""
+    competency_evidence: list[dict] = field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not (self.takeaway or self.competency_bands or self.top_actions)
@@ -334,9 +368,11 @@ def session_debrief(
     client: GeminiClient,
     *,
     lang: Optional[str] = None,
+    asked_ids: Optional[set[str]] = None,
 ) -> Optional[Debrief]:
     """P9 — the end-of-session debrief from the per-answer evaluations + delivery
-    metrics. None on failure or no evaluations."""
+    metrics. None on failure or no evaluations. The score/bands come from the
+    evals' already-graded `evidence` (P8 checks), aggregated in code."""
     if not evaluations or client.all_models_exhausted():
         return None
     lang = lang if lang is not None else get_output_language()
@@ -345,8 +381,10 @@ def session_debrief(
         raw = client.generate_json(prompt, temperature=0.0)
     except (QuotaExhaustedError, GeminiError):
         return None
-    valid_comps = {str(c.get("id", "")).strip() for c in competencies if isinstance(c, dict)}
-    return _parse_debrief(raw, valid_comps=valid_comps)
+    comp_ids = _comp_ids(competencies)
+    graded = [e.get("evidence") for e in evaluations if isinstance(e, dict)]
+    return _parse_debrief(raw, valid_comps=set(comp_ids), comp_ids=comp_ids,
+                          graded=[g for g in graded if g], asked_ids=asked_ids)
 
 
 def session_debrief_from_transcript(
@@ -370,8 +408,21 @@ def session_debrief_from_transcript(
         raw = client.generate_json(prompt, temperature=0.0)
     except (QuotaExhaustedError, GeminiError):
         return None
-    valid = {str(c.get("id", "")).strip() for c in competencies if isinstance(c, dict)}
-    return _parse_debrief(raw, valid_comps=valid)
+    comp_ids = _comp_ids(competencies)
+    said = " ".join(str(t.get("text", "")) for t in turns if t.get("role") != "coach")
+    return _parse_debrief(raw, valid_comps=set(comp_ids), comp_ids=comp_ids,
+                          transcript=said, asked_ids=asked_competency_ids(questions))
+
+
+def _comp_ids(competencies: list[dict]) -> list[str]:
+    return [str(c.get("id", "")).strip() for c in competencies
+            if isinstance(c, dict) and str(c.get("id", "")).strip()]
+
+
+def asked_competency_ids(questions: list[dict]) -> set[str]:
+    """Competencies the session planned a question for (not_asked excludes the rest)."""
+    return {str(q.get("competency_id")).strip() for q in (questions or [])
+            if isinstance(q, dict) and q.get("competency_id")}
 
 
 def _build_p9_transcript_prompt(turns, questions, competencies, *, lang) -> str:
@@ -391,7 +442,7 @@ Task: Write the debrief for this practice interview, judging the CANDIDATE's ans
 
 Do this:
 1. Write one takeaway sentence: the biggest strength and the biggest thing to improve.
-2. Give one band per competency (strong/solid/needs_work), based on how the candidate's answers demonstrated it across the conversation.
+2. Score every competency with the checks below, judging only the Candidate's own words.
 3. List the top 3 actions for next time. Each action is specific and doable in one practice session.
 4. Suggest the focus for the next drill: one competency or one question.
 
@@ -401,6 +452,8 @@ Questions the interview aimed to cover:
 Competencies:
 {P.format_competencies(competencies)}
 
+{SS.RUBRIC_BLOCK}
+
 Transcript:
 ---
 {convo}
@@ -409,7 +462,7 @@ Transcript:
 Return JSON with this exact schema — no prose before or after:
 {{
   "takeaway": "string",
-  "competency_bands": [{{ "competency_id": "c1", "band": "strong|solid|needs_work" }}],
+  {_schema_line()},
   "top_actions": ["string", "string", "string"],
   "stories_to_revisit": [],
   "next_drill": {{ "competency_id": "c1 | null", "question_id": null, "reason": "string" }}
@@ -428,7 +481,7 @@ Task: Write the debrief for a full practice session.
 
 Do this:
 1. Write one takeaway sentence: the biggest strength and the biggest thing to improve.
-2. Give one band per competency practiced, based on the answer evaluations.
+2. (Competency scores are already computed from the evaluations' checks — do not grade again.)
 3. List the top 3 actions for next time. Each action is specific and doable in one practice session.
 4. List any stories to revisit and why (one sentence each).
 5. Suggest the focus for the next drill: one competency or one question.
@@ -445,16 +498,38 @@ Competencies:
 Return JSON with this exact schema — no prose before or after:
 {{
   "takeaway": "string",
-  "competency_bands": [{{ "competency_id": "c1", "band": "strong|solid|needs_work" }}],
   "top_actions": ["string", "string", "string"],
   "stories_to_revisit": [{{ "story_id": "s1", "why": "string" }}],
   "next_drill": {{ "competency_id": "c1 | null", "question_id": "q1 | null", "reason": "string" }}
 }}"""
 
 
-def _parse_debrief(raw: Any, *, valid_comps: set[str]) -> Optional[Debrief]:
+def _schema_line() -> str:
+    # Interpolated as an f-string VALUE, so its single braces stay literal.
+    return SS.EVIDENCE_SCHEMA
+
+
+def _parse_debrief(
+    raw: Any,
+    *,
+    valid_comps: set[str],
+    comp_ids: Optional[list[str]] = None,
+    transcript: str = "",
+    graded: Optional[list[dict]] = None,
+    asked_ids: Optional[set[str]] = None,
+) -> Optional[Debrief]:
+    """Parse the model's debrief. When evidence is available — `graded` items
+    (typed path, from P8) or `competency_evidence` in `raw` (voice paths,
+    verified against `transcript`) — the bands + score are built in code
+    (ADR-059). Otherwise fall back to the legacy `competency_bands`."""
     if not isinstance(raw, dict):
         return None
+    scored = None
+    if graded is None and isinstance(raw.get("competency_evidence"), list):
+        graded = [SS.grade_item(it, transcript) for it in raw["competency_evidence"]]
+    if graded:
+        scored = SS.aggregate(graded, competency_ids=comp_ids or sorted(valid_comps),
+                              asked_ids=asked_ids)
     bands = []
     for b in (raw.get("competency_bands") or []):
         if not isinstance(b, dict):
@@ -475,8 +550,13 @@ def _parse_debrief(raw: Any, *, valid_comps: set[str]) -> Optional[Debrief]:
                         if nd_in.get("question_id") not in (None, "") else None),
         "reason": str(nd_in.get("reason", "")).strip(),
     }
+    if scored:
+        bands = scored["competency_bands"]
     return Debrief(
         takeaway=str(raw.get("takeaway", "")).strip(),
         competency_bands=bands, top_actions=actions,
         stories_to_revisit=revisit, next_drill=next_drill,
+        score=scored["score"] if scored else None,
+        verdict_key=scored["verdict_key"] if scored else "",
+        competency_evidence=scored["competency_evidence"] if scored else [],
     )

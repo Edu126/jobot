@@ -11,50 +11,123 @@
 {% set debrief = session.debrief or {} %}
 
 {% block content %}
-<div class="space-y-6" x-data="{ showTranscript: true }">
+<div class="space-y-6" x-data="{ showTranscript: false }">
 
   {# header + stepper #}
   <div class="space-y-4">
     {% call ui.page_header(_('prep2.feedback.heading'), lede=(interview.role_title or _('prep2.gen.the_role')) ~ '  ·  ' ~ pm.iv_meta(interview), size='sm') %}{{ steps.stepper('feedback', interview.id) }}{% endcall %}
   </div>
 
-  {# ---- coach takeaway ---- #}
-  {% if debrief.takeaway %}
-  {# THE answer of this screen → the one callout (§7A) #}
-  {% call ui.callout(eyebrow=_('prep2.feedback.takeaway')) %}
-    <p class="leading-relaxed">{{ debrief.takeaway }}</p>
-  {% endcall %}
-  {% endif %}
+  {% set ring_key = {'ready': 'strong_fit', 'close': 'stretch', 'not_ready': 'poor_fit'} %}
+  {% set evidence = debrief.competency_evidence or [] %}
+  {% set asked = evidence | selectattr('asked') | list %}
+  {% set weakest = (asked | sort(attribute='points') | first) if asked else none %}
+  {% set prep_href = '/interviews/' ~ interview.id %}
+  {% set again_href = '/interviews/' ~ interview.id ~ '/practice' %}
 
-  {# ---- competency bands + delivery strip ---- #}
-  <div class="grid md:grid-cols-2 gap-4">
-    <section class="card-quiet p-4">
-      <h2 class="text-eyebrow mb-4">{{ _('prep2.feedback.by_competency') }}</h2>
-      {% if debrief.competency_bands %}
-      <div class="space-y-2">
-        {% for b in debrief.competency_bands %}
-        <div class="flex items-center justify-between gap-2">
-          <span>{{ comp_names.get(b.competency_id, b.competency_id) }}</span>
-          <span class="pill {{ band_pill.get(b.band, 'pill-neutral') }}">{{ _('prep2.band.' + b.band) }}</span>
-        </div>
-        {% endfor %}
+  {# ---- THE answer: session score + takeaway (one surface, §2A answer-first) ---- #}
+  {% call ui.callout(eyebrow=_('prep2.score.label') if debrief.score is number else _('prep2.feedback.takeaway')) %}
+    <div class="space-y-3">
+      {% if debrief.score is number %}
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {{ ui.verdict(ring_key.get(debrief.verdict_key or '', 'none'), debrief.score,
+                      label=_('prep2.score.verdict.' + debrief.verdict_key),
+                      note=_('prep2.score.note', n=asked|length, total=evidence|length)) }}
+        {% if delta is not none %}
+        <span class="text-sm text-body-muted">
+          {%- if delta > 0 %}{{ _('prep2.score.delta_up', n=delta) }}{% elif delta < 0 %}{{ _('prep2.score.delta_down', n=delta) }}{% else %}{{ _('prep2.score.delta_same') }}{% endif -%}
+        </span>
+        {% endif %}
       </div>
-      {% else %}<p class="text-sm text-body-muted">—</p>{% endif %}
-    </section>
+      {% endif %}
+      {% if debrief.takeaway %}<p class="leading-relaxed">{{ debrief.takeaway }}</p>{% endif %}
+      <a href="{{ prep_href }}" class="ui-link-quiet inline-block">{{ _('prep2.score.readiness') }}: {{ rd.readiness_line(readiness) }} →</a>
+      <div class="flex flex-wrap gap-2 pt-1">
+        {{ ui.button(_('prep2.feedback.again'), variant='primary', icon='ph-arrows-clockwise', href=again_href) }}
+        {% if weakest and weakest.points < 5 %}
+        {{ ui.button(_('prep2.score.drill', name=comp_names.get(weakest.competency_id, weakest.competency_id)), variant='secondary', icon='ph-target', href=again_href ~ '?focus=' ~ weakest.competency_id) }}
+        {% endif %}
+      </div>
+    </div>
+  {% endcall %}
 
-    {# delivery strip — real numbers (§4). Voice: one delivery blob over the
-       whole conversation (debrief.delivery); typed: averaged over answers. #}
+  {# ---- by competency: the explanation of every point ---- #}
+  <section class="card-quiet p-4">
+    <h2 class="text-eyebrow mb-4">{{ _('prep2.feedback.by_competency') }}</h2>
+    {% if evidence %}
+    <div class="divide-y divide-base-200">
+      {% for e in evidence %}
+      <details class="py-2 group">
+        <summary class="flex items-center justify-between gap-3 cursor-pointer list-none">
+          <span class="min-w-0">{{ comp_names.get(e.competency_id, e.competency_id) }}</span>
+          <span class="flex items-center gap-3 shrink-0">
+            {% if e.asked %}{{ ui.meter(e.points, 5) }}{% endif %}
+            <span class="pill {{ band_pill.get(e.band, 'pill-neutral') }}">{{ _('prep2.score.not_asked') if e.band == 'not_asked' else _('prep2.band.' + e.band) }}</span>
+          </span>
+        </summary>
+        {% if e.asked %}
+        <div class="mt-3 space-y-2 text-sm">
+          <ul class="grid sm:grid-cols-2 gap-1">
+            {% for k in ['answered', 'example', 'own_actions', 'result', 'quantified'] %}
+            <li class="flex items-center gap-1.5 {{ '' if e.checks[k] else 'text-subtle' }}">
+              <i class="ph {{ 'ph-check-circle text-success' if e.checks[k] else 'ph-x-circle' }}"></i>{{ _('prep2.check.' + k) }}
+            </li>
+            {% endfor %}
+          </ul>
+          {% if e.quote %}
+          <p class="ui-inset"><b>{{ _('prep2.score.your_words') }}:</b> “{{ e.quote }}”</p>
+          {% else %}
+          <p class="text-subtle">{{ _('prep2.score.no_evidence') }}</p>
+          {% endif %}
+          {% if e.missing and e.points < 5 %}<p class="ui-kv"><b>{{ _('prep2.score.missing') }}</b>{{ e.missing }}</p>{% endif %}
+        </div>
+        {% endif %}
+      </details>
+      {% endfor %}
+    </div>
+    <details class="mt-3 text-sm">
+      <summary class="ui-link-quiet cursor-pointer">{{ _('prep2.score.how') }}</summary>
+      <p class="text-body-muted mt-2">{{ _('prep2.score.how_body') }}</p>
+    </details>
+    {% elif debrief.competency_bands %}
+    {# legacy debrief (pre-ADR-059): bands only, no score #}
+    <div class="space-y-2">
+      {% for b in debrief.competency_bands %}
+      <div class="flex items-center justify-between gap-2">
+        <span>{{ comp_names.get(b.competency_id, b.competency_id) }}</span>
+        <span class="pill {{ band_pill.get(b.band, 'pill-neutral') }}">{{ _('prep2.band.' + b.band) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<p class="text-sm text-body-muted">—</p>{% endif %}
+  </section>
+
+  {# ---- next time + delivery (code-counted numbers only) ---- #}
+  <div class="grid md:grid-cols-2 gap-4">
+    {% if debrief.top_actions %}
+    <section class="card-quiet p-4">
+      <h2 class="text-eyebrow mb-4">{{ _('prep2.feedback.top_actions') }}</h2>
+      <ol class="ui-list ui-list--num">
+        {% for a in debrief.top_actions %}<li>{{ a }}</li>{% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+
     <section class="card-quiet p-4">
       <h2 class="text-eyebrow mb-4">{{ _('prep2.feedback.delivery') }}</h2>
       {% if session.transcript and debrief.delivery %}
         {% set dv = debrief.delivery %}
         <div class="grid grid-cols-3 gap-3 text-center">
-          <div><div class="text-metric-sm">{{ dv.wpm }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.wpm') }}</div></div>
+          <div><div class="text-metric-sm">{{ dv.wpm or '—' }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.wpm') }}</div></div>
           <div><div class="text-metric-sm">{{ dv.filler_count }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.fillers') }}</div></div>
+          {% if dv.seconds is defined %}
+          <div><div class="text-metric-sm">{{ _('prep2.pace.' + (dv.pace or 'unknown')) if dv.pace in ['slow','on_target','fast'] else '—' }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.pace') }}</div></div>
+          {% else %}
           <div><div class="text-metric-sm capitalize">{{ dv.pace or dv.length_band or '—' }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.pace') }}</div></div>
+          {% endif %}
         </div>
-        {% if dv.confidence and dv.confidence != 'unknown' %}
-          <div class="text-sm text-body-muted text-center mt-3">{{ _('prep2.feedback.confidence') }}: <span class="capitalize">{{ dv.confidence }}</span></div>
+        {% if dv.seconds %}
+        <p class="text-sm text-subtle text-center mt-3">{{ (dv.seconds // 60) }}:{{ '%02d' % (dv.seconds % 60) }} {{ _('prep2.feedback.talk_time') }} · {{ dv.word_count }} {{ _('prep2.feedback.words') }}</p>
         {% endif %}
       {% else %}
         {% set ns = namespace(wpm=0, fillers=0, n=0) %}
@@ -65,25 +138,6 @@
           <div><div class="text-metric-sm">{{ ns.n }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.answers') }}</div></div>
         </div>
       {% endif %}
-    </section>
-  </div>
-
-  {# ---- top actions + readiness + CTA ---- #}
-  <div class="grid md:grid-cols-2 gap-4">
-    {% if debrief.top_actions %}
-    <section class="card-quiet p-4">
-      <h2 class="text-eyebrow mb-4">{{ _('prep2.feedback.top_actions') }}</h2>
-      <ol class="ui-list ui-list--num">
-        {% for a in debrief.top_actions %}<li>{{ a }}</li>{% endfor %}
-      </ol>
-    </section>
-    {% endif %}
-    <section class="card-quiet p-4 flex flex-col justify-between gap-3">
-      <div>
-        <h2 class="text-eyebrow mb-3">{{ _('prep2.feedback.readiness_now') }}</h2>
-        {{ rd.readiness(readiness) }}
-      </div>
-      <div>{{ ui.button(_('prep2.feedback.again'), variant='primary', icon='ph-arrows-clockwise', href='/interviews/' ~ interview.id ~ '/practice') }}</div>
     </section>
   </div>
 

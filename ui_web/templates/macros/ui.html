@@ -177,6 +177,16 @@
 {%- endmacro %}
 
 
+{# ── meter ───────────────────────────────────────────────────────
+   n of total filled dots — a discrete rubric count (e.g. 3/5 checks), never
+   a continuous %. aria-label carries the count for screen readers. #}
+{% macro meter(n, total=5, label=none) -%}
+<span class="ui-meter" role="img" aria-label="{{ label or (n ~ ' / ' ~ total) }}">
+  {%- for i in range(total) %}<span class="ui-meter__dot{{ ' ui-meter__dot--on' if i < n }}"></span>{% endfor -%}
+</span>
+{%- endmacro %}
+
+
 {# ── seg_tabs / utabs ────────────────────────────────────────────
    items = [(value, label, icon_or_none), …]; model = the Alpine variable
    holding the current value (must exist in an enclosing x-data).

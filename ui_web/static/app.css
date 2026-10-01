@@ -2393,6 +2393,10 @@ a.stepper-arrow:hover { background: var(--surf-3); }
 /* Small labelled line inside a card ("From your résumé — …"). */
 .ui-kv { font-size: 0.875rem; }
 .ui-kv > b { font-weight: 600; margin-right: 0.35rem; }
+/* Rubric meter — n of total dots (ui.meter). */
+.ui-meter { display: inline-flex; gap: 0.25rem; align-items: center; }
+.ui-meter__dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: oklch(var(--n-7) / 0.15); }
+.ui-meter__dot--on { background: oklch(var(--p)); }
 /* A numbered list whose items are cards: the number sits inside the box. */
 .ui-list--num > li.card-quiet { padding-left: 2.75rem; }
 .ui-list--num > li.card-quiet::before { left: 1rem; top: 1rem; }

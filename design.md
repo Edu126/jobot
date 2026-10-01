@@ -279,6 +279,7 @@ Soft, purposeful, accessible. **Every animation guarded by `@media (prefers-redu
 | `chip` | `(label, kind='neutral'\|'suggest'\|'matched'\|'gap'\|'accent'\|'applied'\|'fresh'\|'viewed'\|'dismissed', icon, title)` | inline-`hsl()` chips |
 | `datum` | `(value, label, unit=None, note=None, size='md'\|'lg')` | stat tiles |
 | `verdict` | `(verdict_key, score=None, label=None, note=None)` | wraps `macros/ring.html` |
+| `meter` | `(n, total=5, label=None)` | dot counts for a discrete rubric (e.g. 3 of 5 checks) — never a % |
 | `seg_tabs` / `utabs` | `(items=[(value,label,icon)], model='alpineVar')` | copy-pasted `:class` ternaries |
 | `empty_state` | `(sentence, hint=None, action=(href,label,icon), icon=None)` | illustration + giant-button empties |
 | `split_workspace` | `{% call(pane) ui.split_workspace() %}` — body rendered for `'list'` and `'detail'` | the ADR-012 grid |

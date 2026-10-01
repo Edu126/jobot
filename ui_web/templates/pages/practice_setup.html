@@ -119,7 +119,7 @@
           {% if missed_count %}<option value="__missed__"{% if focus_default == '__missed__' %} selected{% endif %}>{{ _('prep2.setup.focus_missed', n=missed_count) }}</option>{% endif %}
           <option value="">{{ _('prep2.setup.focus_all') }}</option>
           {% for c in competencies %}
-          <option value="{{ c.id }}">{{ c.name }}</option>
+          <option value="{{ c.id }}"{% if focus_default == c.id %} selected{% endif %}>{{ c.name }}</option>
           {% endfor %}
         </select>
       </div>

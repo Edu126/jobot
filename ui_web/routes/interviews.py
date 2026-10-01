@@ -32,6 +32,7 @@ from core.prep import pipeline
 from core.prep import practice as prep_practice
 from core.prep import toolkit as prep_toolkit
 from core.prep import readiness as prep_readiness
+from core.prep import session_score as prep_session_score
 from core.prep import story_bank as prep_story_bank
 from core.prep import tavily
 from core import settings as app_settings
@@ -497,7 +498,11 @@ async def practice_entry(request: Request, interview_id: int):
         interview_id, db.list_stories(interview["resume_hash"], status="saved"), lang=lang)
     qlist = [q.to_dict() for q in cached.questions] if cached else []
     missed_count = len(_missed_question_ids(interview_id, qlist))
-    focus_default = "__missed__" if (missed_count and request.query_params.get("focus") != "all") else ""
+    focus_q = request.query_params.get("focus", "")
+    if focus_q in {c.id for c in brief.competencies}:
+        focus_default = focus_q    # "Drill <weakest>" from Feedback (ADR-059)
+    else:
+        focus_default = "__missed__" if (missed_count and focus_q != "all") else ""
     return templates.TemplateResponse(
         request, "pages/practice_setup.html",
         {"active_tab": "prep", "interview": interview, "step": "practice",
@@ -670,7 +675,8 @@ async def practice_audio(
     debrief = None
     if wav:
         debrief = await asyncio.to_thread(
-            prep_audio_score.score_from_audio, wav, questions, competencies, lang=lang)
+            prep_audio_score.score_from_audio, wav, questions, competencies,
+            turns=turn_list, candidate_seconds=secs, lang=lang)
     if debrief is None:
         # Fallback: transcript-based debrief + code delivery over the "you" turns.
         client = GeminiClient(api_key=resolve_api_key())
@@ -678,11 +684,8 @@ async def practice_audio(
             prep_practice.session_debrief_from_transcript,
             turn_list, questions, competencies, client, lang=lang)
         said = " ".join(t["text"] for t in turn_list if t["role"] == "you")
-        # Target = the whole session's expected talk time (sum of per-question
-        # targets), not max(secs) — which made length_band always "on_target".
-        target = sum(prep_practice.target_seconds_for(q) for q in questions) or prep_practice.DEFAULT_TARGET
-        delivery = prep_practice.delivery_metrics(said, secs, target)
-        debrief = {**(d.to_dict() if d else {}), "delivery": delivery}
+        debrief = {**(d.to_dict() if d else {}),
+                   "delivery": prep_audio_score.code_delivery(said, secs)}
     db.save_practice_debrief(session_id, debrief)
     return JSONResponse({"redirect": feedback_url})
 
@@ -817,7 +820,7 @@ async def practice_build(request: Request, interview_id: int, session_id: int):
     for a in answers:
         src_q = q_by_pos.get(a["position"], {})
         q = {"id": a["question_id"], "text": a["question_text"],
-             "type": src_q.get("type", "behavioral")}
+             "type": src_q.get("type", "behavioral"), "competency_id": a["competency_id"]}
         comp = comp_by_id.get(a["competency_id"])
         story = story_by_comp.get(a["competency_id"])
         ev = await asyncio.to_thread(
@@ -832,7 +835,8 @@ async def practice_build(request: Request, interview_id: int, session_id: int):
 
     debrief = await asyncio.to_thread(
         prep_practice.session_debrief, evals, deliveries,
-        [c.to_dict() for c in brief.competencies] if brief else [], client, lang=lang)
+        [c.to_dict() for c in brief.competencies] if brief else [], client, lang=lang,
+        asked_ids=prep_practice.asked_competency_ids(session.get("questions") or []))
     db.save_practice_debrief(session_id, debrief.to_dict() if debrief else {})
     return HTMLResponse("", headers={"HX-Redirect": f"/interviews/{interview_id}/practice/{session_id}/feedback"})
 
@@ -852,11 +856,13 @@ async def practice_feedback(request: Request, interview_id: int, session_id: int
     comp_names = {c.id: c.name for c in brief.competencies} if brief else {}
     answers = db.list_practice_answers(session_id)
     readiness = prep_readiness.compute(interview, lang=lang)
+    delta = prep_session_score.delta_vs_previous(
+        db.list_practice_sessions(interview_id), session_id)
     return templates.TemplateResponse(
         request, "pages/practice_feedback.html",
         {"active_tab": "prep", "interview": interview, "session": session,
          "answers": answers, "comp_names": comp_names, "readiness": readiness,
-         "step": "feedback"})
+         "delta": delta, "step": "feedback"})
 
 
 def _current_turn(interview: dict, session: dict) -> Optional[dict]:

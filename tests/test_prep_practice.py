@@ -216,15 +216,18 @@ def test_p9_from_transcript():
 
 def test_audio_score_helpers():
     from core.prep import audio_score as A
-    d = A._clean_delivery({"wpm": "120", "filler_count": 4, "pace": "Fast", "confidence": "High"})
-    _assert(d["wpm"] == 120 and d["filler_count"] == 4, "numeric delivery coerced")
-    _assert(d["pace"] == "fast" and d["confidence"] == "high", "labels lowercased")
-    safe = A._clean_delivery("garbage")
-    _assert(safe["wpm"] == 0 and safe["pace"] == "unknown", "malformed delivery → safe defaults")
+    # Delivery is counted in CODE (ADR-059) — 120 words over 60s = 120 wpm.
+    d = A.code_delivery(" ".join(["word"] * 118 + ["um", "uh"]), 60)
+    _assert(d["wpm"] == 120 and d["filler_count"] == 2, "wpm + fillers counted in code")
+    _assert(d["pace"] == "on_target", "pace from wpm thresholds")
+    _assert(A.code_delivery("", 0)["pace"] == "unknown", "no speech → unknown, not a guess")
     prompt = A._build_prompt([{"text": "Tell me about yourself"}],
-                             [{"id": "c1", "name": "Stakeholder", "what_good_looks_like": "aligns"}], lang="en")
+                             [{"id": "c1", "name": "Stakeholder", "what_good_looks_like": "aligns"}],
+                             [{"role": "coach", "text": "Walk me through a budget you managed"}], lang="en")
     _assert("Tell me about yourself" in prompt and "Stakeholder" in prompt, "prompt carries Qs + competencies")
-    _assert("delivery" in prompt and "clean_transcript" in prompt, "schema asks for delivery + transcript")
+    _assert("Walk me through a budget" in prompt, "prompt carries what the coach actually asked")
+    _assert("competency_evidence" in prompt and "clean_transcript" in prompt, "schema asks for evidence + transcript")
+    _assert('"wpm"' not in prompt and "confidence" not in prompt, "no model-guessed delivery")
     print("PASS test_audio_score_helpers")
 
 
