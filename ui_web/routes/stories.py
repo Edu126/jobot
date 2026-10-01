@@ -267,8 +267,15 @@ def _clarifications_for_story(interview_id: int, story_id: int) -> str:
     picks = prep_toolkit.read_cached_mapping(interview_id, stories, lang=lang) or []
     comps = {p.competency_id for p in picks if p.story_id == str(story_id)}
     facts = prep_toolkit.read_facts(interview_id)
-    return "\n".join(facts[q.question] for q in (brief.clarify_questions if brief else [])
-                     if q.competency_id in comps and q.question in facts)
+    lines = [facts[q.question] for q in (brief.clarify_questions if brief else [])
+             if q.competency_id in comps and q.question in facts]
+    # …plus the ✎ gaps he filled on the cards of those competencies (2026-10-01:
+    # gap answers never reached the story). The competency is stored with each
+    # gap answer, so this survives a rewrite that changes the card texts.
+    for key, comp in prep_toolkit.fact_competencies(interview_id).items():
+        if comp in comps and facts.get(key):
+            lines.append(facts[key])
+    return "\n".join(dict.fromkeys(lines))
 
 
 @router.get("/stories/{story_id}/strengthen")

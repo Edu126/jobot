@@ -180,6 +180,11 @@ def test_facts_submitted_tracks_the_question_set():
     T.save_facts(iid, {"How did you track spend?": "weekly SAP pull"}, path=p)   # legacy row, no marker
     _assert(T.facts_submitted(iid, qs, path=p), "a legacy row answering these questions counts")
     _assert(not T.facts_submitted(iid, ["Other?"], path=p), "…but not for other questions")
+    T.save_facts(iid, {"Card? — cadence": "monthly"}, comps={"Card? — cadence": "c2"}, path=p)
+    _assert(T.fact_competencies(iid, path=p) == {"Card? — cadence": "c2"}, "gap competency stored")
+    T.save_facts(iid, {**T.read_facts(iid, path=p), "Other?": "x"}, path=p)
+    _assert(T.fact_competencies(iid, path=p) == {"Card? — cadence": "c2"}, "kept across later saves")
+    _assert("__comp::Card? — cadence" not in T.read_facts(iid, path=p), "meta never read as an answer")
     print("PASS test_facts_submitted_tracks_the_question_set")
 
 

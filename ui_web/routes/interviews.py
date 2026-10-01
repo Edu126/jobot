@@ -300,7 +300,8 @@ async def interview_facts(request: Request, interview_id: int):
         for k, v in form.items():
             if k.startswith("fact_") and k[5:] in keys and str(v).strip():
                 answers[keys[k[5:]]] = str(v)
-    prep_toolkit.save_facts(interview_id, answers, asked=clarify, skipped=bool(form.get("skip")))
+    prep_toolkit.save_facts(interview_id, answers, asked=clarify, skipped=bool(form.get("skip")),
+                            comps=_gap_competencies(toolkit))
     return RedirectResponse(f"/interviews/{interview_id}/get-ready", status_code=303)
 
 
@@ -312,11 +313,15 @@ async def interview_facts_add(interview_id: int, key: str = Form(""), answer: st
     interview = db.get_interview(interview_id)
     if not interview or not key.strip() or not answer.strip():
         return Response(status_code=400)
-    brief = prep_brief.read_cached_brief(interview_id, lang=interview.get("lang") or None)
+    lang = interview.get("lang") or None
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    toolkit = prep_toolkit.read_cached_toolkit(
+        interview_id, db.list_stories(interview.get("resume_hash", ""), status="saved"), lang=lang)
     facts = prep_toolkit.read_facts(interview_id)
     facts[key.strip()[:300]] = answer.strip()
     prep_toolkit.save_facts(interview_id, facts,
-                            asked=[q.question for q in (brief.clarify_questions if brief else [])])
+                            asked=[q.question for q in (brief.clarify_questions if brief else [])],
+                            comps=_gap_competencies(toolkit))
     return Response(status_code=204)
 
 
@@ -370,6 +375,14 @@ async def interview_checkin(request: Request, interview_id: int):
     return templates.TemplateResponse(request, "pages/interview_checkin.html", {
         "active_tab": "prep", "interview": interview, "step": "get_ready", "brief": brief,
         "checkin_steps": steps, "facts": facts, "improving": toolkit is not None})
+
+
+def _gap_competencies(toolkit) -> dict[str, str]:
+    """{gap key: competency id of its card} for the current cards."""
+    if not toolkit:
+        return {}
+    comp = {q.text: q.competency_id for q in toolkit.questions}
+    return {g["key"]: comp.get(g["card"]) or "" for g in prep_toolkit.card_gaps(toolkit)}
 
 
 def _checkin_steps(brief, toolkit, facts: dict) -> list[dict]:

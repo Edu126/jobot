@@ -40,7 +40,7 @@ def main() -> int:
     R.prep_brief.read_cached_brief = lambda i, lang=None: brief
     R.prep_toolkit.facts_submitted = lambda i, qs: state["submitted"]
     R.prep_toolkit.read_facts = lambda i: dict(state["facts"])
-    R.prep_toolkit.save_facts = lambda i, a, asked=None, skipped=False: state.update(
+    R.prep_toolkit.save_facts = lambda i, a, asked=None, skipped=False, comps=None: state.update(
         saved={"answers": dict(a), "asked": asked, "skipped": skipped})
     app = FastAPI()
     app.include_router(R.router)

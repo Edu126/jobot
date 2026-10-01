@@ -178,12 +178,29 @@ def facts_submitted(interview_id: int, questions: list[str], *, path=db.DB_PATH)
     return any(q in a for q in questions)
 
 
+COMP_PREFIX = "__comp::"
+
+
+def fact_competencies(interview_id: int, *, path=db.DB_PATH) -> dict[str, str]:
+    """{fact key: competency id} for gap answers — which competency a card gap
+    belonged to when it was answered (card texts change on a rewrite, so the key
+    alone can't be re-joined later). Used to pre-fill a story's Strengthen."""
+    row = db.get_prep_artifact(interview_id, FACTS_KIND, "", FACTS_VERSION, path=path)
+    a = (row or {}).get("artifact")
+    return ({k[len(COMP_PREFIX):]: str(v) for k, v in a.items() if str(k).startswith(COMP_PREFIX)}
+            if isinstance(a, dict) else {})
+
+
 def save_facts(interview_id: int, answers: dict[str, str], *, asked: Optional[list[str]] = None,
-               skipped: bool = False, path=db.DB_PATH) -> None:
+               skipped: bool = False, comps: Optional[dict[str, str]] = None, path=db.DB_PATH) -> None:
     """`answers` = {question_text: answer}; blank answers dropped. `asked` = the
-    question set shown (answered or skipped) — see facts_submitted."""
+    question set shown (answered or skipped) — see facts_submitted. `comps` =
+    {gap key: competency id}, merged with the ones already stored (kept)."""
     clean = {str(k).strip(): str(v).strip()[:P.MAX_NOTES_CHARS]
              for k, v in answers.items() if str(k).strip() and str(v).strip()}
+    for k, c in {**fact_competencies(interview_id, path=path), **(comps or {})}.items():
+        if c and k in clean:
+            clean[COMP_PREFIX + k] = c
     if asked is not None:
         clean["__asked__"] = _asked_key(asked)
     if skipped:

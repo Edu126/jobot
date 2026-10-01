@@ -15,9 +15,12 @@
 {% set qs = checkin_steps %}
 {# NOT .gr-shell: that shell has a fixed height; a long answer pushed the Next
    button under the footer, which then took its clicks (2026-10-01). #}
-<div class="space-y-6" x-data="{ i: 0, n: {{ qs | length }},
+{# `done` is a reactive count, refreshed on every step change: reading the
+   textareas inside x-text was evaluated once at load and showed "0 of 9"
+   after he had answered most of them (2026-10-01). #}
+<div class="space-y-6" x-data="{ i: 0, n: {{ qs | length }}, done: 0,
        answered() { return [...this.$root.querySelectorAll('textarea')].filter(t => t.value.trim()).length },
-       go(d) { this.i = Math.max(0, Math.min(this.n, this.i + d)); this.$nextTick(() => this.$root.querySelector('textarea[data-i=\'' + this.i + '\']')?.focus()) } }"
+       go(d) { this.i = Math.max(0, Math.min(this.n, this.i + d)); this.done = this.answered(); this.$nextTick(() => this.$root.querySelector('textarea[data-i=\'' + this.i + '\']')?.focus()) } }"
      @keydown.window.meta.enter.prevent="go(1)" @keydown.window.ctrl.enter.prevent="go(1)">
 
   {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), size='sm') %}
@@ -56,7 +59,7 @@
 
     {# recap #}
     <div class="checkin__step" x-show="i === n" x-cloak>
-      <p class="text-title"><span x-text="answered()"></span> {{ _('prep2.checkin.of') }} {{ qs | length }} {{ _('prep2.checkin.answered') }}</p>
+      <p class="text-title"><span x-text="done"></span> {{ _('prep2.checkin.of') }} {{ qs | length }} {{ _('prep2.checkin.answered') }}</p>
       <p class="text-body-muted">{{ _('prep2.checkin.recap') }}</p>
       <div class="flex flex-wrap items-center justify-between gap-3">
         <button type="button" class="btn btn-quiet btn-sm" @click="go(-1)"><i class="ph-thin ph-arrow-left"></i>{{ _('prep2.common.back') }}</button>
