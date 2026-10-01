@@ -12,7 +12,7 @@
    the question big, a concrete example in the placeholder, Next / Skip this one
    / Back. The last screen recaps and writes (or rewrites) the answers. #}
 {% block content %}
-{% set qs = brief.clarify_questions %}
+{% set qs = checkin_steps %}
 {# NOT .gr-shell: that shell has a fixed height; a long answer pushed the Next
    button under the footer, which then took its clicks (2026-10-01). #}
 <div class="space-y-6" x-data="{ i: 0, n: {{ qs | length }},
@@ -39,9 +39,10 @@
     {% for f in qs %}
     <div class="checkin__step" x-show="i === {{ loop.index0 }}" {% if not loop.first %}x-cloak{% endif %}>
       <div class="text-sm text-subtle">{{ _('prep2.checkin.count', i=loop.index, n=qs | length) }}</div>
+      {% if f.card %}<p class="text-sm text-body-muted">{{ _('prep2.checkin.for_card') }} “{{ f.card }}”</p>{% endif %}
       <label for="fact_{{ f.id }}" class="text-title block">{{ f.question }}</label>
       <textarea id="fact_{{ f.id }}" name="fact_{{ f.id }}" data-i="{{ loop.index0 }}" rows="3" class="ui-field checkin__field"
-                placeholder="{{ (_('prep2.brief.fact_eg') ~ ' ' ~ f.example) if f.example else _('prep2.brief.fact_ph') }}">{{ facts.get(f.question, '') }}</textarea>
+                placeholder="{{ (_('prep2.brief.fact_eg') ~ ' ' ~ f.example) if f.example else _('prep2.brief.fact_ph') }}">{{ facts.get(f.key, '') }}</textarea>
       <div class="flex flex-wrap items-center justify-between gap-3">
         <button type="button" class="btn btn-quiet btn-sm" @click="go(-1)" :disabled="i === 0" aria-label="{{ _('prep2.common.back') }}"><i class="ph-thin ph-arrow-left"></i></button>
         <div class="flex items-center gap-4">

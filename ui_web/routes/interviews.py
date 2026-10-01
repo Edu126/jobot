@@ -284,15 +284,23 @@ async def interview_facts(request: Request, interview_id: int):
     if not db.get_interview(interview_id):
         return _redirect("/interviews/new")
     form = await request.form()
-    brief = prep_brief.read_cached_brief(interview_id, lang=db.get_interview(interview_id).get("lang") or None)
-    qtext = {f.id: f.question for f in (brief.clarify_questions if brief else [])}
-    # keyed by the question TEXT (see toolkit.read_facts) — ids are re-used on a rebuild
-    # Skip = go on WITHOUT answering now — it never erases answers already saved
-    # (a skip used to wipe them: Eduardo lost his answers on 2026-09-29).
-    answers = prep_toolkit.read_facts(interview_id) if form.get("skip") else {
-        qtext[k[5:]]: str(v) for k, v in form.items() if k.startswith("fact_") and k[5:] in qtext}
-    prep_toolkit.save_facts(interview_id, answers, asked=list(qtext.values()),
-                            skipped=bool(form.get("skip")))
+    interview = db.get_interview(interview_id)
+    lang = interview.get("lang") or None
+    brief = prep_brief.read_cached_brief(interview_id, lang=lang)
+    clarify = [q.question for q in (brief.clarify_questions if brief else [])]
+    # field ids → facts keys: the Brief's questions (by TEXT — ids are re-used on a
+    # rebuild) and the cards' ✎ gaps (gap_key — same key as the inline card field)
+    toolkit = prep_toolkit.read_cached_toolkit(
+        interview_id, db.list_stories(interview.get("resume_hash", ""), status="saved"), lang=lang)
+    keys = {st["id"]: st["key"] for st in (_checkin_steps(brief, toolkit, {}) if brief else [])}
+    # Answers MERGE into what's saved: the check-in may show only the open gaps,
+    # and Skip never erases anything (a skip wiped Eduardo's answers, 2026-09-29).
+    answers = prep_toolkit.read_facts(interview_id)
+    if not form.get("skip"):
+        for k, v in form.items():
+            if k.startswith("fact_") and k[5:] in keys and str(v).strip():
+                answers[keys[k[5:]]] = str(v)
+    prep_toolkit.save_facts(interview_id, answers, asked=clarify, skipped=bool(form.get("skip")))
     return RedirectResponse(f"/interviews/{interview_id}/get-ready", status_code=303)
 
 
@@ -356,10 +364,24 @@ async def interview_checkin(request: Request, interview_id: int):
     if not brief.clarify_questions:
         return _redirect(f"/interviews/{interview_id}/get-ready")
     stories = db.list_stories(interview["resume_hash"], status="saved")
-    improving = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang) is not None
+    toolkit = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang)
+    facts = prep_toolkit.read_facts(interview_id)
+    steps = _checkin_steps(brief, toolkit, facts)
     return templates.TemplateResponse(request, "pages/interview_checkin.html", {
         "active_tab": "prep", "interview": interview, "step": "get_ready", "brief": brief,
-        "facts": prep_toolkit.read_facts(interview_id), "improving": improving})
+        "checkin_steps": steps, "facts": facts, "improving": toolkit is not None})
+
+
+def _checkin_steps(brief, toolkit, facts: dict) -> list[dict]:
+    """What the check-in asks (2026-10-01): the Brief's questions not answered
+    yet + every ✎ gap still open on the cards — so "Improve my answers · n gaps"
+    opens exactly those n. Nothing open → all the Brief's questions, prefilled
+    (edit mode). Each step: {id, key, question, example, card}."""
+    clar = [{"id": q.id, "key": q.question, "question": q.question, "example": q.example, "card": ""}
+            for q in brief.clarify_questions]
+    gaps = [{"id": f"g{i + 1}", **g} for i, g in enumerate(prep_toolkit.card_gaps(toolkit))] if toolkit else []
+    open_steps = [st for st in clar + gaps if not facts.get(st["key"])]
+    return open_steps or clar
 
 
 @router.post("/interviews/{interview_id}/toolkit/build")
@@ -411,7 +433,9 @@ def _get_ready_ctx(interview: dict, brief, toolkit, stories: list[dict]) -> dict
             "competency": c, "pick": p, "story": story, "draft": None if story else (p.draft if p else None),
             "strength": prep_story_bank.strength_check(star) if star else None,
         })
-    gaps = sum(str(sec).count(prep_toolkit.HINT_OPEN) for q in toolkit.questions for sec in q.frame)
+    # open gaps = ✎ slots not answered yet — the same list the check-in will show
+    facts = prep_toolkit.read_facts(interview["id"])
+    gaps = sum(1 for g in prep_toolkit.card_gaps(toolkit) if not facts.get(g["key"]))
     return {"cards": cards, "story_rows": story_rows, "ask": toolkit.questions_to_ask, "gaps": gaps}
 
 

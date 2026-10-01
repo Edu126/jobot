@@ -1,12 +1,13 @@
 {# The back of an answer card — a script you could read aloud (2026-10-01).
    Each section is ONE paragraph (its bullets joined as sentences); the STAR /
-   approach structure stays as a quiet letter in the margin (full label on
-   hover) instead of headings that chopped the answer into parts. The point to
+   approach structure stays as a small grey label in the margin (full words —
+   bare letters like "A"/"E" meant nothing to a reader, 2026-10-01) instead of
+   headings that chopped the answer into parts. The point to
    land closes it like a takeaway. ✎ gaps are buttons: click to fill them in. #}
 <div class="script">
   {% for sec in frame %}
   <div class="script__para">
-    <span class="script__cue" title="{{ _('prep2.frame.' + sec.section) }}">{{ _('prep2.frame_short.' + sec.section) }}</span>
+    <span class="script__cue">{{ _('prep2.frame.' + sec.section) }}</span>
     <p>{% for pt in sec.points %}{{ pt | hints(clickable=True) }}{% if not loop.last %} {% endif %}{% endfor %}</p>
   </div>
   {% endfor %}

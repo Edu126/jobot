@@ -28,6 +28,7 @@ unknown competency ids are nulled, unknown story ids fall back to "no story".
 from __future__ import annotations
 
 import hashlib
+import re
 import json
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
@@ -492,6 +493,40 @@ def split_hints(text: str) -> list[tuple[str, str]]:
         if hint:
             out.append(("h", hint))
         rest = rest[j + len(HINT_CLOSE):]
+
+
+def gap_key(card_text: str, hint: str) -> str:
+    """The facts key for a ✎ gap answer — shared by the card's inline field and
+    the check-in, so both fill the same gap."""
+    return f"{card_text} — {hint}"
+
+
+_EG = re.compile(r"\s*[—–-]?\s*\(?\b(?:e\.g\.|p\. ?ej\.|por ejemplo|for example)\s*", re.IGNORECASE)
+
+
+def card_gaps(tk: "Toolkit") -> list[dict]:
+    """Every ✎ slot on the cards as a check-in question (2026-10-01: "Improve my
+    answers · 9 gaps" opened the 3 old questions, so the count meant nothing).
+    → [{key, card, question, example}], de-duplicated, in card order. The hint's
+    "e.g. …" tail becomes the placeholder example."""
+    out, seen = [], set()
+    for q in tk.questions:
+        for sec in q.frame:
+            for pt in sec.get("points") or []:
+                for kind, val in split_hints(str(pt)):
+                    if kind != "h":
+                        continue
+                    key = gap_key(q.text, val)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    parts = _EG.split(val, maxsplit=1)
+                    head = parts[0].strip(" —–-").strip()
+                    example = parts[1].strip(" )") if len(parts) > 1 else ""
+                    out.append({"key": key, "card": q.text,
+                                "question": (head[:1].upper() + head[1:]) if head else val,
+                                "example": example})
+    return out
 
 
 def _parse_draft(d: Any) -> Optional[dict]:

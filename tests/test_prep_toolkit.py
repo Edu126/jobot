@@ -183,6 +183,23 @@ def test_facts_submitted_tracks_the_question_set():
     print("PASS test_facts_submitted_tracks_the_question_set")
 
 
+def test_card_gaps_become_questions():
+    tk = T.Toolkit(questions=[T.ToolkitQuestion(
+        id="q1", text="How do you approach budgets?", type="approach", competency_id=None,
+        frame=[{"section": "approach", "points": [
+            "I review targets [[hint: specify your review cadence — e.g. monthly variance review in Excel]].",
+            "Again [[hint: specify your review cadence — e.g. monthly variance review in Excel]]",
+            "x [[hint: detail your method]]"]}])])
+    gaps = T.card_gaps(tk)
+    _assert(len(gaps) == 2, f"one question per distinct gap, got {gaps}")
+    _assert(gaps[0]["question"] == "Specify your review cadence" and gaps[0]["example"] == "monthly variance review in Excel",
+            "hint split into question + e.g. example")
+    _assert(gaps[0]["key"] == T.gap_key("How do you approach budgets?", "specify your review cadence — e.g. monthly variance review in Excel"),
+            "same key as the card's inline field")
+    _assert(gaps[1]["example"] == "", "no e.g. → no example")
+    print("PASS test_card_gaps_become_questions")
+
+
 def test_generate_cache_and_fingerprint():
     p = _fresh()
     interview, stories, sid = _seed(p)
@@ -256,6 +273,7 @@ if __name__ == "__main__":
     test_hints_split_and_prompt_rules()
     test_prompt_first_person_facts_and_ids()
     test_facts_submitted_tracks_the_question_set()
+    test_card_gaps_become_questions()
     test_generate_cache_and_fingerprint()
     test_pipeline_two_calls_then_cache_and_reads()
     test_toolkit_failure_degrades()

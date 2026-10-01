@@ -2487,12 +2487,10 @@ a.stepper-arrow:hover { background: var(--surf-3); }
 /* Answer card back as a script (2026-10-01): paragraphs, not headed sections.
    The structure letter (S·T·A·R / A·E·R …) sits faintly in the margin. */
 .script { display: grid; gap: 0.9rem; }
-.script__para { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: 0.5rem; align-items: baseline; }
+.script__para { display: grid; gap: 0.15rem; }
+@media (min-width: 768px) { .script__para { grid-template-columns: 7.5rem minmax(0, 1fr); gap: 1rem; align-items: baseline; } }
 .script__para p { margin: 0; line-height: 1.65; }
-.script__cue {
-  font-family: var(--font-display); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em;
-  color: oklch(var(--n-4)); text-align: center; cursor: help;
-}
+.script__cue { font-size: 0.8125rem; font-weight: 500; color: oklch(var(--n-5)); line-height: 1.65; }
 .script__takeaway {
   margin: 0.4rem 0 0; padding-top: 0.9rem; border-top: 1px solid var(--hair);
   font-style: italic; color: oklch(var(--bc) / 0.84);
