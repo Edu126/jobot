@@ -153,6 +153,19 @@ def test_ready_needs_no_weak_competency():
     print("PASS test_ready_needs_no_weak_competency")
 
 
+def test_delivery_gauges():
+    g = {x["key"]: x for x in SS.delivery_gauges(words=300, seconds=60, fillers=15, answers=0)}
+    _assert(g["pace"]["value"] == 300 and g["pace"]["verdict"] == "fast" and g["pace"]["kind"] == "warn", "300 wpm → rushed")
+    _assert(g["pace"]["marker_pct"] == 100, "marker clamps to the scale")
+    _assert(g["fillers"]["value"] == 5 and g["fillers"]["verdict"] == "high", "5 per 100 words → high")
+    _assert("length" not in g, "no answer count → no length gauge")
+    _assert(SS.delivery_gauges(words=0, seconds=0, fillers=0) == [], "no speech → no gauges, never a guess")
+    g2 = {x["key"]: x for x in SS.delivery_gauges(words=290, seconds=120, fillers=4, answers=2)}
+    _assert(g2["pace"]["verdict"] == "on_target" and g2["fillers"]["verdict"] == "low", "145 wpm, 1.4/100")
+    _assert(g2["length"]["display"] == "1:00" and g2["length"]["verdict"] == "on_target", "60s avg on target")
+    print("PASS test_delivery_gauges")
+
+
 if __name__ == "__main__":
     test_quote_gate()
     test_answered_and_quantified_gates()
@@ -164,4 +177,5 @@ if __name__ == "__main__":
     test_legacy_bands_still_parse()
     test_delta()
     test_ready_needs_no_weak_competency()
+    test_delivery_gauges()
     print("all session-score tests passed")

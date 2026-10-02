@@ -115,6 +115,13 @@ def test_p7_core_prompt_short_and_toned():
     # must stay well under the ~4000-char Live silent-hang limit
     _assert(len(p) < 2500, f"core prompt must be short, got {len(p)} chars")
     _assert("1. Tell me about yourself" not in p, "questions are NOT in the core prompt (split out)")
+    # professional opening: greeting + candidate name, then the coach's name
+    g = PR.interviewer_system_prompt(iv, lang="en", coach_name="Maya", candidate_name="Eduardo")
+    _assert("Hello Eduardo, I'm Maya." in g, "greets the candidate by name, then introduces itself")
+    _assert("Hello, I'm Maya." in PR.interviewer_system_prompt(iv, lang="en", coach_name="Maya"),
+            "no name known → plain 'Hello'")
+    _assert("HR interviewer" in g and "salesy" in g, "calm HR delivery, not salesy")
+    _assert("JSON" not in g, "no JSON-language rule in a spoken prompt")
     print("PASS test_p7_core_prompt_short_and_toned")
 
 

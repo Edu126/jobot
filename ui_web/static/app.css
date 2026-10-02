@@ -2397,6 +2397,21 @@ a.stepper-arrow:hover { background: var(--surf-3); }
 .ui-meter { display: inline-flex; gap: 0.25rem; align-items: center; }
 .ui-meter__dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: oklch(var(--n-7) / 0.15); }
 .ui-meter__dot--on { background: oklch(var(--p)); }
+/* Delivery gauge (ui.gauge, REQ-043) — zoned track + marker. */
+.ui-gauge { display: flex; flex-direction: column; gap: 0.5rem; }
+.ui-gauge__head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+.ui-gauge__track { position: relative; height: 0.5rem; border-radius: 999px; background: oklch(var(--n-7) / 0.08); }
+.ui-gauge__zone { position: absolute; top: 0; bottom: 0; }
+.ui-gauge__zone:first-child { border-radius: 999px 0 0 999px; }
+.ui-gauge__zone:nth-last-child(2) { border-radius: 0 999px 999px 0; }
+.ui-gauge__zone--good { background: var(--v-strong-tint); }
+.ui-gauge__zone--ok { background: oklch(var(--n-7) / 0.10); }
+.ui-gauge__zone--warn { background: var(--v-poor-tint); }
+.ui-gauge__marker { position: absolute; top: -0.25rem; width: 0.25rem; height: 1rem; margin-left: -0.125rem;
+  border-radius: 999px; background: oklch(var(--bc)); }
+.ui-gauge__pill--good { background: var(--v-strong-tint); color: var(--v-strong-ink); margin-left: 0.5rem; }
+.ui-gauge__pill--ok { background: oklch(var(--n-7) / 0.08); color: oklch(var(--n-7)); margin-left: 0.5rem; }
+.ui-gauge__pill--warn { background: var(--v-poor-tint); color: var(--v-poor-ink); margin-left: 0.5rem; }
 /* A numbered list whose items are cards: the number sits inside the box. */
 .ui-list--num > li.card-quiet { padding-left: 2.75rem; }
 .ui-list--num > li.card-quiet::before { left: 1rem; top: 1rem; }

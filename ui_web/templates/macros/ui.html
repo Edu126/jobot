@@ -187,6 +187,26 @@
 {%- endmacro %}
 
 
+{# ── gauge ───────────────────────────────────────────────────────
+   One measured number on a scale with research-baseline zones (REQ-043).
+   g = session_score._gauge() dict; label/verdict/note are translated strings.
+   Zones are tinted good/ok/warn; the marker shows where you landed. #}
+{% macro gauge(g, label, unit, verdict, note) -%}
+<div class="ui-gauge">
+  <div class="ui-gauge__head">
+    <span class="text-body-strong">{{ label }}</span>
+    <span><span class="text-metric-sm">{{ g.display }}</span><span class="ui-datum-unit">{{ unit }}</span>
+      <span class="pill ui-gauge__pill--{{ g.kind }}">{{ verdict }}</span></span>
+  </div>
+  <div class="ui-gauge__track" role="img" aria-label="{{ label }}: {{ g.display }} {{ unit }}, {{ verdict }}">
+    {%- for z in g.zones %}<span class="ui-gauge__zone ui-gauge__zone--{{ z.kind }}" style="left: {{ z.left }}%; width: {{ z.width }}%"></span>{% endfor -%}
+    <span class="ui-gauge__marker" style="left: {{ g.marker_pct }}%"></span>
+  </div>
+  <p class="text-sm text-body-muted">{{ note }}</p>
+</div>
+{%- endmacro %}
+
+
 {# ── seg_tabs / utabs ────────────────────────────────────────────
    items = [(value, label, icon_or_none), …]; model = the Alpine variable
    holding the current value (must exist in an enclosing x-data).

@@ -21,14 +21,14 @@ def _assert(c, m):
         raise AssertionError(m)
 
 
-def _render(debrief, delta=None):
+def _render(debrief, delta=None, gauges=None):
     req = Request({"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b"", "app": None})
     return templates.get_template("pages/practice_feedback.html").render(
         request=req, active_tab="prep", interview={"id": 3, "role_title": "S", "company": "C"},
         session={"id": 39, "debrief": debrief, "transcript": [{"role": "you", "text": "x"}]},
         answers=[], comp_names={"c1": "Budget", "c2": "Workforce", "c3": "Stakeholder"},
         readiness={"level": "almost_ready", "pct": 78, "missing": "strengthen", "missing_count": 1},
-        delta=delta, step="feedback")
+        delta=delta, gauges=gauges or [], step="feedback")
 
 
 def test_new_shape():
@@ -39,10 +39,12 @@ def test_new_shape():
     d = PR._parse_debrief(raw, valid_comps={"c1", "c2", "c3"}, comp_ids=["c1", "c2", "c3"],
                           transcript=tr, asked_ids={"c1", "c2"}).to_dict()
     d["delivery"] = {"wpm": 140, "filler_count": 1, "seconds": 95, "word_count": 220, "pace": "on_target"}
-    html = _render(d, delta=12)
+    html = _render(d, delta=12, gauges=SS.delivery_gauges(words=220, seconds=95, fillers=6, answers=2))
     _assert("Session score" in html and "Getting close" in html, "score hero")
     _assert("+12 vs last session" in html and "Not asked" in html, "delta + not asked")
     _assert("1 weak competency" in html, "singular readiness copy")
+    _assert("Easy to follow" in html and "per 100 words" in html and "about 150 words per minute" in html,
+            "gauges show verdict + unit + the research baseline")
     print("PASS test_new_shape")
 
 

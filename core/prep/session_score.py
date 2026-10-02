@@ -243,3 +243,58 @@ For every competency also give:
 Example of a weak answer: "Um, yeah, I mean budgets are important, you just have to manage them, you know." → answered=false, example=false, own_actions=false, result=false, quantified=false."""
 
 EVIDENCE_SCHEMA = """"competency_evidence": [{ "competency_id": "c1", "asked": true, "quote": "string", "checks": { "answered": false, "example": false, "own_actions": false, "result": false, "quantified": false }, "missing": "string" }]"""
+
+
+# ---------- delivery gauges (REQ-043) ----------
+# Every number is shown against a research baseline, never alone ("4 fillers"
+# means nothing without the length). Zones: good | ok | warn.
+#   Pace: ~150 wpm is typical US conversation (NCVS); 130–160 is easy to
+#     note-take in an interview; <110 reads hesitant, >170 rushed.
+#   Fillers: ~2.6 uh/um per 100 words in everyday conversation (Bortfeld et
+#     al. 2001, Language & Speech, range ≈1.5–3.5); fewer reads more fluent.
+#   Answer length: 1–2 min per behavioural answer (practitioner guidance,
+#     not a study — labelled as such in the UI copy).
+
+def _zone(value: float, zones: list[tuple[float, float, str]]) -> str:
+    for lo, hi, kind in zones:
+        if lo <= value < hi:
+            return kind
+    return zones[-1][2]
+
+
+def _gauge(key: str, value: float, display: str, lo: float, hi: float,
+           zones: list[tuple[float, float, str]], verdict: str) -> dict:
+    span = (hi - lo) or 1
+    pct = lambda v: round(100 * (min(max(v, lo), hi) - lo) / span, 1)  # noqa: E731
+    return {
+        "key": key, "value": value, "display": display, "verdict": verdict,
+        "kind": _zone(value, zones), "marker_pct": pct(value),
+        "zones": [{"kind": k, "left": pct(a), "width": round(pct(min(b, hi)) - pct(a), 1)}
+                  for a, b, k in zones],
+    }
+
+
+PACE_ZONES = [(0, SLOW_WPM, "warn"), (SLOW_WPM, 130, "ok"), (130, 161, "good"),
+              (161, FAST_WPM + 1, "ok"), (FAST_WPM + 1, 10_000, "warn")]
+FILLER_ZONES = [(0, 2.0, "good"), (2.0, 4.0, "ok"), (4.0, 10_000, "warn")]
+LENGTH_ZONES = [(0, 45, "warn"), (45, 60, "ok"), (60, 121, "good"),
+                (121, 150, "ok"), (150, 10_000, "warn")]
+
+
+def delivery_gauges(*, words: int, seconds: int, fillers: int,
+                    answers: int = 0) -> list[dict]:
+    """The Delivery panel as gauges — computed in code from measured words,
+    speaking seconds and filler count. Empty list when there's no speech."""
+    out: list[dict] = []
+    if words and seconds:
+        wpm = round(words / (seconds / 60))
+        out.append(_gauge("pace", wpm, f"{wpm}", 80, 220, PACE_ZONES, pace_for(wpm)))
+    if words:
+        per100 = round(100 * fillers / words, 1)
+        fv = "low" if per100 < 2 else ("typical" if per100 < 4 else "high")
+        out.append(_gauge("fillers", per100, f"{per100:g}", 0, 8, FILLER_ZONES, fv))
+    if answers and seconds:
+        avg = round(seconds / answers)
+        lv = "short" if avg < 60 else ("long" if avg > 120 else "on_target")
+        out.append(_gauge("length", avg, f"{avg // 60}:{avg % 60:02d}", 0, 180, LENGTH_ZONES, lv))
+    return out

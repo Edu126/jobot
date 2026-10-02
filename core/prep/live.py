@@ -81,7 +81,16 @@ def personality_meta(personality_id: str) -> dict:
     return PERSONALITIES.get(personality_id, PERSONALITIES[DEFAULT_PERSONALITY])
 
 
-_SAMPLE_LINE = "Hi, I'm {name}, your interview coach. Let's get you ready — take a breath, and we'll begin."
+# The picker preview. Spoken AS the coach (never sent as a user turn — the
+# Live model used to reply "Hi Theo!" to it, thinking the user was Theo).
+_SAMPLE_LINE = ("Hello, I'm {name}. I'll be your interviewer today. "
+                "Take a moment to get settled, and we'll begin when you're ready.")
+# Delivery note for the TTS model — same calm HR register as the live prompt.
+_SAMPLE_STYLE = "Say this in a calm, warm, unhurried voice, like an experienced HR interviewer opening a call:"
+# Pre-generated previews shipped with the app (scripts/gen_voice_samples.py) —
+# a local file, no API call when the candidate clicks a voice.
+STATIC_SAMPLES_DIR = __import__("pathlib").Path(__file__).resolve().parents[2] / "ui_web" / "static" / "voice_samples"
+TTS_MODEL = "gemini-2.5-flash-preview-tts"
 
 
 def _log(*a) -> None:
@@ -108,48 +117,49 @@ def _pcm_to_wav(pcm: bytes, rate: int = OUTPUT_RATE) -> bytes:
 
 
 async def voice_sample_wav(voice: str) -> Optional[bytes]:
-    """A short spoken sample of `voice` as WAV, generated once via the Live model
-    and cached on disk (so the picker can play it). None if voice unavailable."""
-    if voice not in VOICES or not is_enabled():
+    """The picker preview for `voice` as WAV. Order: the shipped static file →
+    the on-disk cache → generate once with the TTS model (reads the line
+    verbatim in the coach's own voice) and cache it. None if unavailable."""
+    if voice not in VOICES:
         return None
-    cache = _samples_dir() / f"{voice}-named.wav"   # -named: the line now says the coach's name
+    static = STATIC_SAMPLES_DIR / f"{voice}.wav"
+    if static.exists():
+        return static.read_bytes()
+    cache = _samples_dir() / f"{voice}-tts.wav"
     if cache.exists():
         return cache.read_bytes()
+    if not resolve_api_key():
+        return None
+    import asyncio
+    wav = await asyncio.to_thread(synthesize_sample, voice)
+    if wav:
+        try:
+            cache.write_bytes(wav)
+        except Exception:  # noqa: BLE001 — cache is best-effort
+            pass
+    return wav
 
+
+def synthesize_sample(voice: str) -> Optional[bytes]:
+    """One TTS call → WAV of the sample line in `voice`. Used by the route on a
+    cache miss and by scripts/gen_voice_samples.py to ship static previews."""
     from google.genai import types as t
     import google.genai as genai
-    client = genai.Client(api_key=resolve_api_key())
-    config = t.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        speech_config=t.SpeechConfig(voice_config=t.VoiceConfig(
-            prebuilt_voice_config=t.PrebuiltVoiceConfig(voice_name=voice))),
-    )
-    pcm = bytearray()
     try:
-        async with client.aio.live.connect(model=live_model(), config=config) as sess:
-            await sess.send_client_content(
-                turns=t.Content(role="user", parts=[t.Part(text=_SAMPLE_LINE.format(name=coach_name(voice)))]),
-                turn_complete=True)
-            async for resp in sess.receive():
-                sc = getattr(resp, "server_content", None)
-                if sc and getattr(sc, "model_turn", None) and sc.model_turn.parts:
-                    for p in sc.model_turn.parts:
-                        blob = getattr(p, "inline_data", None)
-                        if blob and blob.data:
-                            pcm += blob.data
-                if sc and getattr(sc, "turn_complete", False):
-                    break
+        client = genai.Client(api_key=resolve_api_key())
+        resp = client.models.generate_content(
+            model=TTS_MODEL,
+            contents=f"{_SAMPLE_STYLE}\n{_SAMPLE_LINE.format(name=coach_name(voice))}",
+            config=t.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=t.SpeechConfig(voice_config=t.VoiceConfig(
+                    prebuilt_voice_config=t.PrebuiltVoiceConfig(voice_name=voice)))),
+        )
+        pcm = resp.candidates[0].content.parts[0].inline_data.data
     except Exception as exc:  # noqa: BLE001
         _log("voice_sample failed:", type(exc).__name__, str(exc)[:150])
         return None
-    if not pcm:
-        return None
-    wav = _pcm_to_wav(bytes(pcm))
-    try:
-        cache.write_bytes(wav)
-    except Exception:  # noqa: BLE001 — cache is best-effort
-        pass
-    return wav
+    return _pcm_to_wav(pcm) if pcm else None
 
 
 def live_model() -> str:
@@ -188,6 +198,19 @@ def is_enabled() -> bool:
 LIVE_LANG = "en"
 
 
+def candidate_first_name(interview: dict) -> str:
+    """The candidate's first name from their résumé contact block, for the
+    coach's greeting ("Hello Eduardo, I'm Maya…"). Empty when unknown — the
+    greeting then falls back to a plain "Hello"."""
+    try:
+        r = db.get_resume(int(interview.get("resume_id") or 0)) if interview.get("resume_id") else None
+        name = (((r or {}).get("parsed") or {}).get("contact") or {}).get("name", "")
+    except Exception:  # noqa: BLE001 — a greeting must never block the session
+        return ""
+    first = str(name or "").strip().split()
+    return first[0].strip(",.").capitalize() if first and first[0].isalpha() else ""
+
+
 def _config(interview: dict, lang: str, personality_id: str = DEFAULT_PERSONALITY,
             voice: str = DEFAULT_VOICE):
     """Build the LiveConnectConfig pinned into the ephemeral token: the SHORT P7
@@ -203,7 +226,8 @@ def _config(interview: dict, lang: str, personality_id: str = DEFAULT_PERSONALIT
         system_instruction=t.Content(parts=[t.Part(
             text=interviewer_system_prompt(interview, lang=LIVE_LANG,
                                            coach_name=coach_name(voice_name),
-                                           style=pers["style"]))]),
+                                           style=pers["style"],
+                                           candidate_name=candidate_first_name(interview)))]),
         input_audio_transcription=t.AudioTranscriptionConfig(),
         output_audio_transcription=t.AudioTranscriptionConfig(),
         speech_config=t.SpeechConfig(

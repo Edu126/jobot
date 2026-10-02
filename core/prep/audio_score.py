@@ -125,9 +125,9 @@ def _build_prompt(questions: list[dict], competencies: list[dict], turns: list[d
 {language_instruction(lang)}
 
 Do this:
-1. Write one takeaway sentence: the biggest strength and the biggest thing to improve. If the answers were weak, say so plainly.
+1. Write one takeaway sentence addressed to the candidate as "you" (never "the candidate"): the biggest strength and the biggest thing to improve. If the answers were weak, say so plainly.
 2. Score every competency with the checks below.
-3. List the top 3 actions for next time — specific and doable in one practice session.
+3. List the top 3 actions for next time, addressed to the candidate ("you") — specific and doable in one practice session.
 4. Provide a clean, accurate transcript of what the candidate said (their turns joined), word for word.
 5. Suggest the next drill: one competency or null.
 

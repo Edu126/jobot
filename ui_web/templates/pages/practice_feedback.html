@@ -115,28 +115,15 @@
 
     <section class="card-quiet p-4">
       <h2 class="text-eyebrow mb-4">{{ _('prep2.feedback.delivery') }}</h2>
-      {% if session.transcript and debrief.delivery %}
-        {% set dv = debrief.delivery %}
-        <div class="grid grid-cols-3 gap-3 text-center">
-          <div><div class="text-metric-sm">{{ dv.wpm or '—' }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.wpm') }}</div></div>
-          <div><div class="text-metric-sm">{{ dv.filler_count }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.fillers') }}</div></div>
-          {% if dv.seconds is defined %}
-          <div><div class="text-metric-sm">{{ _('prep2.pace.' + (dv.pace or 'unknown')) if dv.pace in ['slow','on_target','fast'] else '—' }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.pace') }}</div></div>
-          {% else %}
-          <div><div class="text-metric-sm capitalize">{{ dv.pace or dv.length_band or '—' }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.pace') }}</div></div>
-          {% endif %}
-        </div>
-        {% if dv.seconds %}
-        <p class="text-sm text-subtle text-center mt-3">{{ (dv.seconds // 60) }}:{{ '%02d' % (dv.seconds % 60) }} {{ _('prep2.feedback.talk_time') }} · {{ dv.word_count }} {{ _('prep2.feedback.words') }}</p>
-        {% endif %}
+      {% if gauges %}
+      <div class="space-y-5">
+        {% for g in gauges %}
+        {{ ui.gauge(g, _('prep2.gauge.' + g.key), _('prep2.gauge.' + g.key + '.unit'),
+                    _('prep2.gauge.' + g.key + '.' + g.verdict), _('prep2.gauge.' + g.key + '.note')) }}
+        {% endfor %}
+      </div>
       {% else %}
-        {% set ns = namespace(wpm=0, fillers=0, n=0) %}
-        {% for a in answers %}{% if a.delivery %}{% set ns.wpm = ns.wpm + a.delivery.wpm %}{% set ns.fillers = ns.fillers + a.delivery.filler_count %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}
-        <div class="grid grid-cols-3 gap-3 text-center">
-          <div><div class="text-metric-sm">{{ (ns.wpm / ns.n) | round | int if ns.n else 0 }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.wpm') }}</div></div>
-          <div><div class="text-metric-sm">{{ ns.fillers }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.fillers') }}</div></div>
-          <div><div class="text-metric-sm">{{ ns.n }}</div><div class="text-sm text-body-muted mt-1">{{ _('prep2.feedback.answers') }}</div></div>
-        </div>
+      <p class="text-sm text-body-muted">{{ _('prep2.gauge.none') }}</p>
       {% endif %}
     </section>
   </div>
