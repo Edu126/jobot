@@ -7,8 +7,9 @@ toggles (affective dialog, proactive audio) and turn-taking (VAD). This module
 exposes exactly those knobs:
 
   - Line test: TTS one sentence with (voice, delivery) → WAV, cached on disk.
-  - A/B trials: two configs, blind, Eduardo picks + tags; appended to a JSONL
-    log on the volume (no DB table — the lab never touches users' schemas).
+  - Takes: every Play is recorded (config + line + WAV) in a side list where
+    Eduardo replays, rates 1–5 and likes them to compare mixed settings —
+    one JSON file on the volume (the lab never touches users' schemas).
   - Live override: a config saved here is applied to the REAL practice session
     (`live._config`) while the lab flag is on, so a full mini-interview can be
     heard with it. Off the flag → ignored.
@@ -143,56 +144,118 @@ def line_wav(cfg: dict[str, Any], text: str) -> Optional[bytes]:
     return wav
 
 
-# ---------- A/B trial log ----------
+# ---------- takes: every Play is recorded ----------
+# A take = one generated sample (config + line + WAV). Eduardo plays, rates
+# (1–5) and likes them in a side list to compare across mixed settings.
+# Stored as one JSON file on the volume (an internal tool on one app — no DB).
 
-def _log_path() -> Path:
-    return lab_dir() / "trials.jsonl"
-
-
-def log_trial(a: dict, b: dict, *, winner: str, tags: list[str], note: str, text: str,
-              blind: bool) -> dict:
-    row = {
-        "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
-        "a": clean_config(a), "b": clean_config(b),
-        "winner": winner if winner in ("a", "b", "tie") else "tie",
-        "tags": [str(x)[:24] for x in (tags or [])][:6],
-        "note": str(note or "")[:300], "text": str(text or "")[:MAX_LINE], "blind": bool(blind),
-    }
-    with _log_path().open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return row
+def _takes_path() -> Path:
+    return lab_dir() / "takes.json"
 
 
-def trials(limit: int = 50) -> list[dict]:
-    p = _log_path()
+def _load_takes() -> list[dict]:
+    p = _takes_path()
     if not p.exists():
         return []
-    rows = []
-    for line in p.read_text(encoding="utf-8").splitlines():
-        try:
-            rows.append(json.loads(line))
-        except ValueError:
-            continue
-    return list(reversed(rows))[:limit]
+    try:
+        rows = json.loads(p.read_text(encoding="utf-8"))
+    except ValueError:
+        return []
+    return rows if isinstance(rows, list) else []
 
 
-def leaderboard(rows: list[dict]) -> list[dict]:
-    """Per voice: wins / appearances across logged trials (ties count as
-    appearances only). Sorted by win rate, then wins."""
+def _save_takes(rows: list[dict]) -> None:
+    tmp = _takes_path().with_suffix(".tmp")
+    tmp.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(_takes_path())
+
+
+def takes() -> list[dict]:
+    """Newest first (by `seq` — timestamps tie when two Plays land in one second)."""
+    return sorted(_load_takes(), key=lambda r: (r.get("seq", 0), r.get("ts", "")), reverse=True)
+
+
+def record_take(cfg: dict[str, Any], text: str) -> Optional[dict]:
+    """Generate (or reuse) the sample for (cfg, text) and record it as a take.
+    The same config + line twice → the same take (no duplicates), moved to the
+    top. None when TTS fails."""
+    cfg = clean_config(cfg)
+    text = (text or DEFAULT_LINE).strip()[:MAX_LINE]
+    key = _cache_key(cfg, text)
+    rows = _load_takes()
+    now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+    seq = max((r.get("seq", 0) for r in rows), default=0) + 1
+    for r in rows:
+        if r.get("id") == key and (lab_dir() / f"tts-{key}.wav").exists():
+            r["ts"], r["seq"] = now, seq
+            _save_takes(rows)
+            return r
+    wav = line_wav(cfg, text)
+    if not wav:
+        return None
+    take = {"id": key, "ts": now, "seq": seq, "cfg": cfg, "text": text, "delivery": delivery_line(cfg),
+            "seconds": round(max(0, len(wav) - 44) / 48000, 1),  # 24 kHz · 16-bit mono
+            "rating": 0, "liked": False, "note": ""}
+    rows = [r for r in rows if r.get("id") != key] + [take]
+    _save_takes(rows)
+    return take
+
+
+def take_wav(take_id: str) -> Optional[bytes]:
+    if not take_id.isalnum():
+        return None
+    p = lab_dir() / f"tts-{take_id}.wav"
+    return p.read_bytes() if p.exists() else None
+
+
+def update_take(take_id: str, *, rating: Any = None, liked: Any = None,
+                note: Any = None) -> Optional[dict]:
+    rows = _load_takes()
+    for r in rows:
+        if r.get("id") == take_id:
+            if rating is not None:
+                try:
+                    r["rating"] = max(0, min(5, int(rating)))
+                except (TypeError, ValueError):
+                    pass
+            if liked is not None:
+                r["liked"] = bool(liked)
+            if note is not None:
+                r["note"] = str(note)[:300]
+            _save_takes(rows)
+            return r
+    return None
+
+
+def delete_take(take_id: str) -> bool:
+    rows = _load_takes()
+    keep = [r for r in rows if r.get("id") != take_id]
+    if len(keep) == len(rows):
+        return False
+    _save_takes(keep)
+    return True
+
+
+def voice_summary(rows: list[dict]) -> list[dict]:
+    """Per voice across rated takes: average rating, likes, take count —
+    "which voices are winning so far". Unrated takes don't drag the average."""
     stats: dict[str, dict] = {}
     for r in rows:
-        for side in ("a", "b"):
-            v = (r.get(side) or {}).get("voice")
-            if not v:
-                continue
-            s = stats.setdefault(v, {"voice": v, "wins": 0, "played": 0})
-            s["played"] += 1
-            if r.get("winner") == side:
-                s["wins"] += 1
-    out = list(stats.values())
-    for s in out:
-        s["rate"] = round(100 * s["wins"] / s["played"]) if s["played"] else 0
-    return sorted(out, key=lambda s: (-s["rate"], -s["wins"], s["voice"]))
+        v = (r.get("cfg") or {}).get("voice")
+        if not v:
+            continue
+        s = stats.setdefault(v, {"voice": v, "takes": 0, "likes": 0, "_sum": 0, "_n": 0})
+        s["takes"] += 1
+        s["likes"] += 1 if r.get("liked") else 0
+        if r.get("rating"):
+            s["_sum"] += r["rating"]
+            s["_n"] += 1
+    out = []
+    for s in stats.values():
+        avg = round(s.pop("_sum") / s["_n"], 1) if s["_n"] else 0
+        s.pop("_n")
+        out.append({**s, "avg": avg})
+    return sorted(out, key=lambda s: (-s["avg"], -s["likes"], s["voice"]))
 
 
 # ---------- live override ----------

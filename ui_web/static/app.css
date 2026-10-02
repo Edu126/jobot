@@ -2397,6 +2397,14 @@ a.stepper-arrow:hover { background: var(--surf-3); }
 .ui-meter { display: inline-flex; gap: 0.25rem; align-items: center; }
 .ui-meter__dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: oklch(var(--n-7) / 0.15); }
 .ui-meter__dot--on { background: oklch(var(--p)); }
+/* Voice lab takes list (REQ-046) — scrolls inside its card. */
+.lab-takes { max-height: 70vh; overflow-y: auto; margin: 0 -0.25rem; padding: 0 0.25rem; }
+.lab-take { display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.75rem 0.5rem; border-radius: var(--r-md); }
+.lab-take--on { background: var(--surf-1); }
+.lab-star { padding: 0 0.1rem; color: oklch(var(--n-7) / 0.22); font-size: 1rem; line-height: 1; }
+.lab-star--on { color: var(--v-stretch-solid); }
+.lab-heart { color: oklch(var(--n-7) / 0.45); font-size: 1.05rem; line-height: 1; }
+.lab-heart--on { color: var(--v-poor-solid); }
 /* Delivery gauge (ui.gauge, REQ-043) — zoned track + marker. */
 .ui-gauge { display: flex; flex-direction: column; gap: 0.5rem; }
 .ui-gauge__head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }

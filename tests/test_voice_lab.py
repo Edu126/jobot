@@ -3,7 +3,7 @@
   2. configs from the browser are coerced to known values;
   3. the live override is ignored when the flag is off, and when on it reaches
      the REAL Live config: voice, delivery line in P7, affective, proactive, VAD;
-  4. the A/B log + leaderboard round-trip; the page renders.
+  4. every Play is a recorded take (deduped); rate/like/delete; summary; page renders.
     .venv/bin/python tests/test_voice_lab.py
 """
 from __future__ import annotations
@@ -47,8 +47,8 @@ def _client():
 def test_closed_without_flag():
     os.environ.pop("JOBOT_VOICE_LAB", None)
     c = _client()
-    for method, url in [("get", "/lab/voice"), ("post", "/lab/voice/line"),
-                        ("post", "/lab/voice/trial"), ("post", "/lab/voice/live")]:
+    for method, url in [("get", "/lab/voice"), ("post", "/lab/voice/take"), ("get", "/lab/voice/take/abc.wav"),
+                        ("post", "/lab/voice/take/abc"), ("post", "/lab/voice/live")]:
         r = getattr(c, method)(url, json={}) if method == "post" else c.get(url)
         _assert(r.status_code == 404, f"{url} must 404 without the flag")
     _store[V.LIVE_OVERRIDE_KEY] = '{"voice": "Kore"}'
@@ -97,31 +97,51 @@ def test_override_reaches_live_config():
     print("PASS test_override_reaches_live_config")
 
 
-def test_trials_page_and_board():
+def test_takes_rate_like_page():
     os.environ["JOBOT_VOICE_LAB"] = "1"
+    calls = []
+
+    def fake_wav(cfg, text):
+        calls.append(cfg["voice"])
+        wav = b"\0" * (44 + 48000 * 3)  # 3 s of 24 kHz 16-bit mono
+        (_tmp / f"tts-{V._cache_key(cfg, text)}.wav").write_bytes(wav)
+        return wav
+    V.line_wav = fake_wav
     try:
         c = _client()
-        a, b = {"voice": "Sulafat"}, {"voice": "Vindemiatrix"}
-        for w in ("b", "b", "a"):
-            r = c.post("/lab/voice/trial", json={"a": a, "b": b, "winner": w, "tags": ["calm"], "blind": True})
-        d = r.json()
-        _assert(len(d["trials"]) == 3 and d["trials"][0]["winner"] == "a", "newest first")
-        board = {x["voice"]: x for x in d["board"]}
-        _assert(board["Vindemiatrix"]["wins"] == 2 and board["Vindemiatrix"]["rate"] == 67, "leaderboard")
+        r1 = c.post("/lab/voice/take", json={"cfg": {"voice": "Sulafat", "tone": "calm"}, "text": "Hello"}).json()
+        r2 = c.post("/lab/voice/take", json={"cfg": {"voice": "Vindemiatrix", "speed": "slower"}, "text": "Hello"}).json()
+        _assert(len(r2["takes"]) == 2 and r2["takes"][0]["cfg"]["voice"] == "Vindemiatrix", "every Play is a take, newest first")
+        _assert(r1["take"]["seconds"] == 3.0, "duration from the WAV")
+        again = c.post("/lab/voice/take", json={"cfg": {"voice": "Sulafat", "tone": "calm"}, "text": "Hello"}).json()
+        _assert(len(again["takes"]) == 2 and calls.count("Sulafat") == 1, "same config+line → same take, no new TTS call")
+        _assert(again["takes"][0]["id"] == r1["take"]["id"], "replayed take moves to the top")
+        tid = r2["take"]["id"]
+        d = c.post(f"/lab/voice/take/{tid}", json={"rating": 9, "liked": True}).json()
+        t = next(x for x in d["takes"] if x["id"] == tid)
+        _assert(t["rating"] == 5 and t["liked"] is True, "rating clamped to 5, liked")
+        _assert(d["summary"][0]["voice"] == "Vindemiatrix" and d["summary"][0]["avg"] == 5.0
+                and d["summary"][0]["likes"] == 1, "winning-so-far summary")
+        _assert(c.get(f"/lab/voice/take/{tid}.wav").headers["content-type"] == "audio/wav", "take audio served")
+        _assert(c.get("/lab/voice/take/..%2Fetc.wav").status_code == 404, "no path games on take ids")
+        _assert(c.post("/lab/voice/take/nope", json={"rating": 3}).status_code == 404, "unknown take → 404")
+        d = c.post(f"/lab/voice/take/{tid}/delete").json()
+        _assert(len(d["takes"]) == 1, "delete")
         r = c.post("/lab/voice/live", json={"cfg": {"voice": "Kore"}})
         _assert(r.json()["override"]["voice"] == "Kore" and "Speak" in r.json()["delivery"], "override set")
         _assert(c.post("/lab/voice/live", json={"clear": True}).json()["override"] is None, "override cleared")
         RI._current = lambda: (None, "", 0, "")
         r = c.get("/lab/voice")
-        _assert(r.status_code == 200 and "Vindemiatrix — Gentle" in r.text and "voiceLab(" in r.text, "page renders")
+        _assert(r.status_code == 200 and "Vindemiatrix — Gentle" in r.text and "voiceLab(" in r.text
+                and "Top rated" in r.text, "page renders with the takes list")
     finally:
         os.environ.pop("JOBOT_VOICE_LAB", None)
-    print("PASS test_trials_page_and_board")
+    print("PASS test_takes_rate_like_page")
 
 
 if __name__ == "__main__":
     test_closed_without_flag()
     test_clean_config()
     test_override_reaches_live_config()
-    test_trials_page_and_board()
+    test_takes_rate_like_page()
     print("all voice-lab tests passed")

@@ -30,40 +30,58 @@ async def voice_lab_page(request: Request):
     from .interviews import _current
     _resume, resume_hash, _rid, _txt = _current()
     interviews = db.list_interviews(resume_hash)[:8] if resume_hash else []
-    rows = lab.trials()
+    rows = lab.takes()
     return templates.TemplateResponse(
         request, "pages/voice_lab.html",
-        {"active_tab": "prep", "voices": lab.GEMINI_VOICES, "speeds": list(lab.SPEEDS),
-         "tones": list(lab.TONES), "energies": list(lab.ENERGIES),
+        {"active_tab": "prep", "voices": lab.GEMINI_VOICES, "tones": list(lab.TONES),
          "default_line": lab.DEFAULT_LINE, "override": lab.live_override(),
-         "interviews": interviews, "trials": rows, "board": lab.leaderboard(rows)})
+         "interviews": interviews, "takes": rows, "summary": lab.voice_summary(rows)})
 
 
-@router.post("/lab/voice/line")
-async def voice_lab_line(request: Request):
-    """TTS one line with a config → WAV (cached by config+text)."""
+def _state() -> dict:
+    rows = lab.takes()
+    return {"takes": rows, "summary": lab.voice_summary(rows)}
+
+
+@router.post("/lab/voice/take")
+async def voice_lab_take(request: Request):
+    """Generate + record one take for {cfg, text}; returns it with the list."""
     if not lab.enabled():
         return _off()
     body = await request.json()
-    cfg = lab.clean_config(body.get("cfg") or {})
-    wav = await asyncio.to_thread(lab.line_wav, cfg, str(body.get("text") or ""))
-    if not wav:
+    take = await asyncio.to_thread(lab.record_take, body.get("cfg") or {}, str(body.get("text") or ""))
+    if not take:
         return JSONResponse({"error": "tts_failed"}, status_code=502)
-    return Response(content=wav, media_type="audio/wav",
-                    headers={"X-Delivery": lab.delivery_line(cfg).encode("ascii", "ignore").decode()})
+    return JSONResponse({"take": take, **_state()})
 
 
-@router.post("/lab/voice/trial")
-async def voice_lab_trial(request: Request):
-    """Log one A/B verdict; returns the refreshed log + leaderboard."""
+@router.get("/lab/voice/take/{take_id}.wav")
+async def voice_lab_take_wav(take_id: str):
+    if not lab.enabled():
+        return _off()
+    wav = lab.take_wav(take_id)
+    if not wav:
+        return _off()
+    return Response(content=wav, media_type="audio/wav", headers={"Cache-Control": "private, max-age=86400"})
+
+
+@router.post("/lab/voice/take/{take_id}")
+async def voice_lab_take_update(take_id: str, request: Request):
+    """Rate (0–5), like/unlike, or note a take — only the fields sent."""
     if not lab.enabled():
         return _off()
     b = await request.json()
-    lab.log_trial(b.get("a") or {}, b.get("b") or {}, winner=str(b.get("winner") or ""),
-                  tags=b.get("tags") or [], note=str(b.get("note") or ""),
-                  text=str(b.get("text") or ""), blind=bool(b.get("blind")))
-    rows = lab.trials()
-    return JSONResponse({"trials": rows, "board": lab.leaderboard(rows)})
+    if not lab.update_take(take_id, rating=b.get("rating"), liked=b.get("liked"), note=b.get("note")):
+        return JSONResponse({"error": "not_found"}, status_code=404)
+    return JSONResponse(_state())
+
+
+@router.post("/lab/voice/take/{take_id}/delete")
+async def voice_lab_take_delete(take_id: str):
+    if not lab.enabled():
+        return _off()
+    lab.delete_take(take_id)
+    return JSONResponse(_state())
 
 
 @router.post("/lab/voice/live")

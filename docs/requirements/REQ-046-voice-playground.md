@@ -2,7 +2,7 @@
 
 Date: 2026-10-01
 Source: Eduardo
-Status: Building (v1 on -edu: line test, blind A/B log, live override — ADR-068)
+Status: Building. v1 on -edu (ADR-068): line test, live override. v1.1, same day: A/B replaced by a recorded takes list with ★ rating + ♥, per Eduardo's "only one is fine, record each one tested, list on the side, rate or like".
 
 ## What they asked for
 > "me gustaría tener un playground de voces, donde podamos jugar a subir y

@@ -10,7 +10,7 @@ We choose the coach's voice and delivery by guessing. Gemini has no pitch or rat
 ## Decision
 - `/lab/voice` and its routes 404 unless `JOBOT_VOICE_LAB=1`, which is set only on -edu.
 - **Line test:** TTS with the voice plus a delivery line, cached by config.
-- **Blind A/B:** results are appended to `voice_lab/trials.jsonl` on the volume. There's no DB table.
+- **Takes, not A/B** (revised 2026-10-01, Eduardo): one settings panel. Every Play is recorded as a *take* (config + line + WAV) in a side list, where each take can be replayed, rated 1–5, liked, loaded back or deleted, so mixed settings compare at a glance. Same config + line reuses the take. Stored in `voice_lab/takes.json` on the volume; there's no DB table.
 - **Live test:** a saved override is applied inside `live._config` to real practice sessions, but only while the flag is on. The live page shows a "Lab" chip.
 - Winners reach users only through a code change plus an ADR.
 
