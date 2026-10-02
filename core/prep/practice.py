@@ -62,6 +62,7 @@ _WORD_RE = re.compile(r"\b[\w']+\b", re.UNICODE)
 def interviewer_system_prompt(
     interview: dict, *, lang: Optional[str] = None,
     coach_name: str = "", style: str = "", candidate_name: str = "",
+    delivery: str = "",
 ) -> str:
     """P7 CORE — the SHORT system instruction pinned in the ephemeral token
     (ADR-052). Kept under ~1500 chars on purpose: the Live API **silently hangs**
@@ -83,7 +84,7 @@ Speak and conduct the ENTIRE interview in English, even if the candidate answers
 
 You conduct this as a natural spoken conversation. The candidate/company context + your question list arrive as a first message. Then open like a professional welcoming someone to a call: "{hello}, {intro}. Thanks for making the time today — we'll talk about the {role} role at {company}." Then a calm transition to your first question.
 
-Delivery: a calm, experienced HR interviewer — relaxed pace, low even tone, conversational. Never upbeat or salesy; no exclamations.
+Delivery: {delivery or "a calm, experienced HR interviewer — relaxed pace, low even tone, conversational. Never upbeat or salesy; no exclamations."}
 
 How to behave:
 - Name the role and company only in that greeting. Afterward refer to them lightly ("the role", "here", "this position") — do NOT restate the full role title and company each turn.

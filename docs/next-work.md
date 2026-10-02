@@ -6,7 +6,7 @@ Branch `feat/prep-interview-module` (unmerged; live on -edu). Merging to
 `main` ships to every user — Eduardo decides when.
 
 **Voice & coach (REQ-044, REQ-046)**
-1. **Voice playground** `/lab/voice`, -edu only behind `JOBOT_VOICE_LAB=1` ([REQ-046](requirements/REQ-046-voice-playground.md)). Steps:
+1. ✅ v1 shipped 2026-10-01 ([ADR-068](decisions/ADR-068-voice-lab-edu-only-live-override.md)) — next: use it. **Voice playground** `/lab/voice`, -edu only behind `JOBOT_VOICE_LAB=1` ([REQ-046](requirements/REQ-046-voice-playground.md)). Steps:
    1. Line test (TTS, instant).
    2. Live 60s mini-session.
    3. Blind A/B with ratings logged with the full config.

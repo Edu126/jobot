@@ -73,8 +73,11 @@ DEFAULT_PERSONALITY = "neutral"
 
 
 def coach_name(voice: str) -> str:
-    """The first name the coach uses for this voice."""
-    return VOICES.get(voice, VOICES[DEFAULT_VOICE])[2]
+    """The first name the coach uses for this voice. A lab-only voice (not in
+    VOICES, REQ-046) introduces itself by its Gemini name."""
+    if voice in VOICES:
+        return VOICES[voice][2]
+    return voice or VOICES[DEFAULT_VOICE][2]
 
 
 def personality_meta(personality_id: str) -> dict:
@@ -219,30 +222,46 @@ def _config(interview: dict, lang: str, personality_id: str = DEFAULT_PERSONALIT
     from personality), both-side transcription, VAD tuned so echo/background noise
     doesn't flicker the turn, and session resumption so a ~10-min GoAway resumes."""
     from google.genai import types as t
+
+    from . import voice_lab
     pers = personality_meta(personality_id)
     voice_name = voice if voice in VOICES else DEFAULT_VOICE
+    # Voice playground override (REQ-046/ADR-068) — -edu only, flag-gated.
+    lab = voice_lab.live_override()
+    delivery, affective, silence_ms, extra = "", affective_dialog_enabled(), 700, {}
+    if lab:
+        voice_name = lab["voice"]
+        delivery = voice_lab.delivery_line(lab)
+        affective = lab["affective"] or affective
+        silence_ms = lab["silence_ms"]
+        if lab["proactive"]:
+            extra["proactivity"] = t.ProactivityConfig(proactive_audio=True)
+        _log(f"voice_lab override voice={voice_name} affective={affective} "
+             f"proactive={lab['proactive']} silence_ms={silence_ms}")
     return t.LiveConnectConfig(
         response_modalities=["AUDIO"],
         system_instruction=t.Content(parts=[t.Part(
             text=interviewer_system_prompt(interview, lang=LIVE_LANG,
                                            coach_name=coach_name(voice_name),
                                            style=pers["style"],
-                                           candidate_name=candidate_first_name(interview)))]),
+                                           candidate_name=candidate_first_name(interview),
+                                           delivery=delivery))]),
         input_audio_transcription=t.AudioTranscriptionConfig(),
         output_audio_transcription=t.AudioTranscriptionConfig(),
         speech_config=t.SpeechConfig(
             voice_config=t.VoiceConfig(
                 prebuilt_voice_config=t.PrebuiltVoiceConfig(voice_name=voice_name))),
         temperature=0.7,
-        enable_affective_dialog=affective_dialog_enabled(),
+        enable_affective_dialog=affective,
         realtime_input_config=t.RealtimeInputConfig(
             automatic_activity_detection=t.AutomaticActivityDetection(
                 start_of_speech_sensitivity=t.StartSensitivity.START_SENSITIVITY_LOW,
                 end_of_speech_sensitivity=t.EndSensitivity.END_SENSITIVITY_LOW,
                 prefix_padding_ms=200,
-                silence_duration_ms=700,
+                silence_duration_ms=silence_ms,
             )),
         session_resumption=t.SessionResumptionConfig(),
+        **extra,
     )
 
 

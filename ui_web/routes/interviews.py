@@ -33,6 +33,7 @@ from core.prep import practice as prep_practice
 from core.prep import toolkit as prep_toolkit
 from core.prep import readiness as prep_readiness
 from core.prep import session_score as prep_session_score
+from core.prep import voice_lab as prep_voice_lab
 from core.prep import story_bank as prep_story_bank
 from core.prep import tavily
 from core import settings as app_settings
@@ -610,11 +611,13 @@ async def practice_voice(request: Request, interview_id: int, session_id: int):
         return _redirect(f"/interviews/{interview_id}/practice/{session_id}/feedback")
     if not prep_live.is_enabled():
         return _redirect(f"/interviews/{interview_id}/practice/{session_id}")
+    lab = prep_voice_lab.live_override()   # REQ-046: -edu voice playground override
     return templates.TemplateResponse(
         request, "pages/practice_live.html",
         {"active_tab": "prep", "interview": interview, "session": session,
          "step": "practice", "live_model": prep_live.live_model(),
-         "coach_name": prep_live.coach_name(session.get("voice") or prep_live.DEFAULT_VOICE)})
+         "coach_name": prep_live.coach_name(lab["voice"] if lab else (session.get("voice") or prep_live.DEFAULT_VOICE)),
+         "lab": lab, "lab_line": prep_voice_lab.delivery_line(lab) if lab else ""})
 
 
 @router.post("/interviews/{interview_id}/practice/{session_id}/live-token")

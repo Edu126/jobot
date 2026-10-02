@@ -2,7 +2,7 @@
 
 Date: 2026-10-01
 Source: Eduardo
-Status: Open
+Status: Building (v1 on -edu: line test, blind A/B log, live override — ADR-068)
 
 ## What they asked for
 > "me gustaría tener un playground de voces, donde podamos jugar a subir y

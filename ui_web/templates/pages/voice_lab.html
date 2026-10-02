@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
+{% block title %}{{ _('lab.voice.title') }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+{% block main_class %}py-6{% endblock %}
+
+{# Voice playground (REQ-046, ADR-068) — -edu only. One job: hear two coach
+   configs side by side, pick the calmer/more human one, and log it. #}
+{% set seed = {'voice': 'Sulafat', 'speed': 'normal', 'tone': 'calm', 'energy': 'low', 'extra': '',
+               'affective': false, 'proactive': false, 'silence_ms': 700} %}
+{% block content %}
+<div class="space-y-6"
+     x-data='voiceLab({{ {"a": seed, "b": dict(seed, voice="Vindemiatrix"), "text": default_line,
+                          "override": override, "trials": trials, "board": board} | tojson }})'>
+
+  {% call ui.page_header(_('lab.voice.title'), lede=_('lab.voice.lede'), size='sm') %}
+    {{ ui.chip(_('lab.voice.experimental'), kind='accent', icon='ph-flask') }}
+  {% endcall %}
+
+  {# ---- the line both sides speak ---- #}
+  {% call ui.section(eyebrow=_('lab.voice.line')) %}
+    <textarea class="ui-field w-full" rows="2" maxlength="400" x-model="text"></textarea>
+  {% endcall %}
+
+  {# ---- A | B ---- #}
+  <div class="grid md:grid-cols-2 gap-4">
+    {% for side in ['a', 'b'] %}
+    {# blind: on-screen order follows the shuffle, so position can't give it away #}
+    <section class="card-quiet p-4 space-y-4" :style="'order:' + order.indexOf('{{ side }}')">
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-body-strong" x-text="blind ? '{{ _('lab.voice.sample') }} ' + (order.indexOf('{{ side }}') + 1) : '{{ side|upper }}'"></h2>
+        {{ ui.button(_('lab.voice.play'), variant='primary', size='sm', icon='ph-play',
+                     attrs={'@click': "play('" ~ side ~ "')", ':disabled': "busy === '" ~ side ~ "'"}) }}
+      </div>
+
+      <div x-show="!blind" class="space-y-4">
+        <label class="block space-y-1.5">
+          <span class="text-label">{{ _('lab.voice.voice') }}</span>
+          <select class="select select-bordered select-sm w-full" x-model="{{ side }}.voice">
+            {% for v, meta in voices.items() %}<option value="{{ v }}">{{ v }} — {{ meta[0] }}</option>{% endfor %}
+          </select>
+        </label>
+        <div class="space-y-1.5">
+          <span class="text-label">{{ _('lab.voice.speed') }}</span>
+          {{ ui.seg_tabs([('slower', _('lab.voice.speed.slower'), none), ('normal', _('lab.voice.speed.normal'), none), ('faster', _('lab.voice.speed.faster'), none)], side ~ '.speed') }}
+        </div>
+        <label class="block space-y-1.5">
+          <span class="text-label">{{ _('lab.voice.tone') }}</span>
+          <select class="select select-bordered select-sm w-full" x-model="{{ side }}.tone">
+            {% for t in tones %}<option value="{{ t }}">{{ _('lab.voice.tone.' + t) }}</option>{% endfor %}
+          </select>
+        </label>
+        <div class="space-y-1.5">
+          <span class="text-label">{{ _('lab.voice.energy') }}</span>
+          {{ ui.seg_tabs([('low', _('lab.voice.energy.low'), none), ('medium', _('lab.voice.energy.medium'), none), ('high', _('lab.voice.energy.high'), none)], side ~ '.energy') }}
+        </div>
+        <label class="block space-y-1.5">
+          <span class="text-label">{{ _('lab.voice.extra') }}</span>
+          <input class="ui-field w-full" maxlength="160" x-model="{{ side }}.extra" placeholder="{{ _('lab.voice.extra_ph') }}">
+        </label>
+
+        <details class="ui-inset text-sm">
+          <summary class="cursor-pointer">🧪 {{ _('lab.voice.live_only') }}</summary>
+          <div class="space-y-3 mt-3">
+            <label class="flex items-center justify-between gap-3"><span>{{ _('lab.voice.affective') }}</span>
+              <input type="checkbox" class="toggle toggle-sm" x-model="{{ side }}.affective"></label>
+            <label class="flex items-center justify-between gap-3"><span>{{ _('lab.voice.proactive') }}</span>
+              <input type="checkbox" class="toggle toggle-sm" x-model="{{ side }}.proactive"></label>
+            <label class="block space-y-1"><span>{{ _('lab.voice.silence') }}: <b x-text="{{ side }}.silence_ms"></b> ms</span>
+              <input type="range" min="300" max="2000" step="100" class="range range-xs" x-model.number="{{ side }}.silence_ms"></label>
+            <p class="text-subtle">{{ _('lab.voice.live_only_note') }}</p>
+          </div>
+        </details>
+
+        <div>{{ ui.button(_('lab.voice.use_live'), variant='secondary', size='sm', icon='ph-broadcast',
+                          attrs={'@click': "useLive('" ~ side ~ "')"}) }}</div>
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+
+  {# ---- verdict ---- #}
+  {% call ui.callout(eyebrow=_('lab.voice.verdict')) %}
+    <div class="space-y-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="toggle toggle-sm" x-model="blind" @change="shuffle()">{{ _('lab.voice.blind') }}</label>
+      </div>
+      <p class="text-sm text-body-muted">{{ _('lab.voice.question') }}</p>
+      <div class="flex flex-wrap gap-2">
+        <template x-for="opt in ['a', 'tie', 'b']" :key="opt">
+          <button type="button" class="ui-option" :class="winner === opt && 'ui-option--on'" @click="winner = opt"
+                  x-text="opt === 'tie' ? '{{ _('lab.voice.tie') }}' : (blind ? '{{ _('lab.voice.sample') }} ' + (order.indexOf(opt) + 1) : opt.toUpperCase())"></button>
+        </template>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        {% for tag in ['calm', 'human', 'clear', 'too_fast', 'salesy', 'robotic'] %}
+        <button type="button" class="ui-option" :class="tags.includes('{{ tag }}') && 'ui-option--on'"
+                @click="toggleTag('{{ tag }}')">{{ _('lab.voice.tag.' + tag) }}</button>
+        {% endfor %}
+      </div>
+      <input class="ui-field w-full" maxlength="300" x-model="note" placeholder="{{ _('lab.voice.note_ph') }}">
+      <div>{{ ui.button(_('lab.voice.save'), variant='primary', icon='ph-check', attrs={'@click': 'save()', ':disabled': '!winner'}) }}</div>
+      <p class="text-sm text-body-muted" x-show="revealed" x-cloak x-text="revealed"></p>
+    </div>
+  {% endcall %}
+
+  {# ---- live override ---- #}
+  {% call ui.section(eyebrow=_('lab.voice.live')) %}
+    <div class="card-quiet p-4 space-y-3">
+      <template x-if="override">
+        <div class="space-y-2">
+          <p><b x-text="override.voice"></b> <span x-text="summary(override)"></span></p>
+          <p class="text-sm text-body-muted">{{ _('lab.voice.live_on') }}</p>
+          <div class="flex flex-wrap gap-2">
+            {% for iv in interviews %}{{ ui.button(_('lab.voice.try_on', name=(iv.company or iv.role_title or '#' ~ iv.id)), variant='secondary', size='sm', icon='ph-microphone', href='/interviews/' ~ iv.id ~ '/practice') }}{% endfor %}
+            {{ ui.button(_('lab.voice.clear'), variant='ghost', size='sm', icon='ph-x', attrs={'@click': 'clearLive()'}) }}
+          </div>
+        </div>
+      </template>
+      <p x-show="!override" class="text-sm text-body-muted">{{ _('lab.voice.live_off') }}</p>
+    </div>
+  {% endcall %}
+
+  {# ---- what we've learned ---- #}
+  <div class="grid md:grid-cols-2 gap-4">
+    <section class="card-quiet p-4">
+      <h2 class="text-eyebrow mb-3">{{ _('lab.voice.board') }}</h2>
+      <p x-show="!board.length" class="text-sm text-body-muted">{{ _('lab.voice.none') }}</p>
+      <div class="space-y-1.5 text-sm" role="list">
+        <template x-for="r in board" :key="r.voice">
+          <div role="listitem" class="flex justify-between gap-2"><span x-text="r.voice"></span>
+            <span class="text-body-muted" x-text="r.wins + ' / ' + r.played + ' · ' + r.rate + '%'"></span></div>
+        </template>
+      </div>
+    </section>
+    <section class="card-quiet p-4">
+      <h2 class="text-eyebrow mb-3">{{ _('lab.voice.log') }}</h2>
+      <p x-show="!trials.length" class="text-sm text-body-muted">{{ _('lab.voice.none') }}</p>
+      <div class="space-y-2 text-sm" role="list">
+        <template x-for="t in trials.slice(0, 12)" :key="t.ts">
+          <div role="listitem"><span class="text-subtle" x-text="t.ts.slice(5, 16).replace('T', ' ')"></span>
+            <b x-text="' ' + t.a.voice"></b> vs <b x-text="t.b.voice"></b> →
+            <span x-text="t.winner === 'tie' ? '=' : t[t.winner].voice"></span>
+            <span class="text-body-muted" x-text="(t.tags || []).join(', ')"></span>
+            <span class="text-body-muted" x-show="t.note" x-text="'— ' + t.note"></span></div>
+        </template>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+function voiceLab(init) {
+  return {
+    ...init, blind: false, order: ['a', 'b'], winner: '', tags: [], note: '', busy: '', revealed: '',
+    _audio: null,
+    summary(o) {
+      const bits = [o.speed + ' / ' + o.tone + ' / ' + o.energy, o.silence_ms + ' ms'];
+      if (o.affective) bits.push('🧪 affective'); if (o.proactive) bits.push('🧪 proactive');
+      return '· ' + bits.join(' · ');
+    },
+    shuffle() { this.order = Math.random() < 0.5 ? ['a', 'b'] : ['b', 'a']; this.revealed = ''; },
+    toggleTag(t) { this.tags = this.tags.includes(t) ? this.tags.filter(x => x !== t) : [...this.tags, t]; },
+    async play(side) {
+      this.busy = side;
+      try {
+        const r = await fetch('/lab/voice/line', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({cfg: this[side], text: this.text})});
+        if (!r.ok) { Alpine.store('toast').show('{{ _('lab.voice.tts_failed') }}', 'info'); return; }
+        const url = URL.createObjectURL(await r.blob());
+        if (this._audio) this._audio.pause();
+        this._audio = new Audio(url); this._audio.play();
+      } finally { this.busy = ''; }
+    },
+    async save() {
+      const r = await fetch('/lab/voice/trial', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({a: this.a, b: this.b, winner: this.winner, tags: this.tags, note: this.note,
+                              text: this.text, blind: this.blind})});
+      if (!r.ok) return;
+      const d = await r.json(); this.trials = d.trials; this.board = d.board;
+      if (this.blind) this.revealed = '{{ _('lab.voice.revealed') }}'.replace('{a}', this.a.voice).replace('{b}', this.b.voice)
+                                      .replace('{one}', this.order[0].toUpperCase());
+      this.winner = ''; this.tags = []; this.note = '';
+      if (this.blind) this.shuffle();
+    },
+    async useLive(side) {
+      const r = await fetch('/lab/voice/live', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cfg: this[side]})});
+      if (r.ok) this.override = (await r.json()).override;
+    },
+    async clearLive() {
+      const r = await fetch('/lab/voice/live', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({clear: true})});
+      if (r.ok) this.override = null;
+    },
+  };
+}
+</script>
+{% endblock %}
