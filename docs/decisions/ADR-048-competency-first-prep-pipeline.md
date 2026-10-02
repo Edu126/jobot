@@ -1,7 +1,7 @@
 # ADR-048: Competency-first prep pipeline — versioned JSON artifacts, bands not scores
 
 Date: 2026-09-21
-Status: Accepted (P1+P2 first; REQ-041)
+Status: Accepted (P1+P2 first; REQ-041). "Bands not scores" partially superseded for Practice by ADR-059 (rubric-built 0–100).
 Relates to: REQ-041, ADR-047, ADR-008 (prompt conventions), GOV-005 (enhance-not-fabricate)
 
 ## Context

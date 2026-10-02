@@ -1,5 +1,36 @@
 # Next work — open items
 
+## Prep / Practice — open (state as of 2026-10-01)
+
+Branch `feat/prep-interview-module` (unmerged; live on -edu). Merging to
+`main` ships to every user — Eduardo decides when.
+
+**Voice & coach (REQ-044, REQ-046)**
+1. **Voice playground** `/lab/voice`, -edu only behind `JOBOT_VOICE_LAB=1` ([REQ-046](requirements/REQ-046-voice-playground.md)). Steps:
+   1. Line test (TTS, instant).
+   2. Live 60s mini-session.
+   3. Blind A/B with ratings logged with the full config.
+   4. Promote winners via ADR.
+2. **Calmer voices A/B.** Current five vs Vindemiatrix / Achernar / Schedar / Gacrux / Sadaltager. Swap `VOICES`, then `scripts/gen_voice_samples.py --force`.
+3. 🧪 **Experiment: affective dialog.** Turn on `GEMINI_AFFECTIVE_DIALOG=1` on -edu for a few sessions and write down what changes (tone matching, pacing, weirdness). Exploratory, so we may find something new.
+4. 🧪 **Experiment: proactive audio.** Does it stop the coach answering noise or off-topic input?
+5. Hear the new opening ("Hello Eduardo, I'm Maya…") + calm register live; adjust P7 if it still sounds salesy (budget < 2500 chars).
+
+**Feedback & scoring (REQ-042, REQ-043, ADR-059)**
+6. **Speaking seconds are 0 on some voice sessions** (session 39), which leaves no pace gauge. Check the mic meter / `_speakingMs` path. This is linked to the known "meter dead" bug.
+7. **Answer-length gauge in voice:** split answers on coach turns so length works for voice too.
+8. **Session-score leniency watch:** the AI can still tick "answered/example" on a real-but-weak quote. Build a junk-answer fixture set into the adversarial harness and track the false-solid rate.
+9. **Align score vocabularies:** fit ring / prep band / session score use "strong/solid" with different cut-offs (REQ-042 weak spots).
+10. **Readiness reads only the latest session.** Decide between the latest, the best, or a rolling view.
+
+**Housekeeping**
+11. After the memory merge: delete the old `-jobot-app` Claude memory folder (needs Eduardo's OK); work from `Nextcloud/Jobot/` only.
+12. `/simplify` + `/code-review` over the prep-module commits before the merge to `main`.
+
+---
+
+## Earlier state (2026-09-08)
+
 **State as of 2026-09-08.** Scoring v2 is **LIVE**, not pending. The
 coverage-anchored 0-100 ([ADR-018](decisions/ADR-018-bucketed-scoring-engine-rank-then-judge.md))
 + cache stability ([ADR-019](decisions/ADR-019-gemini-scoring-nondeterministic-stability-via-cache.md))

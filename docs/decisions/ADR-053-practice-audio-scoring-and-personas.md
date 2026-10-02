@@ -1,7 +1,7 @@
 # ADR-053: Practice — score the debrief from raw audio; interviewer personas; split prompt
 
 Date: 2026-09-22
-Status: Accepted (needs live QA on -edu)
+Status: Accepted (needs live QA on -edu). **Partially superseded:** bundled personas → ADR-063; audio-read delivery + holistic bands → ADR-059 (delivery now counted in code, score built from verified checks).
 Relates to: REQ-041, ADR-052, GOV-008; informed by the Alvalens "Interview Live" write-up
 
 ## Context
