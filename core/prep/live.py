@@ -88,12 +88,9 @@ def personality_meta(personality_id: str) -> dict:
 # Live model used to reply "Hi Theo!" to it, thinking the user was Theo).
 _SAMPLE_LINE = ("Hello, I'm {name}. I'll be your interviewer today. "
                 "Take a moment to get settled, and we'll begin when you're ready.")
-# Delivery note for the TTS model — same calm HR register as the live prompt.
-_SAMPLE_STYLE = "Say this in a calm, warm, unhurried voice, like an experienced HR interviewer opening a call:"
 # Pre-generated previews shipped with the app (scripts/gen_voice_samples.py) —
 # a local file, no API call when the candidate clicks a voice.
 STATIC_SAMPLES_DIR = __import__("pathlib").Path(__file__).resolve().parents[2] / "ui_web" / "static" / "voice_samples"
-TTS_MODEL = "gemini-2.5-flash-preview-tts"
 
 
 def _log(*a) -> None:
@@ -128,7 +125,7 @@ async def voice_sample_wav(voice: str) -> Optional[bytes]:
     static = STATIC_SAMPLES_DIR / f"{voice}.wav"
     if static.exists():
         return static.read_bytes()
-    cache = _samples_dir() / f"{voice}-tts.wav"
+    cache = _samples_dir() / f"{voice}-live.wav"
     if cache.exists():
         return cache.read_bytes()
     if not resolve_api_key():
@@ -144,25 +141,16 @@ async def voice_sample_wav(voice: str) -> Optional[bytes]:
 
 
 def synthesize_sample(voice: str) -> Optional[bytes]:
-    """One TTS call → WAV of the sample line in `voice`. Used by the route on a
-    cache miss and by scripts/gen_voice_samples.py to ship static previews."""
-    from google.genai import types as t
-    import google.genai as genai
-    try:
-        client = genai.Client(api_key=resolve_api_key())
-        resp = client.models.generate_content(
-            model=TTS_MODEL,
-            contents=f"{_SAMPLE_STYLE}\n{_SAMPLE_LINE.format(name=coach_name(voice))}",
-            config=t.GenerateContentConfig(
-                response_modalities=["AUDIO"],
-                speech_config=t.SpeechConfig(voice_config=t.VoiceConfig(
-                    prebuilt_voice_config=t.PrebuiltVoiceConfig(voice_name=voice)))),
-        )
-        pcm = resp.candidates[0].content.parts[0].inline_data.data
-    except Exception as exc:  # noqa: BLE001
-        _log("voice_sample failed:", type(exc).__name__, str(exc)[:150])
+    """One REAL Live generation of the sample line in `voice` (script mode),
+    with Jobot's pause stretch applied — so the preview sounds like the coach
+    in a session, not like a different TTS model (REQ-046). Used by the route on
+    a cache miss and by scripts/gen_voice_samples.py to ship static previews."""
+    from . import voice_lab
+    cfg = voice_lab.clean_config({"voice": voice, "mode": "script", "tone": "calm", "energy": "low"})
+    got = voice_lab.live_pcm(cfg, _SAMPLE_LINE.format(name=coach_name(voice)))
+    if not got:
         return None
-    return _pcm_to_wav(pcm) if pcm else None
+    return _pcm_to_wav(voice_lab.stretch_pauses(got[0]))
 
 
 def live_model() -> str:

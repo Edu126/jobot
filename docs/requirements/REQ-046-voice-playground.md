@@ -2,7 +2,7 @@
 
 Date: 2026-10-01
 Source: Eduardo
-Status: Building. v1 on -edu (ADR-068): line test, live override. v1.1, same day: A/B replaced by a recorded takes list with ★ rating + ♥, per Eduardo's "only one is fine, record each one tested, list on the side, rate or like".
+Status: Building. **Engine switched to the real Live model** (Eduardo: "here we are testing text to speech, not the real live API"). v1 on -edu (ADR-068): line test, live override. v1.1, same day: A/B replaced by a recorded takes list with ★ rating + ♥, per Eduardo's "only one is fine, record each one tested, list on the side, rate or like".
 
 ## What they asked for
 > "me gustaría tener un playground de voces, donde podamos jugar a subir y
@@ -42,3 +42,13 @@ Eduardo can change a voice or delivery setting and hear the difference in under 
 
 ## Related
 REQ-044, ADR-063, ADR-054, ADR-055 (-edu audio capture)
+
+## Measured on the real Live model (2026-10-01)
+Same line, `gemini-3.8-live`:
+
+| Config | Raw | With Jobot stretch |
+|---|---|---|
+| Vindemiatrix · slower · calm · low | 9.0 s | 10.1 s |
+| Puck · faster · upbeat · high | 8.1 s | 9.6 s |
+
+Speed, tone and energy instructions barely move Live's pace (TTS showed 11.5 s vs 7.6 s, a false signal). The voice and our pause stretch are the levers that matter.

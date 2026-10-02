@@ -8,7 +8,8 @@
    setting, hear it, and keep every take in a side list to compare, rate and
    like across mixed settings. #}
 {% set seed = {'voice': 'Sulafat', 'speed': 'normal', 'tone': 'calm', 'energy': 'low', 'extra': '',
-               'affective': false, 'proactive': false, 'silence_ms': 700} %}
+               'mode': 'script', 'affective': false, 'proactive': false, 'silence_ms': 700,
+               'stretch': true, 'min_pause_s': 0.18, 'pause_target_s': 0.6} %}
 {% block content %}
 <div class="space-y-6"
      x-data='voiceLab({{ {"cfg": seed, "text": default_line, "override": override,
@@ -23,10 +24,15 @@
     {# ================= left: the one panel ================= #}
     <div class="space-y-4">
       <section class="card-quiet p-4 space-y-4">
-        <label class="block space-y-1.5">
+        <div class="space-y-1.5">
+          <span class="text-label">{{ _('lab.voice.mode') }}</span>
+          {{ ui.seg_tabs([('script', _('lab.voice.mode.script'), 'ph-text-aa'), ('opening', _('lab.voice.mode.opening'), 'ph-chats-circle')], 'cfg.mode') }}
+        </div>
+        <label class="block space-y-1.5" x-show="cfg.mode === 'script'">
           <span class="text-label">{{ _('lab.voice.line') }}</span>
           <textarea class="ui-field w-full" rows="3" maxlength="400" x-model="text"></textarea>
         </label>
+        <p class="text-sm text-body-muted" x-show="cfg.mode === 'opening'" x-cloak>{{ _('lab.voice.mode.opening_note') }}</p>
         <label class="block space-y-1.5">
           <span class="text-label">{{ _('lab.voice.voice') }}</span>
           <select class="select select-bordered select-sm w-full" x-model="cfg.voice">
@@ -52,8 +58,21 @@
           <input class="ui-field w-full" maxlength="160" x-model="cfg.extra" placeholder="{{ _('lab.voice.extra_ph') }}">
         </label>
 
+        {# pauses: Jobot's stretch — the lever that really changes breathing #}
+        <div class="ui-inset text-sm space-y-3">
+          <label class="flex items-center justify-between gap-3"><span class="text-body-strong">{{ _('lab.voice.stretch') }}</span>
+            <input type="checkbox" class="toggle toggle-sm" x-model="cfg.stretch"></label>
+          <div x-show="cfg.stretch" class="space-y-3">
+            <label class="block space-y-1"><span>{{ _('lab.voice.min_pause') }}: <b x-text="cfg.min_pause_s.toFixed(2)"></b> s</span>
+              <input type="range" min="0.1" max="0.5" step="0.02" class="range range-xs" x-model.number="cfg.min_pause_s"></label>
+            <label class="block space-y-1"><span>{{ _('lab.voice.pause_target') }}: <b x-text="cfg.pause_target_s.toFixed(2)"></b> s</span>
+              <input type="range" min="0.3" max="1.2" step="0.05" class="range range-xs" x-model.number="cfg.pause_target_s"></label>
+          </div>
+          <p class="text-subtle">{{ _('lab.voice.stretch_note') }}</p>
+        </div>
+
         <details class="ui-inset text-sm">
-          <summary class="cursor-pointer">🧪 {{ _('lab.voice.live_only') }}</summary>
+          <summary class="cursor-pointer">🧪 {{ _('lab.voice.experimental_knobs') }}</summary>
           <div class="space-y-3 mt-3">
             <label class="flex items-center justify-between gap-3"><span>{{ _('lab.voice.affective') }}</span>
               <input type="checkbox" class="toggle toggle-sm" x-model="cfg.affective"></label>
@@ -97,6 +116,10 @@
         <h2 class="text-eyebrow">{{ _('lab.voice.takes') }} <span class="text-subtle" x-text="'(' + takes.length + ')'"></span></h2>
         {{ ui.seg_tabs([('new', _('lab.voice.sort.new'), none), ('top', _('lab.voice.sort.top'), 'ph-star'), ('liked', _('lab.voice.sort.liked'), 'ph-heart')], 'sort') }}
       </div>
+      <div class="flex items-center gap-3 text-sm">
+        <span class="text-body-muted">{{ _('lab.voice.listen') }}</span>
+        {{ ui.seg_tabs([('stretch', _('lab.voice.listen.stretch'), none), ('raw', _('lab.voice.listen.raw'), none)], 'listen') }}
+      </div>
 
       {# winning so far — one line, not a table #}
       <p class="text-sm" x-show="summary.some(s => s.avg || s.likes)" x-cloak>
@@ -115,9 +138,10 @@
               <div class="flex flex-wrap items-baseline gap-x-2">
                 <b x-text="t.cfg.voice"></b>
                 <span class="text-sm text-body-muted" x-text="summaryOf(t.cfg)"></span>
-                <span class="text-sm text-subtle" x-text="t.seconds + ' s'"></span>
+                <span class="text-sm text-subtle" x-text="t.seconds + ' s → ' + t.seconds_stretched + ' s'"></span>
               </div>
-              <p class="text-sm text-subtle truncate" x-show="t.text !== text" x-text="'“' + t.text + '”'"></p>
+              <p class="text-sm text-subtle" x-show="t.said && (t.cfg.mode === 'opening' || t.said !== t.text)"
+                 x-text="'“' + t.said + '”'"></p>
               <div class="flex flex-wrap items-center gap-3">
                 <span class="inline-flex" role="group" aria-label="{{ _('lab.voice.rate') }}">
                   <template x-for="n in 5" :key="n">
@@ -147,7 +171,7 @@ function voiceLab(init) {
   const post = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
                                           body: JSON.stringify(body || {})});
   return {
-    ...init, sort: 'new', busy: false, playing: '', _audio: null,
+    ...init, sort: 'new', listen: 'stretch', busy: false, playing: '', _audio: null,
     get shown() {
       let rows = [...this.takes];
       if (this.sort === 'liked') rows = rows.filter(t => t.liked);
@@ -155,7 +179,8 @@ function voiceLab(init) {
       return rows;
     },
     summaryOf(c, live) {
-      const bits = [c.speed, c.tone, c.energy + ' energy'];
+      const bits = [c.mode === 'opening' ? 'opening' : 'script', c.speed, c.tone, c.energy + ' energy'];
+      if (c.stretch) bits.push('pause ' + c.min_pause_s + '→' + c.pause_target_s + ' s'); else bits.push('no stretch');
       if (c.extra) bits.push('“' + c.extra + '”');
       if (live) { bits.push(c.silence_ms + ' ms'); if (c.affective) bits.push('🧪 affective'); if (c.proactive) bits.push('🧪 proactive'); }
       return bits.join(' · ');
@@ -165,14 +190,14 @@ function voiceLab(init) {
       this.busy = true;
       try {
         const r = await post('/lab/voice/take', {cfg: this.cfg, text: this.text});
-        if (!r.ok) { Alpine.store('toast').show('{{ _('lab.voice.tts_failed') }}', 'info'); return; }
+        if (!r.ok) { Alpine.store('toast').show('{{ _('lab.voice.live_failed') }}', 'info'); return; }
         const d = await r.json(); this.apply(d); this.sort = 'new'; this.play(d.take);
       } finally { this.busy = false; }
     },
     play(t) {
       if (this._audio) this._audio.pause();
       if (this.playing === t.id) { this.playing = ''; return; }
-      this._audio = new Audio('/lab/voice/take/' + t.id + '.wav');
+      this._audio = new Audio('/lab/voice/take/' + t.id + '.wav?v=' + this.listen);
       this._audio.onended = () => { this.playing = ''; };
       this.playing = t.id; this._audio.play();
     },

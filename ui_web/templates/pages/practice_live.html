@@ -387,7 +387,9 @@
       _session: null, _players: [], _playHead: 0, _speakingMs: 0,
       _prerollS: 1.2,                  // jitter-buffer pre-roll before each coach utterance (tunable)
       // detect-and-stretch: lengthen the pauses Gemini already makes (all tunable)
-      _stretch: true, _silThresh: 0.012, _minPauseS: 0.18, _pauseTargetS: 0.6,
+      // voice lab override (REQ-046) can tune these on -edu; defaults otherwise
+      _stretch: {{ 'false' if (lab and not lab.stretch) else 'true' }}, _silThresh: 0.012,
+      _minPauseS: {{ lab.min_pause_s if lab else 0.18 }}, _pauseTargetS: {{ lab.pause_target_s if lab else 0.6 }},
       _lvl: 0, _micHoldUntil: 0,
       _ctx: '',                        // context turn (from /live-token)
       coachSpeaking: false, micReady: false, _coachTimer: null,  // echo gating + grace

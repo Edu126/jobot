@@ -45,21 +45,22 @@ def _state() -> dict:
 
 @router.post("/lab/voice/take")
 async def voice_lab_take(request: Request):
-    """Generate + record one take for {cfg, text}; returns it with the list."""
+    """One REAL Live generation for {cfg, text} → a recorded take (+ the list)."""
     if not lab.enabled():
         return _off()
     body = await request.json()
     take = await asyncio.to_thread(lab.record_take, body.get("cfg") or {}, str(body.get("text") or ""))
     if not take:
-        return JSONResponse({"error": "tts_failed"}, status_code=502)
+        return JSONResponse({"error": "live_failed"}, status_code=502)
     return JSONResponse({"take": take, **_state()})
 
 
 @router.get("/lab/voice/take/{take_id}.wav")
-async def voice_lab_take_wav(take_id: str):
+async def voice_lab_take_wav(take_id: str, v: str = "stretch"):
+    """?v=stretch (as heard in a session, default) or ?v=raw (Gemini as sent)."""
     if not lab.enabled():
         return _off()
-    wav = lab.take_wav(take_id)
+    wav = lab.take_wav(take_id, v)
     if not wav:
         return _off()
     return Response(content=wav, media_type="audio/wav", headers={"Cache-Control": "private, max-age=86400"})
