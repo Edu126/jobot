@@ -14,6 +14,10 @@
 4. **Gate locally:** `.venv/bin/python tests/test_*.py` (all), `scripts/lint_ui.py`.
 5. **Deploy to -edu** (`fly deploy -a jobbotv2-edu`) and verify there.
 6. **Report honestly** — what changed, what was verified and how, what's still weak.
+7. **📸 Milestone?** When something visible or meaningful lands (a first, a
+   before/after, a hard problem cracked, a user reaction), say so and ask
+   Eduardo for the screenshot. File it in `docs/milestones/` (crop to the app
+   only, story + post draft EN/ES): see `docs/milestones/README.md`.
 
 Commit only when Eduardo asks. Work on a feature branch; **merging to `main`
 ships to every user at once** — never merge or push to main unasked.
