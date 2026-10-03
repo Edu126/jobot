@@ -59,7 +59,7 @@ def test_closed_without_flag():
 
 def test_clean_config():
     cfg = V.clean_config({"voice": "Evil", "speed": "warp", "tone": "calm", "silence_ms": 99999,
-                          "extra": "x" * 500, "affective": 1})
+                          "extra": "x" * 2000, "affective": 1})
     _assert(cfg["voice"] == "Sulafat" and cfg["speed"] == "normal", "unknown values → defaults")
     _assert(cfg["silence_ms"] == 2000 and len(cfg["extra"]) == V.MAX_EXTRA and cfg["affective"] is True, "clamped")
     _assert(len(V.GEMINI_VOICES) == 30, "the full Gemini catalogue")
@@ -83,7 +83,9 @@ def test_override_reaches_live_config():
         worst = L._config({"role_title": "Specialist, IT Financial and Capacity Management",
                            "company": "Canada Mortgage and Housing Corporation (CMHC)"}, "en", "harsh", "Sulafat")
         n = len(worst.system_instruction.parts[0].text)
-        _assert(n < 3500, f"lab worst case stays well under the ~4000 Live hang ({n})")
+        # 2026-10-02: Live measured fine up to 20k chars (direct + ephemeral token),
+        # so the lab may run long; keep a sane ceiling well under that.
+        _assert(n < 6000, f"lab worst case stays bounded ({n})")
         V.set_live_override({"voice": "Vindemiatrix", "speed": "slower", "tone": "calm", "energy": "low",
                              "affective": True, "proactive": True, "silence_ms": 1200})
         _assert(cfg.enable_affective_dialog is True, "affective on")

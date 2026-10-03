@@ -55,7 +55,8 @@
         </div>
         <label class="block space-y-1.5">
           <span class="text-label">{{ _('lab.voice.extra') }}</span>
-          <input class="ui-field w-full" maxlength="160" x-model="cfg.extra" placeholder="{{ _('lab.voice.extra_ph') }}">
+          <textarea class="ui-field w-full" rows="4" maxlength="1500" x-model="cfg.extra" placeholder="{{ _('lab.voice.extra_ph') }}"></textarea>
+          <span class="text-xs text-subtle" x-text="(cfg.extra || '').length + ' / 1500'"></span>
         </label>
 
         {# pauses: Jobot's stretch — the lever that really changes breathing #}

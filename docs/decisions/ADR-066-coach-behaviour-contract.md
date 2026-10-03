@@ -27,3 +27,6 @@ App-side turn control: rejected, see ADR-052.
 
 ## Consequences
 Every rule competes for the character budget. New behaviour must replace text, not add to it.
+
+## Update 2026-10-02 — the ~4000-char hang no longer reproduces
+Measured on `gemini-3.8-live`: system prompts of 2,500 / 4,000 / 6,000 / 10,000 / 20,000 chars all answered in 3–4 s, both on a direct connection and through an ephemeral token with the prompt pinned (the coach's path). The limit was either the previous model or a different cause. We keep the base coach prompt < 2,500 chars as a **focus budget** (shorter instructions are followed better), not as a hard ceiling. The voice lab now allows a 1,500-char extra instruction.

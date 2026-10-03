@@ -56,9 +56,11 @@ Delivery numbers are always shown against a research baseline
 
 - `temperature=0.0` for anything graded; JSON out; "unknown → null"; never invent
   facts (GOV-005). Version prompts (`PROMPT_VERSION`) — bump to regenerate.
-- **Live voice system prompt stays < 2500 chars** (the Live API silently hangs
-  near ~4000; `tests/test_prep_practice.py` enforces it). Context goes in the
-  first client turn, not the pinned prompt.
+- **Live voice system prompt stays < 2500 chars** as a *focus budget* (shorter
+  instructions are followed better; `tests/test_prep_practice.py` enforces it).
+  The old "~4000-char silent hang" no longer reproduces on `gemini-3.8-live`
+  (measured to 20k chars, 2026-10-02, ADR-053 update). Context still goes in
+  the first client turn, not the pinned prompt.
 - The coach's register is a calm, professional HR interviewer — never salesy.
 
 ## UI work (read before touching any template or app.css)
