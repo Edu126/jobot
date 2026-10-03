@@ -156,10 +156,30 @@ def test_stretch_pauses():
     print("PASS test_stretch_pauses")
 
 
+def test_promoted_coach_voices():
+    """ADR-069: the lab winners are the real coach — names, delivery, rules."""
+    _assert(list(L.VOICES) == ["Erinome", "Sulafat", "Iapetus"] and L.DEFAULT_VOICE == "Erinome", "3 picked voices")
+    _assert([L.coach_name(v) for v in L.VOICES] == ["Anna", "Maya", "Tom"], "friendly names")
+    users = {"Melissa", "Sara", "Andrea", "Emma", "Carlos", "Mehran", "Eduardo"}
+    _assert(not users & {m[2] for m in L.VOICES.values()}, "never a real user's name")
+    os.environ.pop("JOBOT_VOICE_LAB", None)
+    L.candidate_first_name = lambda iv: "Eduardo"
+    for v in L.VOICES:
+        cfg = L._config({"role_title": "Specialist, IT Financial and Capacity Management",
+                         "company": "Canada Mortgage and Housing Corporation (CMHC)"}, "en", "harsh", v)
+        p = cfg.system_instruction.parts[0].text
+        _assert("Speak slowly" in p and "Max one filler per turn" in p and f"I'm {L.coach_name(v)}" in p, v)
+        _assert(len(p) < 4500, f"{v} prompt bounded ({len(p)})")
+    _assert("high energy" in L.coach_delivery("Sulafat") and "moderate energy" in L.coach_delivery("Erinome"),
+            "per-voice energy from the lab")
+    print("PASS test_promoted_coach_voices")
+
+
 if __name__ == "__main__":
     test_closed_without_flag()
     test_clean_config()
     test_override_reaches_live_config()
     test_takes_rate_like_page()
     test_stretch_pauses()
+    test_promoted_coach_voices()
     print("all voice-lab tests passed")

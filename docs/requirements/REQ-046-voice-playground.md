@@ -52,3 +52,6 @@ Same line, `gemini-3.8-live`:
 | Puck · faster · upbeat · high | 8.1 s | 9.6 s |
 
 Speed, tone and energy instructions barely move Live's pace (TTS showed 11.5 s vs 7.6 s, a false signal). The voice and our pause stretch are the levers that matter.
+
+## First outcome (2026-10-02)
+Eduardo picked Erinome, Sulafat and Iapetus (opening · slower · calm · his natural-speech direction). They were promoted to the real coach as Anna, Maya and Tom (ADR-069).

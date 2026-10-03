@@ -11,7 +11,7 @@ Branch `feat/prep-interview-module` (unmerged; live on -edu). Merging to
    2. Live 60s mini-session.
    3. Blind A/B with ratings logged with the full config.
    4. Promote winners via ADR.
-2. **Calmer voices A/B.** Current five vs Vindemiatrix / Achernar / Schedar / Gacrux / Sadaltager. Swap `VOICES`, then `scripts/gen_voice_samples.py --force`.
+2. ✅ 2026-10-02: lab winners promoted (ADR-069: Anna/Erinome, Maya/Sulafat, Tom/Iapetus). ~~**Calmer voices A/B.** Current five vs Vindemiatrix / Achernar / Schedar / Gacrux / Sadaltager. Swap `VOICES`, then `scripts/gen_voice_samples.py --force`.~~
 3. 🧪 **Experiment: affective dialog.** Turn on `GEMINI_AFFECTIVE_DIALOG=1` on -edu for a few sessions and write down what changes (tone matching, pacing, weirdness). Exploratory, so we may find something new.
 4. 🧪 **Experiment: proactive audio.** Does it stop the coach answering noise or off-topic input?
 5. Hear the new opening ("Hello Eduardo, I'm Maya…") + calm register live; adjust P7 if it still sounds salesy (budget < 2500 chars).

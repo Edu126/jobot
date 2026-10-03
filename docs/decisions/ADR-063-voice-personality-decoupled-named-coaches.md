@@ -1,7 +1,7 @@
 # ADR-063: Voice and personality decoupled; each voice is a named coach
 
 Date: 2026-09-25 / 2026-10-01 (backfilled 2026-10-01)
-Status: Accepted. Supersedes the "bundled persona" part of ADR-053.
+Status: Accepted. Supersedes the "bundled persona" part of ADR-053. The voice set itself is superseded by ADR-069 (lab-picked: Anna, Maya, Tom).
 Relates to: ADR-053, REQ-044, commit 520d089
 
 ## Context

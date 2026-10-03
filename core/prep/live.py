@@ -37,20 +37,44 @@ _TOKEN_SESSION_START_MIN = 2
 # "persona" hard-coded a voice+personality together, which was wrong. Now the UI
 # offers two separate dropdowns — pick a voice (timbre only) AND a personality.
 
-# The 5 most human-sounding Gemini prebuilt voices (from the 30-voice set), timbre
-# only — no personality baked in. Chosen for warm/natural/conversational character
-# over the bright/firm/excitable ones that read synthetic. {value: (gender, timbre, name)}.
-# Gender is *perceived* (Google doesn't label it). Each voice carries a human first
-# name the coach introduces itself with (Eduardo 2026-10-01: more personal than
-# "your AI interview coach").
+# The coach voices — picked BY EAR in the voice lab on the real Live model
+# (Eduardo, 2026-10-02, ADR-069). {value: (gender, description, name)}. Names are
+# short, friendly, and never one of our real users' names.
 VOICES = {
+    "Erinome": ("female", "Calm", "Anna"),
     "Sulafat": ("female", "Warm", "Maya"),
-    "Callirrhoe": ("female", "Easy-going", "Claire"),
-    "Achird": ("male", "Friendly", "Daniel"),
-    "Enceladus": ("male", "Breathy", "Theo"),
-    "Charon": ("male", "Deep", "Marcus"),
+    "Iapetus": ("male", "Calm", "Tom"),
 }
-DEFAULT_VOICE = "Sulafat"
+DEFAULT_VOICE = "Erinome"
+
+# Each voice's winning delivery from the lab (speed / tone / energy → a
+# delivery line via voice_lab.delivery_line). Sulafat won at higher energy.
+VOICE_DELIVERY = {
+    "Erinome": {"speed": "slower", "tone": "calm", "energy": "medium"},
+    "Sulafat": {"speed": "slower", "tone": "calm", "energy": "high"},
+    "Iapetus": {"speed": "slower", "tone": "calm", "energy": "medium"},
+}
+
+# Eduardo's winning voice direction (lab, 2026-10-02) — appended to every
+# coach's delivery. Measured: Live answers fine with long prompts (ADR-053 update).
+NATURAL_SPEECH = (
+    "You are a natural, low-pitched, professional interviewer speaking out loud. "
+    "Sound like a real person, not a script. Natural speech rules: "
+    "- When the candidate finishes a point, use short acknowledgments: \"mhm\", \"right\", \"got it\". "
+    "- Use light fillers only before thinking moments, like moving to a new question or reacting to "
+    "something unexpected: \"hmm\", \"um\", \"let me see\", \"okay so\". "
+    "- Occasionally self-correct mid-sentence: \"Can you tell me about... actually, let me ask it differently.\" "
+    "- Max one filler per turn. Never start every sentence with one. Simple statements need none. "
+    "- Keep turns short. Ask one question at a time, then wait."
+)
+
+
+def coach_delivery(voice: str) -> str:
+    """The coach's delivery instruction for `voice`: its lab preset + the
+    natural-speech rules. Used in P7 for every real session."""
+    from . import voice_lab
+    preset = VOICE_DELIVERY.get(voice, VOICE_DELIVERY[DEFAULT_VOICE])
+    return voice_lab.delivery_line(voice_lab.clean_config({**preset, "extra": NATURAL_SPEECH}))
 
 # Interviewer PERSONALITIES (the second dropdown). Personality only — no voice,
 # no name. Each `style` is folded into the P7 core prompt (interviewer_system_prompt).
@@ -85,7 +109,7 @@ def personality_meta(personality_id: str) -> dict:
 
 
 # The picker preview. Spoken AS the coach (never sent as a user turn — the
-# Live model used to reply "Hi Theo!" to it, thinking the user was Theo).
+# Live model used to reply "Hi Theo!" to it, thinking the user was the coach).
 _SAMPLE_LINE = ("Hello, I'm {name}. I'll be your interviewer today. "
                 "Take a moment to get settled, and we'll begin when you're ready.")
 # Pre-generated previews shipped with the app (scripts/gen_voice_samples.py) —
@@ -146,7 +170,9 @@ def synthesize_sample(voice: str) -> Optional[bytes]:
     in a session, not like a different TTS model (REQ-046). Used by the route on
     a cache miss and by scripts/gen_voice_samples.py to ship static previews."""
     from . import voice_lab
-    cfg = voice_lab.clean_config({"voice": voice, "mode": "script", "tone": "calm", "energy": "low"})
+    cfg = voice_lab.clean_config({"voice": voice, "mode": "script",
+                                  **VOICE_DELIVERY.get(voice, VOICE_DELIVERY[DEFAULT_VOICE]),
+                                  "extra": NATURAL_SPEECH})
     got = voice_lab.live_pcm(cfg, _SAMPLE_LINE.format(name=coach_name(voice)))
     if not got:
         return None
@@ -214,9 +240,10 @@ def _config(interview: dict, lang: str, personality_id: str = DEFAULT_PERSONALIT
     from . import voice_lab
     pers = personality_meta(personality_id)
     voice_name = voice if voice in VOICES else DEFAULT_VOICE
+    delivery = coach_delivery(voice_name)   # the lab-picked delivery for this voice (ADR-069)
     # Voice playground override (REQ-046/ADR-068) — -edu only, flag-gated.
     lab = voice_lab.live_override()
-    delivery, affective, silence_ms, extra = "", affective_dialog_enabled(), 700, {}
+    affective, silence_ms, extra = affective_dialog_enabled(), 700, {}
     if lab:
         voice_name = lab["voice"]
         delivery = voice_lab.delivery_line(lab)
