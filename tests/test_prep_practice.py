@@ -238,6 +238,63 @@ def test_audio_score_helpers():
     print("PASS test_audio_score_helpers")
 
 
+def test_audio_quotes_verify_against_live_transcript():
+    """Code-review 2026-10-07: a quote the audio model invents AND copies into its
+    own clean_transcript must not verify — only the live transcript counts."""
+    import json as _json
+    import types
+    import google.genai as genai
+    from core.llm import usage as llm_usage
+    from core.prep import audio_score as A
+    from core.prep import session_score as SS
+
+    invented = "I cut costs by 20 percent by renegotiating every vendor contract"
+    raw = {"takeaway": "t", "top_actions": [], "clean_transcript": invented,
+           "competency_evidence": [{"competency_id": "c1", "asked": True, "quote": invented,
+                                    "checks": {k: True for k in SS.CHECKS}}]}
+
+    class _Files:
+        def upload(self, file): return types.SimpleNamespace(name="f1")
+        def delete(self, name): pass
+
+    class _Models:
+        def generate_content(self, **kw): return types.SimpleNamespace(text=_json.dumps(raw))
+
+    class _Client:
+        def __init__(self, **kw): self.files, self.models = _Files(), _Models()
+
+    orig = (genai.Client, A.resolve_api_key, llm_usage.check_and_charge)
+    genai.Client, A.resolve_api_key, llm_usage.check_and_charge = _Client, lambda: "k", lambda **kw: None
+    try:
+        comps = [{"id": "c1", "name": "Budget", "what_good_looks_like": "x"}]
+        qs = [{"id": "q1", "text": "Budget?", "competency_id": "c1"}]
+        said = [{"role": "coach", "text": "Budget?"},
+                {"role": "you", "text": "um budgets are important you just have to watch them"}]
+        out = A.score_from_audio(b"RIFF", qs, comps, turns=said, candidate_seconds=10, lang="en")
+        ev = out["competency_evidence"][0]
+        _assert(not ev["verified"] and ev["points"] == 0, f"invented quote earns nothing: {ev}")
+        # No live transcript at all → the model's transcript is the only source.
+        out2 = A.score_from_audio(b"RIFF", qs, comps, turns=[], candidate_seconds=10, lang="en")
+        _assert(out2["competency_evidence"][0]["verified"], "falls back to clean_transcript when no live text")
+    finally:
+        genai.Client, A.resolve_api_key, llm_usage.check_and_charge = orig
+    print("PASS test_audio_quotes_verify_against_live_transcript")
+
+
+def test_setup_labels_translated():
+    """Code-review 2026-10-07: Practice setup showed English personality/voice
+    labels to Spanish users. Every option must resolve in en AND es."""
+    from core.prep import live as L
+    from ui_web import i18n
+    keys = [f"prep2.personality.{pid}.{part}" for pid in L.PERSONALITIES for part in ("label", "blurb")]
+    keys += [f"prep2.voice.trait.{m[1].lower()}" for m in L.VOICES.values()]
+    keys += [f"prep2.voice.{m[0]}" for m in L.VOICES.values()]
+    for lang in ("en", "es"):
+        missing = [k for k in keys if k not in i18n.TRANSLATIONS[lang]]
+        _assert(not missing, f"{lang} missing {missing}")
+    print("PASS test_setup_labels_translated")
+
+
 if __name__ == "__main__":
     test_delivery_metrics()
     test_delivery_length_bands_and_safety()
@@ -252,4 +309,6 @@ if __name__ == "__main__":
     test_p9_generate_and_empty()
     test_p9_from_transcript()
     test_audio_score_helpers()
+    test_audio_quotes_verify_against_live_transcript()
+    test_setup_labels_translated()
     print("all practice-pipeline tests passed")

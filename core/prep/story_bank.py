@@ -13,7 +13,8 @@ STAR-story assets P3 maps to interview competencies.
     like delivery metrics are computed in code, not asked of the model.
 
 Unlike P1–P4 these are account-level and NOT interview-cached: they generate
-drafts that become `stories` rows (db.create_story). No prep_artifacts caching.
+drafts that become `stories` rows (db.create_story). P5 drafts are cached per
+résumé + language + prompt version in `story_drafts` (get_or_draft_stories).
 temperature=0.0. Never invents facts or numbers (GOV-005).
 """
 from __future__ import annotations
@@ -22,6 +23,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
+from core import db
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
 from core.settings import language_instruction, resolve_output_language
 
@@ -146,6 +148,26 @@ def draft_stories_from_resume(
         return []
     items = raw.get("stories") if isinstance(raw, dict) else None
     return _parse_drafts(items, valid_tags=set(tags))
+
+
+def get_or_draft_stories(
+    resume_hash: str, resume_text: str, client_factory, *, lang: Optional[str] = None,
+    path=db.DB_PATH,
+) -> list[StoryDraft]:
+    """P5 drafts, cached per (résumé, language, prompt version): the empty Story
+    Bank shows them on every visit, and an uncached call there re-paid the
+    module's largest generation each time. `client_factory` is only called on a
+    miss. Failures/empties are not cached, so the next visit can try again."""
+    lang = resolve_output_language(lang)
+    if resume_hash:
+        cached = db.get_story_drafts(resume_hash, lang, P5_PROMPT_VERSION, path=path)
+        if cached is not None:
+            return [StoryDraft(**{k: v for k, v in d.items() if k in StoryDraft.__dataclass_fields__})
+                    for d in cached if isinstance(d, dict)]
+    drafts = draft_stories_from_resume(resume_text, client_factory(), lang=lang)
+    if drafts and resume_hash:
+        db.save_story_drafts(resume_hash, lang, P5_PROMPT_VERSION, [d.to_dict() for d in drafts], path=path)
+    return drafts
 
 
 def _build_p5_prompt(resume: str, tags: tuple[str, ...], *, lang: str) -> str:

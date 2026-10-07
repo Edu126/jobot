@@ -29,7 +29,9 @@
         <p class="text-sm text-body-muted mt-0.5">{{ _('prep2.story.suggested_body') }}</p>
       </div>
 
-      <div hx-get="/stories/suggested" hx-trigger="load" hx-swap="innerHTML">
+      {# `intersect once`, not `load`: this partial sits in /profile behind x-show,
+         so `load` fired the draft call on every Profile visit, any subtab. #}
+      <div hx-get="/stories/suggested" hx-trigger="intersect once" hx-swap="innerHTML">
         <div class="card-quiet p-8 text-center space-y-3">
           <i class="ph-thin ph-circle-notch animate-spin text-2xl text-primary"></i>
           <p class="text-sm text-body-muted">{{ _('prep2.story.suggested_loading') }}</p>

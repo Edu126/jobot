@@ -70,6 +70,7 @@ reference** that lists every score and the principles all of them must follow.
   - a number
 - **Gates applied in code** (they override the model):
   - The quote must be found in the transcript: a normalized substring, or ≥60% of its tokens. A quote under 3 words doesn't count. If the quote fails, every check is false.
+  - Voice: the transcript is Gemini Live's speech-to-text of what was actually said, never the scoring model's own `clean_transcript`. Otherwise an invented quote would verify against itself. The model's transcript is used only when there is no live text at all (code-review 2026-10-07).
   - `answered = false` → 0 points.
   - `quantified` needs a digit or number word in the quote.
   - `own_actions` needs a first-person word in the quote (I / my / me, je / mon, yo / mi).

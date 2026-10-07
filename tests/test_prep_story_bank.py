@@ -191,6 +191,28 @@ def test_stories_crud_and_draft_filter():
     print("PASS test_stories_crud_and_draft_filter")
 
 
+def test_p5_drafts_cached_per_resume_and_lang():
+    """Code-review 2026-10-07: the empty Story Bank re-ran P5 on every visit."""
+    p = _fresh()
+    made = []
+
+    def factory():
+        made.append(_FakeClient(payload=_DRAFTS))
+        return made[-1]
+
+    first = S.get_or_draft_stories("h1", "résumé", factory, lang="en", path=p)
+    again = S.get_or_draft_stories("h1", "résumé", factory, lang="en", path=p)
+    _assert(first and [d.title for d in again] == [d.title for d in first], "same drafts on the second visit")
+    _assert(len(made) == 1, f"one generation, then cache ({len(made)})")
+    S.get_or_draft_stories("h1", "résumé", factory, lang="es", path=p)
+    _assert(len(made) == 2, "language is a cache dimension")
+    empty = []
+    S.get_or_draft_stories("h2", "résumé", lambda: empty.append(1) or _FakeClient(payload={"stories": []}), lang="en", path=p)
+    S.get_or_draft_stories("h2", "résumé", lambda: empty.append(1) or _FakeClient(payload={"stories": []}), lang="en", path=p)
+    _assert(len(empty) == 2, "an empty result isn't cached — the next visit retries")
+    print("PASS test_p5_drafts_cached_per_resume_and_lang")
+
+
 if __name__ == "__main__":
     test_strength_strong_when_complete()
     test_strength_missing_result_wins()
@@ -202,4 +224,5 @@ if __name__ == "__main__":
     test_p5_generate()
     test_p6_parse()
     test_stories_crud_and_draft_filter()
+    test_p5_drafts_cached_per_resume_and_lang()
     print("all story-bank tests passed")

@@ -88,7 +88,7 @@
         <label class="text-label block mb-2">{{ _('prep2.setup.voice_pick') }}</label>
         <select name="voice" x-model="voice" @change="play()" class="select select-bordered select-sm w-full">
           {% for vid, m in voices.items() %}
-          <option value="{{ vid }}">{{ m[2] }} — {{ m[1] | lower }}, {{ m[0] }}</option>
+          <option value="{{ vid }}">{{ m[2] }} — {{ _('prep2.voice.trait.' ~ (m[1] | lower)) }}, {{ _('prep2.voice.' ~ m[0]) }}</option>
           {% endfor %}
         </select>
       </div>
@@ -96,7 +96,7 @@
         <label class="text-label block mb-2">{{ _('prep2.setup.personality_pick') }}</label>
         <select name="personality" x-model="personality" class="select select-bordered select-sm w-full">
           {% for pid, m in personalities.items() %}
-          <option value="{{ pid }}">{{ m.label }} — {{ m.blurb }}</option>
+          <option value="{{ pid }}">{{ _('prep2.personality.' ~ pid ~ '.label') }} — {{ _('prep2.personality.' ~ pid ~ '.blurb') }}</option>
           {% endfor %}
         </select>
       </div>

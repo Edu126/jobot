@@ -1,0 +1,10 @@
+{# The feedback couldn't be built (quota / model error). The session stays open —
+   never saved as an empty "done" debrief — and Retry only re-scores answers that
+   don't have an evaluation yet. #}
+{% import "macros/ui.html" as ui %}
+<div class="practice-build min-h-[40vh] flex flex-col items-center justify-center text-center gap-4">
+  {% call ui.notice(icon='ph-cloud-slash') %}{{ _('prep2.build.failed') }}{% endcall %}
+  {{ ui.button(_('prep2.build.retry'), variant='primary', icon='ph-arrow-clockwise',
+               attrs={'hx-post': '/interviews/' ~ interview.id ~ '/practice/' ~ session_id ~ '/build',
+                      'hx-target': 'closest .practice-build', 'hx-swap': 'outerHTML'}) }}
+</div>

@@ -238,25 +238,33 @@ def _row_to_toolkit(row: dict) -> Toolkit:
 # ---------- entry points ----------
 
 def read_cached_toolkit(
-    interview_id: int, stories: list[dict], *, lang: Optional[str] = None, path=db.DB_PATH,
+    interview_id: int, stories: list[dict], *, lang: Optional[str] = None,
+    fresh: bool = True, path=db.DB_PATH,
 ) -> Optional[Toolkit]:
-    """Cache-only read (never generates) — for Practice setup, readiness and the
-    live coach. None when the toolkit hasn't been built for the current brief /
-    Story Bank / facts."""
+    """Cache-only read (never generates).
+    fresh=True (Get Ready, the build): None unless the toolkit matches the
+    current brief / Story Bank / facts — a miss there means "regenerate".
+    fresh=False (readiness, Practice setup, check-in, story mapping): the newest
+    toolkit for this prompt version even if a story or fact changed since —
+    one story edit must not blank readiness for every interview (code-review
+    2026-10-07). Get Ready refreshes it."""
     lang = resolve_output_language(lang)
     brief = p1.read_cached_brief(interview_id, lang=lang, path=path)
     if brief is None or brief.is_empty():
         return None
     version = _cache_version(brief.to_dict_for_cache(), stories, read_facts(interview_id, path=path))
     row = db.get_prep_artifact(interview_id, ARTIFACT_KIND, lang, version, path=path)
+    if row is None and not fresh:
+        row = db.get_latest_prep_artifact(interview_id, ARTIFACT_KIND, lang, f"{PROMPT_VERSION}:", path=path)
     return _row_to_toolkit(row) if row else None
 
 
 def read_cached_mapping(
     interview_id: int, stories: list[dict], *, lang: Optional[str] = None, path=db.DB_PATH,
 ) -> Optional[list[StoryPick]]:
-    """The per-competency story picks (old P3 contract) from the cached toolkit."""
-    tk = read_cached_toolkit(interview_id, stories, lang=lang, path=path)
+    """The per-competency story picks (old P3 contract) from the newest cached
+    toolkit — stale-tolerant (see read_cached_toolkit)."""
+    tk = read_cached_toolkit(interview_id, stories, lang=lang, fresh=False, path=path)
     return tk.stories if tk else None
 
 

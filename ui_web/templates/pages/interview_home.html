@@ -46,7 +46,8 @@
 
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         {% if hero.when %}
-        <span class="inline-flex items-center gap-1.5 {% if hero.is_soon %}text-error font-medium{% else %}text-body-muted{% endif %}">
+        <span class="inline-flex items-center gap-1.5" x-data="{ soon: soonLocal('{{ hero.at }}') }"
+              :class="soon ? 'text-error font-medium' : 'text-body-muted'">
           <i class="ph-thin ph-calendar-blank"></i>{{ hero.when }}
         </span>
         {% endif %}
@@ -70,7 +71,7 @@
           <div class="min-w-0">
             <div class="font-medium truncate">{{ e.iv.role_title or _('prep2.gen.the_role') }}</div>
             <div class="text-sm text-body-muted truncate">
-              {{ e.iv.company }}{% if e.when %} · <span class="{% if e.is_soon %}text-error{% endif %}">{{ e.when }}</span>{% endif %}
+              {{ e.iv.company }}{% if e.when %} · <span x-data="{ soon: soonLocal('{{ e.at }}') }" :class="soon && 'text-error'">{{ e.when }}</span>{% endif %}
             </div>
           </div>
           <div class="shrink-0">{{ rd.readiness(e.readiness, compact=True) }}</div>
@@ -82,4 +83,9 @@
 
   {% endif %}
 </div>
+<script>
+  // 'YYYY-MM-DDTHH:MM' with no offset parses as the viewer's LOCAL time — the
+  // same clock the user typed it in. True when it's 0–48 h away (§5 red = urgent).
+  function soonLocal(at) { if (!at) return false; const ms = new Date(at) - Date.now(); return ms >= 0 && ms <= 48 * 3600e3; }
+</script>
 {% endblock %}

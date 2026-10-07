@@ -74,7 +74,23 @@ def test_practice_cascade():
     print("PASS test_practice_cascade")
 
 
+def test_double_submit_is_idempotent():
+    """Code-review 2026-10-07: a double-click stored two answers at position 0
+    and the session skipped question 2."""
+    p = _fresh()
+    iid = db.create_interview("cand1", "Acme", "DA", "jd", "en", "paste_text", path=p)
+    sid = db.create_practice_session(iid, mode="study", length="quick", focus_competency=None,
+                                     questions=[{"id": "q1", "text": "Q1"}, {"id": "q2", "text": "Q2"}], path=p)
+    kw = dict(question_id="q1", question_text="Q1", competency_id=None, transcript="x", seconds=5, path=p)
+    first = db.add_practice_answer(sid, position=0, **kw)
+    again = db.add_practice_answer(sid, position=0, **kw)
+    _assert(first > 0 and again == 0, f"second insert at the same position is ignored ({first}, {again})")
+    _assert(len(db.list_practice_answers(sid, path=p)) == 1, "one answer stored")
+    print("PASS test_double_submit_is_idempotent")
+
+
 if __name__ == "__main__":
     test_practice_lifecycle()
+    test_double_submit_is_idempotent()
     test_practice_cascade()
     print("all practice-db tests passed")

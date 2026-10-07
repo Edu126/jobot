@@ -1,11 +1,14 @@
 {# C4 — "Building your feedback…" hand-off. Runs P8 per answer + P9, then
-   redirects to Feedback. Under ~30s. #}
-<div class="min-h-[40vh] flex flex-col items-center justify-center text-center gap-6">
+   redirects to Feedback. Under ~30s. `wait` = another request is already
+   building this session (e.g. a refresh) → ask again in a few seconds instead
+   of starting a second, duplicate build. #}
+<div class="practice-build min-h-[40vh] flex flex-col items-center justify-center text-center gap-6">
   <div class="gen-orb" aria-hidden="true"><span></span><span></span><span></span></div>
   <div>
     <div class="text-masthead">{{ _('prep2.build.title') }}</div>
     <p class="text-body-muted mt-1">{{ _('prep2.build.body') }}</p>
   </div>
   <div hx-post="/interviews/{{ interview.id }}/practice/{{ session_id }}/build"
-       hx-trigger="load" hx-swap="none"></div>
+       hx-trigger="{{ 'load delay:3s' if wait else 'load' }}"
+       hx-target="closest .practice-build" hx-swap="outerHTML"></div>
 </div>

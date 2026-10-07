@@ -349,3 +349,10 @@ def see_other(url: str):
     """303 redirect after a POST (or a GET that must land elsewhere)."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url, status_code=303)
+
+
+def error_snippet(key: str):
+    """The inline red one-liner an HTMX form swaps in on a bad submit — through
+    i18n (en + es), never a hard-coded English string."""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(f'<div class="text-error text-sm">{_html.escape(_i18n.translate(key))}</div>')

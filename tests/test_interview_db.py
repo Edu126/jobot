@@ -65,9 +65,17 @@ def test_list_orders_dated_first():
                                 interview_at="2026-12-01T09:00", path=p)
     sooner = db.create_interview("cand1", "C", "r", "", "en", "paste_text",
                                  interview_at="2026-10-01T09:00", path=p)
-    ids = [i["id"] for i in db.list_interviews("cand1", path=p)]
+    from datetime import datetime
+    ids = [i["id"] for i in db.list_interviews("cand1", path=p, now=datetime(2026, 9, 20))]
     _assert(ids[0] == sooner and ids[1] == later, f"soonest dated first, got {ids}")
     _assert(ids[2] not in (sooner, later), "undated last")
+    # Code-review 2026-10-07: a past interview must not hold the "next" hero.
+    ids = [i["id"] for i in db.list_interviews("cand1", path=p, now=datetime(2026, 10, 7))]
+    _assert(ids[0] == later, f"upcoming first, the past one last, got {ids}")
+    _assert(ids[-1] == sooner, "past interviews go to the end")
+    # Same day, local time: still "next" for hours after the UTC clock passes it.
+    ids = [i["id"] for i in db.list_interviews("cand1", path=p, now=datetime(2026, 10, 1, 13, 0))]
+    _assert(ids[0] == sooner, "an interview isn't past until 14 h after its stored time")
     print("PASS test_list_orders_dated_first")
 
 

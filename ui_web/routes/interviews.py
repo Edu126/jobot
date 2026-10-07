@@ -43,7 +43,7 @@ from core.settings import get_output_language
 PRACTICE_CONSENT_KEY = "prep_practice_consent"
 
 from ..deps import templates
-from ..deps import current_resume as _current, see_other as _redirect
+from ..deps import current_resume as _current, see_other as _redirect, error_snippet as _error
 from ..i18n import translate as _t
 
 router = APIRouter(tags=["interviews"])
@@ -83,31 +83,29 @@ async def interviews_home(request: Request):
 
 
 def _enrich_for_home(interview: dict, lang: str) -> dict:
-    """Attach readiness + a parsed 'when' (display + soonness) for Home."""
+    """Attach readiness + a parsed 'when' for Home. `at` is the validated local
+    'YYYY-MM-DDTHH:MM' the browser uses for the urgent cue (see _fmt_when)."""
     readiness = prep_readiness.compute(interview, lang=interview.get("lang") or lang)
-    when, is_soon = _fmt_when(interview.get("interview_at"))
+    when, at = _fmt_when(interview.get("interview_at"))
     has_brief = prep_brief.read_cached_brief(
         interview["id"], lang=interview.get("lang") or lang) is not None
     return {"iv": interview, "readiness": readiness, "when": when,
-            "is_soon": is_soon, "has_brief": has_brief}
+            "at": at, "has_brief": has_brief}
 
 
-def _fmt_when(interview_at: Optional[str]) -> tuple[str, bool]:
-    """(display string, is_soon) from a stored 'YYYY-MM-DDTHH:MM'. is_soon =
-    within 48h and future → the design's 'red = urgent' cue (§5). Empty/bad →
-    ('', False)."""
+def _fmt_when(interview_at: Optional[str]) -> tuple[str, str]:
+    """(display string, validated 'YYYY-MM-DDTHH:MM') from the stored local time.
+    The 'red = urgent, within 48h' cue (§5) is decided in the BROWSER: the time
+    is the user's local time and the server clock is UTC, so only the browser
+    can compare them. Empty/bad → (raw, '')."""
     raw = (interview_at or "").strip()
     if not raw:
-        return "", False
+        return "", ""
     try:
         dt = datetime.strptime(raw[:16], "%Y-%m-%dT%H:%M")
     except ValueError:
-        return raw, False
-    delta = dt - datetime.now()
-    days = delta.total_seconds() / 86400
-    is_soon = 0 <= days <= 2
-    display = dt.strftime("%a, %b %-d · %-I:%M %p")
-    return display, is_soon
+        return raw, ""
+    return dt.strftime("%a, %b %-d · %-I:%M %p"), dt.strftime("%Y-%m-%dT%H:%M")
 
 
 # ---------- Flow A: New Interview ----------
@@ -169,15 +167,12 @@ async def interview_create(
     OR a JD is the floor — without either there's nothing to build a brief from."""
     _resume, resume_hash, resume_id, _txt = _current()
     if not resume_hash:
-        return HTMLResponse(
-            '<div class="text-error text-sm">Upload a résumé on Profile first.</div>')
+        return _error("prep2.err.need_resume")
     company = company.strip()
     jd_text = jd_text.strip()
     source_url = source_url.strip()
     if not company and not jd_text and not source_url:
-        return HTMLResponse(
-            '<div class="text-error text-sm">Add a company name, a job link, or paste '
-            'the job description so we can build your prep.</div>')
+        return _error("prep2.err.need_input")
 
     src = source if source in ("from_match", "paste_link", "paste_text") else "paste_text"
     interview_id = db.create_interview(
@@ -286,7 +281,7 @@ async def interview_facts(request: Request, interview_id: int):
     # field ids → facts keys: the Brief's questions (by TEXT — ids are re-used on a
     # rebuild) and the cards' ✎ gaps (gap_key — same key as the inline card field)
     toolkit = prep_toolkit.read_cached_toolkit(
-        interview_id, db.list_stories(interview.get("resume_hash", ""), status="saved"), lang=lang)
+        interview_id, db.list_stories(interview.get("resume_hash", ""), status="saved"), lang=lang, fresh=False)
     keys = {st["id"]: st["key"] for st in (_checkin_steps(brief, toolkit, {}) if brief else [])}
     # Answers MERGE into what's saved: the check-in may show only the open gaps,
     # and Skip never erases anything (a skip wiped Eduardo's answers, 2026-09-29).
@@ -311,7 +306,7 @@ async def interview_facts_add(interview_id: int, key: str = Form(""), answer: st
     lang = interview.get("lang") or None
     brief = prep_brief.read_cached_brief(interview_id, lang=lang)
     toolkit = prep_toolkit.read_cached_toolkit(
-        interview_id, db.list_stories(interview.get("resume_hash", ""), status="saved"), lang=lang)
+        interview_id, db.list_stories(interview.get("resume_hash", ""), status="saved"), lang=lang, fresh=False)
     facts = prep_toolkit.read_facts(interview_id)
     facts[key.strip()[:300]] = answer.strip()
     prep_toolkit.save_facts(interview_id, facts,
@@ -364,7 +359,7 @@ async def interview_checkin(request: Request, interview_id: int):
     if not brief.clarify_questions:
         return _redirect(f"/interviews/{interview_id}/get-ready")
     stories = db.list_stories(interview["resume_hash"], status="saved")
-    toolkit = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang)
+    toolkit = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang, fresh=False)
     facts = prep_toolkit.read_facts(interview_id)
     steps = _checkin_steps(brief, toolkit, facts)
     return templates.TemplateResponse(request, "pages/interview_checkin.html", {
@@ -489,7 +484,7 @@ async def practice_entry(request: Request, interview_id: int):
     # Answer cards rated "missed" in Get Ready (ADR-056) → a pre-selected focus.
     # Cache-only read of P2: setup must never trigger a generation.
     cached = prep_toolkit.read_cached_toolkit(
-        interview_id, db.list_stories(interview["resume_hash"], status="saved"), lang=lang)
+        interview_id, db.list_stories(interview["resume_hash"], status="saved"), lang=lang, fresh=False)
     qlist = [q.to_dict() for q in cached.questions] if cached else []
     missed_count = len(_missed_question_ids(interview_id, qlist))
     focus_q = request.query_params.get("focus", "")
@@ -544,12 +539,12 @@ async def practice_start(
     lang = interview.get("lang") or get_output_language()
     brief = prep_brief.read_cached_brief(interview_id, lang=lang)
     if brief is None:
-        return HTMLResponse('<div class="text-error text-sm">Build the brief first.</div>')
+        return _error("prep2.err.need_brief")
     competencies = [c.to_dict() for c in brief.competencies]
     # The toolkit's questions (ADR-057); build it on a cold miss so Practice
     # always has a set.
     stories = db.list_stories(interview["resume_hash"], status="saved")
-    toolkit = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang)
+    toolkit = prep_toolkit.read_cached_toolkit(interview_id, stories, lang=lang, fresh=False)
     if toolkit is None:
         _resume, _rh, _rid, resume_text = _current()
         toolkit = await pipeline.run_toolkit(
@@ -557,7 +552,7 @@ async def practice_start(
             stories=stories, lang=lang)
     qdicts = [q.to_dict() for q in (toolkit.questions if toolkit else [])]
     if not qdicts:
-        return HTMLResponse('<div class="text-error text-sm">We couldn\'t load questions — try again.</div>')
+        return _error("prep2.err.questions_failed")
     missed = focus.strip() == "__missed__"
     picked = prep_practice.pick_session_questions(
         qdicts, length=length,
@@ -805,11 +800,37 @@ async def practice_answer(
 @router.post("/interviews/{interview_id}/practice/{session_id}/build")
 async def practice_build(request: Request, interview_id: int, session_id: int):
     """C4 — run P8 on each answer then P9 for the debrief, persist, and redirect
-    to Feedback."""
+    to Feedback. Never saves an empty debrief: on failure the session stays
+    open and the user gets Retry. Never runs twice for one session."""
     interview = db.get_interview(interview_id)
     session = db.get_practice_session(session_id)
     if not interview or not session or session["interview_id"] != interview_id:
         return _redirect(f"/interviews/{interview_id}")
+    feedback_url = f"/interviews/{interview_id}/practice/{session_id}/feedback"
+    if session["status"] == "done":
+        return HTMLResponse("", headers={"HX-Redirect": feedback_url})
+    ctx = {"interview": interview, "session_id": session_id}
+    if session_id in _BUILDS_IN_FLIGHT:   # a refresh mid-build → wait, don't pay twice
+        return templates.TemplateResponse(request, "partials/practice_building.html", {**ctx, "wait": True})
+    _BUILDS_IN_FLIGHT.add(session_id)
+    try:
+        debrief = await _build_typed_debrief(interview, session)
+    finally:
+        _BUILDS_IN_FLIGHT.discard(session_id)
+    if debrief is None:
+        return templates.TemplateResponse(request, "partials/practice_build_failed.html", ctx)
+    db.save_practice_debrief(session_id, debrief.to_dict())
+    return HTMLResponse("", headers={"HX-Redirect": feedback_url})
+
+
+# Sessions whose typed debrief is being built right now (single-process app).
+_BUILDS_IN_FLIGHT: set[int] = set()
+
+
+async def _build_typed_debrief(interview: dict, session: dict):
+    """P8 for each answer that has no evaluation yet (a Retry doesn't re-pay for
+    the ones that worked), then P9. None when nothing could be evaluated."""
+    interview_id, session_id = interview["id"], session["id"]
     lang = interview.get("lang") or get_output_language()
     brief = prep_brief.read_cached_brief(interview_id, lang=lang)
     comp_by_id = {c.id: c.to_dict() for c in brief.competencies} if brief else {}
@@ -825,6 +846,11 @@ async def practice_build(request: Request, interview_id: int, session_id: int):
     answers = db.list_practice_answers(session_id)
     evals, deliveries = [], []
     for a in answers:
+        if a.get("delivery"):
+            deliveries.append(a["delivery"])
+        if a.get("eval"):   # already evaluated on an earlier attempt
+            evals.append(a["eval"])
+            continue
         src_q = q_by_pos.get(a["position"], {})
         q = {"id": a["question_id"], "text": a["question_text"],
              "type": src_q.get("type", "behavioral"), "competency_id": a["competency_id"]}
@@ -837,15 +863,11 @@ async def practice_build(request: Request, interview_id: int, session_id: int):
         if ev is not None:
             db.save_practice_eval(a["id"], ev.to_dict())
             evals.append(ev.to_dict())
-        if a.get("delivery"):
-            deliveries.append(a["delivery"])
 
-    debrief = await asyncio.to_thread(
+    return await asyncio.to_thread(
         prep_practice.session_debrief, evals, deliveries,
         [c.to_dict() for c in brief.competencies] if brief else [], client, lang=lang,
         asked_ids=prep_practice.asked_competency_ids(session.get("questions") or []))
-    db.save_practice_debrief(session_id, debrief.to_dict() if debrief else {})
-    return HTMLResponse("", headers={"HX-Redirect": f"/interviews/{interview_id}/practice/{session_id}/feedback"})
 
 
 @router.get("/interviews/{interview_id}/practice/{session_id}/feedback")

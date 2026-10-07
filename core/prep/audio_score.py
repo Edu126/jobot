@@ -91,10 +91,14 @@ def score_from_audio(
     live_said = " ".join(str(x.get("text", "")) for x in (turns or [])
                          if isinstance(x, dict) and x.get("role") != "coach")
     comp_ids = _comp_ids(competencies)
-    # Quotes verify against the audio transcript OR the live one — either is
-    # the candidate's words; a quote in neither earns nothing.
+    # Quotes verify against the LIVE transcript (Gemini Live's speech-to-text of
+    # what was actually said). Not `clean`: the same call that writes the quotes
+    # writes it, so a hallucinated quote would verify against itself (REQ-042
+    # "no credit without verifiable proof"). Only when there's no live transcript
+    # at all does `clean` stand in. verify_quote's token-overlap fallback absorbs
+    # speech-to-text drift.
     debrief = _parse_debrief(raw, valid_comps=set(comp_ids), comp_ids=comp_ids,
-                             transcript=f"{clean}\n{live_said}",
+                             transcript=live_said if live_said.strip() else clean,
                              asked_ids=asked_competency_ids(questions))
     if debrief is None:
         return None

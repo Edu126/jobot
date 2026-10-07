@@ -18,7 +18,7 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -551,6 +551,18 @@ CREATE TABLE IF NOT EXISTS prep_artifacts (
     model           TEXT,
     created_at      TEXT NOT NULL,
     PRIMARY KEY (interview_id, kind, lang, prompt_version)
+);
+
+-- story_drafts (code-review 2026-10-07): cached P5 drafts for the empty Story
+-- Bank, keyed like every LLM cache on all its dimensions (ADR-008 rule 3).
+-- resume_hash keyed, no FK → listed in Delete all (tests/test_delete_all.py).
+CREATE TABLE IF NOT EXISTS story_drafts (
+    resume_hash     TEXT NOT NULL,
+    lang            TEXT NOT NULL,
+    prompt_version  TEXT NOT NULL,
+    drafts_json     TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    PRIMARY KEY (resume_hash, lang, prompt_version)
 );
 
 -- stories (ADR-050, REQ-041 / D4): the account-level Story Bank of STAR
@@ -2354,17 +2366,24 @@ def get_interview_for_job(
     return dict(row) if row else None
 
 
-def list_interviews(resume_hash: str, path: Path = DB_PATH) -> list[dict]:
-    """This candidate's interviews, soonest upcoming first (undated last), then
-    most-recently opened — the Home 'What's next' ordering (Screen 1)."""
+def list_interviews(resume_hash: str, path: Path = DB_PATH,
+                    now: Optional[datetime] = None) -> list[dict]:
+    """This candidate's interviews in Home 'What's next' order (Screen 1):
+    upcoming (soonest first) → undated → past (most recent first), ties by most
+    recently opened. `interview_at` is the user's LOCAL time and the server runs
+    UTC, so "past" starts 14 h after the stored time (the widest UTC offset):
+    an interview never drops out of "next" before it has happened locally."""
+    cutoff = ((now or datetime.utcnow()) - timedelta(hours=14)).strftime("%Y-%m-%dT%H:%M")
     with connect(path) as conn:
         rows = conn.execute(
             """SELECT * FROM interviews WHERE resume_hash = ?
                ORDER BY
-                 CASE WHEN interview_at IS NULL OR interview_at = '' THEN 1 ELSE 0 END,
-                 interview_at ASC,
+                 CASE WHEN interview_at IS NULL OR interview_at = '' THEN 1
+                      WHEN interview_at >= ? THEN 0 ELSE 2 END,
+                 CASE WHEN interview_at >= ? THEN interview_at END ASC,
+                 interview_at DESC,
                  COALESCE(last_opened_at, created_at) DESC""",
-            (resume_hash,),
+            (resume_hash, cutoff, cutoff),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -2393,6 +2412,59 @@ def delete_interview(interview_id: int, path: Path = DB_PATH) -> None:
 
 
 # ---------- prep_artifacts (ADR-048): P1–P4 pipeline output cache ----------
+
+def get_story_drafts(resume_hash: str, lang: str, prompt_version: str,
+                     path: Path = DB_PATH) -> Optional[list[dict]]:
+    """Cached P5 drafts, or None on a miss."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT drafts_json FROM story_drafts
+               WHERE resume_hash = ? AND lang = ? AND prompt_version = ?""",
+            (resume_hash, lang, prompt_version)).fetchone()
+    if not row:
+        return None
+    try:
+        drafts = json.loads(row["drafts_json"])
+    except (TypeError, ValueError):
+        return None
+    return drafts if isinstance(drafts, list) else None
+
+
+def save_story_drafts(resume_hash: str, lang: str, prompt_version: str, drafts: list[dict],
+                      path: Path = DB_PATH) -> None:
+    with tx(path) as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO story_drafts
+               (resume_hash, lang, prompt_version, drafts_json, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (resume_hash, lang, prompt_version, json.dumps(drafts, ensure_ascii=False), _now()))
+
+
+def get_latest_prep_artifact(
+    interview_id: int,
+    kind: str,
+    lang: str,
+    version_prefix: str,
+    path: Path = DB_PATH,
+) -> Optional[dict]:
+    """The newest cached artifact whose prompt_version starts with
+    `version_prefix` — for readers that can live with a slightly stale copy
+    (same prompt, older inputs) instead of a miss. Same shape as get_prep_artifact."""
+    with connect(path) as conn:
+        row = conn.execute(
+            """SELECT artifact_json, model, created_at FROM prep_artifacts
+               WHERE interview_id = ? AND kind = ? AND lang = ? AND prompt_version LIKE ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (interview_id, kind, lang, version_prefix.replace("%", r"\%") + "%"),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        artifact = json.loads(row["artifact_json"])
+    except (TypeError, ValueError):
+        return None
+    return {"artifact": artifact, "model": row["model"], "created_at": row["created_at"]}
+
 
 def get_prep_artifact(
     interview_id: int,
@@ -2697,18 +2769,25 @@ def add_practice_answer(
     delivery: Optional[dict] = None,
     path: Path = DB_PATH,
 ) -> int:
-    """Record one answer. `eval_json` stays NULL until the build step runs P8."""
+    """Record one answer. `eval_json` stays NULL until the build step runs P8.
+    Idempotent per (session, position): a double submit can't store a second
+    answer at the same position and skip the next question. Returns the new
+    row id, or 0 when that position was already answered."""
     now = _now()
     with tx(path) as conn:
+        # One statement → atomic under SQLite's write lock, even for two racing requests.
         cur = conn.execute(
             """INSERT INTO practice_answers
                (session_id, position, question_id, question_text, competency_id,
                 transcript, seconds, delivery_json, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+               WHERE NOT EXISTS (SELECT 1 FROM practice_answers
+                                 WHERE session_id = ? AND position = ?)""",
             (session_id, position, question_id, question_text, competency_id,
              transcript, seconds,
-             json.dumps(delivery, ensure_ascii=False) if delivery else None, now))
-    return int(cur.lastrowid)
+             json.dumps(delivery, ensure_ascii=False) if delivery else None, now,
+             session_id, position))
+    return int(cur.lastrowid) if cur.rowcount else 0
 
 
 def list_practice_answers(session_id: int, path: Path = DB_PATH) -> list[dict]:

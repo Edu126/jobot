@@ -255,6 +255,17 @@ def test_pipeline_two_calls_then_cache_and_reads():
     made.clear()
     asyncio.run(PL.build_toolkit(interview, "résumé", make_client=make, stories=stories, lang="en", path=p))
     _assert(sum(c.calls for c in made) == 0, "second build is all cache")
+    # Code-review 2026-10-07: editing one story must not blank the cache-only
+    # readers (readiness, Practice setup) — only Get Ready (fresh) misses.
+    edited = [{**stories[0], "result": "a different result"}]
+    _assert(T.read_cached_toolkit(interview["id"], edited, lang="en", path=p) is None,
+            "fresh read misses after a story edit → Get Ready regenerates")
+    stale = T.read_cached_toolkit(interview["id"], edited, lang="en", fresh=False, path=p)
+    _assert(stale is not None and [q.id for q in stale.questions] == ["q1", "q2", "q3"],
+            "stale-tolerant read keeps the last toolkit")
+    _assert(T.read_cached_mapping(interview["id"], edited, lang="en", path=p), "mapping survives a story edit")
+    _assert(T.read_cached_toolkit(interview["id"], edited, lang="es", fresh=False, path=p) is None,
+            "never crosses languages")
     print("PASS test_pipeline_two_calls_then_cache_and_reads")
 
 

@@ -872,6 +872,13 @@ async def data_delete_all(request: Request, confirmation: str = Form("")):
             # FK at all → both must be wiped by hand or they orphan (same trap as
             # the gap caches above, [[project_delete_all_resume_hash_tables]]).
             "prep_kits", "prep_sessions", "company_outlook",
+            # Interview prep (REQ-041+). interviews + stories key on resume_hash
+            # (no FK from resumes) → wiped by hand; children listed first for
+            # intent even though they CASCADE off interviews.
+            "card_reviews", "practice_answers", "practice_sessions", "prep_artifacts",
+            "interviews", "stories", "story_drafts",
+            # Tailored résumés + their scores: no FK at all (tests/test_delete_all.py).
+            "tailor_runs", "tailored_scores",
             "resumes", "jobs",
             "saved_searches", "search_tasks",
             "events", "feedback", "admin_reports",

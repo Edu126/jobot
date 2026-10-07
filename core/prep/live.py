@@ -80,18 +80,10 @@ def coach_delivery(voice: str) -> str:
 # no name. Each `style` is folded into the P7 core prompt (interviewer_system_prompt).
 # Neutral is the default. Kept to four; all hard-coded here.
 PERSONALITIES = {
-    "neutral": {"label": "Neutral",
-                "blurb": "Even and professional",
-                "style": "even, professional and impartial — you neither warm up nor push hard; you ask, listen, and move on matter-of-factly"},
-    "friendly": {"label": "Friendly",
-                 "blurb": "Warm, puts you at ease",
-                 "style": "warm and encouraging — you put the candidate at ease with a relaxed, supportive manner, while still keeping the interview on track"},
-    "sharp": {"label": "Sharp",
-              "blurb": "Probing, wants specifics",
-              "style": "sharp and probing — you press for specifics, numbers and outcomes and follow up on anything vague; concise and businesslike, never hostile"},
-    "harsh": {"label": "Harsh",
-              "blurb": "Tough, high bar",
-              "style": "tough and skeptical — you set a high bar and challenge weak answers directly without handing out reassurance; demanding but always professional and fair, never rude or personal"},
+    "neutral": {"style": "even, professional and impartial — you neither warm up nor push hard; you ask, listen, and move on matter-of-factly"},
+    "friendly": {"style": "warm and encouraging — you put the candidate at ease with a relaxed, supportive manner, while still keeping the interview on track"},
+    "sharp": {"style": "sharp and probing — you press for specifics, numbers and outcomes and follow up on anything vague; concise and businesslike, never hostile"},
+    "harsh": {"style": "tough and skeptical — you set a high bar and challenge weak answers directly without handing out reassurance; demanding but always professional and fair, never rude or personal"},
 }
 DEFAULT_PERSONALITY = "neutral"
 

@@ -20,7 +20,7 @@ DEFAULT_BAND = "needs_work"
 RULE_BLOCK = """Rules:
 - Use only the information given below. Do not invent facts, names, numbers, or company details.
 - If something is unknown, use null.
-- Write in plain, simple English. Short sentences.
+- Write in plain, simple language, in the output language these instructions ask for. Short sentences.
 - Return only valid JSON that matches the schema."""
 
 # Input clamps — the same defensive truncation kit.py uses so a huge JD or

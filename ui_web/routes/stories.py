@@ -32,7 +32,7 @@ from core.prep import story_bank
 from core.settings import get_output_language
 
 from ..deps import templates
-from ..deps import current_resume as _current, see_other as _redirect
+from ..deps import current_resume as _current, see_other as _redirect, error_snippet as _error
 
 router = APIRouter(tags=["stories"])
 
@@ -124,9 +124,9 @@ async def story_create(
 ):
     _resume, resume_hash, _rid, _txt = _current()
     if not resume_hash:
-        return HTMLResponse('<div class="text-error text-sm">Upload a résumé first.</div>')
+        return _error("prep2.err.need_resume")
     if not title.strip() and not action.strip():
-        return HTMLResponse('<div class="text-error text-sm">Give the story a title and an action.</div>')
+        return _error("prep2.err.story_needs_title_action")
     db.create_story(
         resume_hash, title=title.strip(), situation=situation.strip(),
         task=task.strip(), action=action.strip(), result=result.strip(),
@@ -154,13 +154,12 @@ async def story_strength(
 
 @router.get("/stories/draft")
 async def stories_draft(request: Request):
-    _resume, _rh, _rid, resume_text = _current()
+    _resume, resume_hash, _rid, resume_text = _current()
     drafts = []
     if resume_text:
-        client = GeminiClient(api_key=resolve_api_key())
         drafts = await asyncio.to_thread(
-            story_bank.draft_stories_from_resume, resume_text, client,
-            lang=get_output_language())
+            story_bank.get_or_draft_stories, resume_hash, resume_text,
+            lambda: GeminiClient(api_key=resolve_api_key()), lang=get_output_language())
     return templates.TemplateResponse(
         request, "pages/stories_draft.html",
         {"active_tab": "prep", "drafts": drafts},
@@ -172,13 +171,12 @@ async def stories_suggested(request: Request):
     """HTMX partial for the empty-state Story Bank: AI-drafted STAR stories from
     the résumé, lazy-loaded so the bank never looks empty (Flow B1). Same P5
     generator as /stories/draft; returns just the draft cards."""
-    _resume, _rh, _rid, resume_text = _current()
+    _resume, resume_hash, _rid, resume_text = _current()
     drafts = []
     if resume_text:
-        client = GeminiClient(api_key=resolve_api_key())
         drafts = await asyncio.to_thread(
-            story_bank.draft_stories_from_resume, resume_text, client,
-            lang=get_output_language())
+            story_bank.get_or_draft_stories, resume_hash, resume_text,
+            lambda: GeminiClient(api_key=resolve_api_key()), lang=get_output_language())
     return templates.TemplateResponse(
         request, "partials/story_drafts.html", {"drafts": drafts})
 
@@ -221,7 +219,7 @@ async def stories_voice_to_star(request: Request, transcript: str = Form("")):
     editor (prefilled, source=voice) for review + save."""
     transcript = transcript.strip()
     if not transcript:
-        return HTMLResponse('<div class="text-error text-sm">Say or type something first.</div>')
+        return _error("prep2.err.say_something")
     client = GeminiClient(api_key=resolve_api_key())
     draft = await asyncio.to_thread(
         story_bank.story_from_voice, transcript, client, lang=get_output_language())
