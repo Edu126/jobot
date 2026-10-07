@@ -648,6 +648,7 @@ async def practice_audio(
     coach_audio: UploadFile = File(None),
     turns: str = Form("[]"),
     candidate_seconds: str = Form("0"),
+    answer_bounds: str = Form("[]"),
 ):
     """End of a voice session: store the conversation transcript, then build the
     debrief. Preferred path — score from the uploaded WAV (delivery + content read
@@ -679,6 +680,10 @@ async def practice_audio(
     # Speaking time is measured from the recorded audio (ADR-070); the browser's
     # level-gated count is only a fallback when no audio arrived / none stood out.
     secs = (await asyncio.to_thread(prep_audio_metrics.speaking_seconds_wav, wav) if wav else 0) or secs
+    bounds = _parse_json(answer_bounds)
+    answer_secs = (await asyncio.to_thread(prep_audio_metrics.answer_seconds_wav, wav,
+                                           bounds if isinstance(bounds, list) else [])
+                   if wav else [])
     debrief = None
     if wav:
         debrief = await asyncio.to_thread(
@@ -693,6 +698,8 @@ async def practice_audio(
         said = " ".join(t["text"] for t in turn_list if t["role"] == "you")
         debrief = {**(d.to_dict() if d else {}),
                    "delivery": prep_audio_score.code_delivery(said, secs)}
+    if answer_secs and isinstance(debrief.get("delivery"), dict):
+        debrief["delivery"]["answer_seconds"] = answer_secs   # per-answer length (ADR-071)
     db.save_practice_debrief(session_id, debrief)
     return JSONResponse({"redirect": feedback_url})
 
@@ -878,15 +885,18 @@ def _delivery_gauges(session: dict, answers: list[dict]) -> list[dict]:
     session-level code delivery; typed sums the per-answer deliveries."""
     dv = (session.get("debrief") or {}).get("delivery") or {}
     if session.get("transcript") and dv.get("word_count") is not None:
+        per_answer = dv.get("answer_seconds")   # absent on sessions before ADR-071
         return prep_session_score.delivery_gauges(
             words=int(dv.get("word_count") or 0), seconds=int(dv.get("seconds") or 0),
-            fillers=int(dv.get("filler_count") or 0))
+            fillers=int(dv.get("filler_count") or 0),
+            answer_seconds=[int(x) for x in per_answer if isinstance(x, (int, float))]
+            if isinstance(per_answer, list) else [])
     ds = [a["delivery"] for a in answers if a.get("delivery")]
     return prep_session_score.delivery_gauges(
         words=sum(int(d.get("word_count") or 0) for d in ds),
         seconds=sum(int(d.get("seconds") or 0) for d in ds),
         fillers=sum(int(d.get("filler_count") or 0) for d in ds),
-        answers=len(ds))
+        answer_seconds=[int(d.get("seconds") or 0) for d in ds])
 
 
 def _current_turn(interview: dict, session: dict) -> Optional[dict]:

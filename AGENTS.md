@@ -8,6 +8,8 @@
 
 1. **Ask → REQ.** A new feature or user/tester feedback gets a
    `docs/requirements/REQ-XXX` *before* code: their words + the need underneath.
+   A **bug** gets no new REQ. Link the REQ it breaks to the fix (its ADR or
+   commit), so the trail stays connected.
 2. **Decide → ADR.** Choosing between approaches, or reversing one, gets a
    `docs/decisions/ADR-XXX` at the moment of decision (<150 words).
 3. **Build** following the rules below (UI kit, prompts, scores).

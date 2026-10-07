@@ -31,10 +31,10 @@ not a vibe.
 ## Design
 - Each gauge has a zoned track (good / ok / warn tints), a marker where you landed, the value + unit, a verdict pill and a one-line note that names the baseline. Built with `ui.gauge`; the data comes from `session_score.delivery_gauges`.
 - Inputs are **measured in code**: words, speaking seconds, filler count. With no measurement there's no gauge, and we never show a guess. Speaking seconds come from the candidate's recorded audio, measured on the server ([ADR-070](../decisions/ADR-070-speaking-time-measured-from-audio.md)). The browser's level-gated count gave 0 s, or too few seconds, on quiet mics.
-- The length gauge only appears when the per-answer count is known (the typed path). The voice path can't split answers reliably yet.
+- The length gauge uses each answer's measured seconds. Typed sessions record them per answer. Voice sessions cut the audio where the coach's turns start, and drop replies under 8 s ([ADR-071](../decisions/ADR-071-voice-answers-split-at-coach-turns.md)). Voice sessions recorded before that change show no length gauge.
 
 ## How we'll know it worked
 Eduardo reads "139 wpm · Easy to follow — everyday conversation is about 150" and knows what to do without asking what the number means.
 
 ## Related
-REQ-042 (score inventory, row 14), ADR-059, ADR-048 (delivery in code), ADR-070 (speaking time from audio)
+REQ-042 (score inventory, row 14), ADR-059, ADR-048 (delivery in code), ADR-070 (speaking time from audio), ADR-071 (voice answers split at coach turns)

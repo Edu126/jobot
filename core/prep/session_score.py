@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, Sequence
 
 CHECKS = ("answered", "example", "own_actions", "result", "quantified")
 MAX_POINTS = len(CHECKS)
@@ -282,9 +282,10 @@ LENGTH_ZONES = [(0, 45, "warn"), (45, 60, "ok"), (60, 121, "good"),
 
 
 def delivery_gauges(*, words: int, seconds: int, fillers: int,
-                    answers: int = 0) -> list[dict]:
+                    answer_seconds: Sequence[int] = ()) -> list[dict]:
     """The Delivery panel as gauges — computed in code from measured words,
-    speaking seconds and filler count. Empty list when there's no speech."""
+    speaking seconds and filler count; answer length from the measured seconds
+    of each answer. Empty list when there's no speech."""
     out: list[dict] = []
     if words and seconds:
         wpm = round(words / (seconds / 60))
@@ -293,8 +294,9 @@ def delivery_gauges(*, words: int, seconds: int, fillers: int,
         per100 = round(100 * fillers / words, 1)
         fv = "low" if per100 < 2 else ("typical" if per100 < 4 else "high")
         out.append(_gauge("fillers", per100, f"{per100:g}", 0, 8, FILLER_ZONES, fv))
-    if answers and seconds:
-        avg = round(seconds / answers)
+    timed = [s for s in answer_seconds if s > 0]
+    if timed:
+        avg = round(sum(timed) / len(timed))
         lv = "short" if avg < 60 else ("long" if avg > 120 else "on_target")
         out.append(_gauge("length", avg, f"{avg // 60}:{avg % 60:02d}", 0, 180, LENGTH_ZONES, lv))
     return out

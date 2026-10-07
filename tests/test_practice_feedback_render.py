@@ -39,7 +39,7 @@ def test_new_shape():
     d = PR._parse_debrief(raw, valid_comps={"c1", "c2", "c3"}, comp_ids=["c1", "c2", "c3"],
                           transcript=tr, asked_ids={"c1", "c2"}).to_dict()
     d["delivery"] = {"wpm": 140, "filler_count": 1, "seconds": 95, "word_count": 220, "pace": "on_target"}
-    html = _render(d, delta=12, gauges=SS.delivery_gauges(words=220, seconds=95, fillers=6, answers=2))
+    html = _render(d, delta=12, gauges=SS.delivery_gauges(words=220, seconds=95, fillers=6, answer_seconds=[50, 45]))
     _assert("Session score" in html and "Getting close" in html, "score hero")
     _assert("+12 vs last session" in html and "Not asked" in html, "delta + not asked")
     _assert("1 weak competency" in html, "singular readiness copy")
@@ -56,7 +56,24 @@ def test_legacy_shape():
     print("PASS test_legacy_shape")
 
 
+def test_voice_length_gauge_both_shapes():
+    """ADR-071: voice sessions with answer_seconds get a length gauge; older
+    voice sessions (no answer_seconds) keep pace + fillers and don't crash."""
+    from ui_web.routes.interviews import _delivery_gauges
+    base = {"word_count": 290, "seconds": 120, "filler_count": 4}
+    new = {"transcript": [{"role": "you", "text": "x"}],
+           "debrief": {"delivery": {**base, "answer_seconds": [70, 50]}}}
+    old = {"transcript": [{"role": "you", "text": "x"}], "debrief": {"delivery": base}}
+    g_new = {x["key"]: x for x in _delivery_gauges(new, [])}
+    g_old = {x["key"]: x for x in _delivery_gauges(old, [])}
+    _assert(g_new["length"]["display"] == "1:00", f"avg of 70+50 → 1:00, got {g_new.get('length')}")
+    _assert("length" not in g_old and "pace" in g_old, "legacy voice → pace only, no length")
+    _render({"takeaway": "t", "top_actions": ["a"]}, gauges=list(g_new.values()))
+    print("PASS test_voice_length_gauge_both_shapes")
+
+
 if __name__ == "__main__":
     test_new_shape()
     test_legacy_shape()
+    test_voice_length_gauge_both_shapes()
     print("all feedback-render tests passed")

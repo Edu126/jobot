@@ -107,6 +107,30 @@ def test_speaking_seconds_wav():
     print("PASS test_speaking_seconds_wav")
 
 
+def test_answer_seconds_split_on_coach_turns():
+    import io
+    import wave
+    # coach turn · "yes, ready" (1.4s) · coach · 20s answer · coach · 45s answer
+    r = 16000
+    parts = [_speech(1.4), _silence(1, r), _speech(20), _silence(1, r), _speech(45)]
+    bounds, pos = [0], 0
+    for p in parts[:-1]:
+        pos += len(p) // 2
+        if p is parts[0] or p is parts[2]:
+            bounds.append(pos)   # the coach spoke right after these
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(r)
+        w.writeframes(b"".join(parts))
+    got = am.answer_seconds_wav(buf.getvalue(), bounds)
+    _assert(len(got) == 2, f"short 'yes' dropped, two answers left: {got}")
+    _assert(19 <= got[0] <= 22 and 44 <= got[1] <= 47, f"per-answer seconds off: {got}")
+    junk = am.answer_seconds_wav(buf.getvalue(), ["x", -5, 10**12])
+    _assert(len(junk) == 1 and junk[0] >= 60, f"junk bounds ignored → one whole answer: {junk}")
+    _assert(am.answer_seconds_wav(b"", [100]) == [], "no audio → no answers")
+    print("PASS test_answer_seconds_split_on_coach_turns")
+
+
 if __name__ == "__main__":
     test_empty()
     test_detects_pauses()
@@ -116,4 +140,5 @@ if __name__ == "__main__":
     test_speaking_seconds_quiet_mic()
     test_speaking_seconds_silence_and_noise_are_zero()
     test_speaking_seconds_wav()
+    test_answer_seconds_split_on_coach_turns()
     print("all audio_metrics tests passed")

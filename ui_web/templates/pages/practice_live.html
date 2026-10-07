@@ -397,6 +397,7 @@
       _capActive: false,                // a coach turn is streaming
       _coachQueue: '', _revealed: 0, _turnAudioStart: 0, _coachCps: 18, _revealTimer: null,  // caption streamed at audio pace
       _pcm: [], _pcmLen: 0,            // recorded user PCM16 (for audio scoring)
+      _answerBounds: [],               // sample offsets into _pcm where each coach turn starts (ADR-071)
       _coachPcm: [], _coachPcmLen: 0,  // RAW coach PCM24 as received (fidelity A/B vs playground)
       _resumeHandle: null, _reconnecting: false,  // session resumption
       _orb: null,                                  // dual-voice wave visualization
@@ -588,7 +589,11 @@
 
       // coach-speaking gate (echo defence): on while audio flows; off 300ms after
       // the coach's turn completes; off immediately on a barge-in.
-      _coachOn() { if (this._coachTimer) { clearTimeout(this._coachTimer); this._coachTimer = null; } this.coachSpeaking = true; this._resetSilence(); },
+      _coachOn() {
+        if (this._coachTimer) { clearTimeout(this._coachTimer); this._coachTimer = null; }
+        if (!this.coachSpeaking) this._answerBounds.push(this._pcmLen);   // a new coach turn closes the answer before it
+        this.coachSpeaking = true; this._resetSilence();
+      },
 
       // ---- inactivity: nudge at ~50s of silence, end ~20s later (user's ask) ----
       _resetSilence() { this._silenceStart = performance.now(); this._nudged = false; },
@@ -705,6 +710,7 @@
         const fd = new FormData();
         fd.append('turns', JSON.stringify(this.turns));
         fd.append('candidate_seconds', String(Math.round(this._speakingMs / 1000)));
+        fd.append('answer_bounds', JSON.stringify(this._answerBounds));
         const wav = this._buildWav();
         if (wav) fd.append('audio', wav, 'answers.wav');
         // Raw coach audio for the fidelity A/B (saved only when -edu has it enabled).
