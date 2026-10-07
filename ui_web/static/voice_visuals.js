@@ -12,8 +12,12 @@
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+  // Tokens are read once per page (not per frame — getComputedStyle every frame
+  // forces style work); the theme doesn't change while a visual is running.
+  const tokens = {};
   function token(name) {
-    return (getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim();
+    if (!(name in tokens)) tokens[name] = (getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim();
+    return tokens[name];
   }
   // oklch() from a daisyUI "L C H" token; falls back to plain green/salmon.
   function colour(name, alpha, fallback) {

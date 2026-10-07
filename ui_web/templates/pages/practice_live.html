@@ -7,6 +7,29 @@
 {% block main_class %}py-6{% endblock %}
 
 {% block content %}
+{# The live conversation (coach / you bubbles + the "listening" cue) — the same in
+   both layouts, so it's defined once. #}
+{% macro captions() -%}
+<div class="card-quiet p-4 overflow-y-auto live-captions" x-ref="captions">
+  <div class="space-y-2">
+    <template x-for="(c, i) in turns" :key="i">
+      <div class="flex" :class="c.role === 'coach' ? 'justify-start' : 'justify-end'">
+        <div class="ui-bubble" :class="c.role === 'coach' ? 'ui-bubble--coach' : 'ui-bubble--me'">
+          <span x-text="c.text"></span>
+        </div>
+      </div>
+    </template>
+    {# live "listening" cue on the candidate side so you can see the mic is capturing you #}
+    <div x-show="micLive" x-cloak class="flex justify-end">
+      <div class="ui-bubble chip-fresh inline-flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>{{ _('prep2.live.listening') }}
+      </div>
+    </div>
+    <div x-show="turns.length === 0" class="text-center text-sm text-body-muted py-6">{{ _('prep2.live.waiting') }}</div>
+  </div>
+</div>
+{%- endmacro %}
+
 {# Live-voice runner (ADR-052). The browser connects DIRECTLY to Gemini Live via
    the @google/genai SDK using a server-minted ephemeral token (which pins our
    P7 prompt + voice + config). The model conducts the whole interview with
@@ -18,7 +41,8 @@
         audioUrl: '/interviews/{{ interview.id }}/practice/{{ session.id }}/audio',
         feedbackUrl: '/interviews/{{ interview.id }}/practice/{{ session.id }}/feedback',
         textUrl: '/interviews/{{ interview.id }}/practice/{{ session.id }}',
-        model: '{{ live_model }}'
+        model: '{{ live_model }}',
+        keepCoachAudio: {{ 'true' if keep_coach_audio else 'false' }}
      })">
 
   {# header: stepper + ONE quiet call bar under it (mic-with-level · End). Who's
@@ -95,24 +119,7 @@
         <div class="voice-orb-wrap voice-orb-wrap--sm" aria-hidden="true"><canvas x-ref="orb" class="voice-orb"></canvas></div>
         <div class="text-sm text-body-muted text-center" x-text="stateLabel"></div>
       </div>
-      <div class="card-quiet p-4 overflow-y-auto live-captions" x-ref="captions">
-        <div class="space-y-2">
-          <template x-for="(c, i) in turns" :key="i">
-            <div class="flex" :class="c.role === 'coach' ? 'justify-start' : 'justify-end'">
-              <div class="ui-bubble" :class="c.role === 'coach' ? 'ui-bubble--coach' : 'ui-bubble--me'">
-                <span x-text="c.text"></span>
-              </div>
-            </div>
-          </template>
-          {# live "listening" cue on the candidate side so you can see the mic is capturing you #}
-          <div x-show="micLive" x-cloak class="flex justify-end">
-            <div class="ui-bubble chip-fresh inline-flex items-center gap-1.5">
-              <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>{{ _('prep2.live.listening') }}
-            </div>
-          </div>
-          <div x-show="turns.length === 0" class="text-center text-sm text-body-muted py-6">{{ _('prep2.live.waiting') }}</div>
-        </div>
-      </div>
+      {{ captions() }}
     </div>
 
     {# the prepared answer for the question the coach is on (tracked from its
@@ -140,24 +147,7 @@
       <div class="voice-orb-wrap" aria-hidden="true"><canvas x-ref="orb" class="voice-orb"></canvas></div>
       <div class="text-sm text-body-muted text-center" x-text="stateLabel"></div>
     </div>
-    <div class="card-quiet p-4 overflow-y-auto live-captions" x-ref="captions">
-        <div class="space-y-2">
-          <template x-for="(c, i) in turns" :key="i">
-            <div class="flex" :class="c.role === 'coach' ? 'justify-start' : 'justify-end'">
-              <div class="ui-bubble" :class="c.role === 'coach' ? 'ui-bubble--coach' : 'ui-bubble--me'">
-                <span x-text="c.text"></span>
-              </div>
-            </div>
-          </template>
-          {# live "listening" cue on the candidate side so you can see the mic is capturing you #}
-          <div x-show="micLive" x-cloak class="flex justify-end">
-            <div class="ui-bubble chip-fresh inline-flex items-center gap-1.5">
-              <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>{{ _('prep2.live.listening') }}
-            </div>
-          </div>
-          <div x-show="turns.length === 0" class="text-center text-sm text-body-muted py-6">{{ _('prep2.live.waiting') }}</div>
-        </div>
-      </div>
+    {{ captions() }}
   {% endif %}
   </div>
 </div>
@@ -400,7 +390,7 @@
           if (this.micLive) { this._speakingMs += pcm.byteLength / 2 / this._cap.sampleRate * 1000; this._resetSilence(); }  // fallback only (ADR-070)
           if (!sending) return;
           // record the user's audio for scoring (cap ~12 min) + stream to Gemini
-          if (this._pcmLen < 16000 * 60 * 12) { this._pcm.push(new Int16Array(pcm).slice()); this._pcmLen += pcm.byteLength / 2; }
+          if (this._pcmLen < 16000 * 60 * 12) { this._pcm.push(new Int16Array(pcm)); this._pcmLen += pcm.byteLength / 2; }   // pcm is a transferred, owned buffer
           try { this._session.sendRealtimeInput({ audio: { data: this._b64(pcm), mimeType: 'audio/pcm;rate=16000' } }); } catch (_) {}
         };
         const sink = this._cap.createGain(); sink.gain.value = 0;   // no mic monitoring
@@ -498,7 +488,8 @@
         const view = new Int16Array(pcm);
         // Keep the RAW coach PCM exactly as Gemini sent it (before any playback) — this
         // is the apples-to-apples file to compare against Google's playground. Capped ~12min.
-        if (this._coachPcmLen < 24000 * 60 * 12) { this._coachPcm.push(view.slice()); this._coachPcmLen += view.length; }
+        // Only where the server keeps it (-edu, ADR-055) — otherwise it's ~14 MB uploaded for nothing.
+        if (this.keepCoachAudio && this._coachPcmLen < 24000 * 60 * 12) { this._coachPcm.push(view.slice()); this._coachPcmLen += view.length; }
         const f = new Float32Array(view.length);
         for (let i = 0; i < view.length; i++) f[i] = view[i] / 0x8000;
         // DETECT-AND-STRETCH: play at EXACTLY 1.0 (no resample/pitch-shift), but find
@@ -585,15 +576,13 @@
       _wavFrom(chunks, sampleLen, rate) {
         if (!sampleLen) return null;
         const bytes = sampleLen * 2;
-        const buf = new ArrayBuffer(44 + bytes); const dv = new DataView(buf);
+        const buf = new ArrayBuffer(44); const dv = new DataView(buf);
         const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
         w(0, 'RIFF'); dv.setUint32(4, 36 + bytes, true); w(8, 'WAVE'); w(12, 'fmt ');
         dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
         dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
         w(36, 'data'); dv.setUint32(40, bytes, true);
-        let off = 44;
-        for (const chunk of chunks) { for (let i = 0; i < chunk.length; i++) { dv.setInt16(off, chunk[i], true); off += 2; } }
-        return new Blob([buf], { type: 'audio/wav' });
+        return new Blob([buf, ...chunks], { type: 'audio/wav' });   // Int16 chunks are already little-endian PCM
       },
 
       stopMic() {

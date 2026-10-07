@@ -26,7 +26,7 @@ from core import db
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
 from core.matching import gap_enhance
 from core.resume import ai_summary
-from core.settings import get_output_language, language_instruction
+from core.settings import language_instruction, resolve_output_language
 
 # Bump on any prompt change — a version mismatch on read is a miss (regenerate),
 # never a delete (same convention as gap_enhance.PROMPT_VERSION).
@@ -83,9 +83,6 @@ class PrepKit:
         }
 
 
-def _resolve_lang(lang: Optional[str]) -> str:
-    return lang if lang is not None else get_output_language()
-
 
 def _row_to_kit(row: dict) -> PrepKit:
     k = row.get("kit") or {}
@@ -130,7 +127,7 @@ def get_or_generate_kit(
     session_id = session.get("id")
     if not session_id or not resume_text.strip():
         return None
-    lang = _resolve_lang(lang)
+    lang = resolve_output_language(lang)
 
     if use_cache:
         cached = db.get_prep_kit(session_id, lang, PROMPT_VERSION, path=path)

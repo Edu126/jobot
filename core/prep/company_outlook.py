@@ -27,7 +27,7 @@ from core import db
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
 from core.prep import tavily
 from core.prep.matching import normalize_company
-from core.settings import get_output_language, language_instruction
+from core.settings import language_instruction, resolve_output_language
 
 # Bump when either hop's prompt changes — a version mismatch on read is a miss
 # (regenerate), never a delete (same convention as gap_enhance.PROMPT_VERSION).
@@ -72,9 +72,6 @@ class CompanyOutlook:
         }
 
 
-def _resolve_lang(lang: Optional[str]) -> str:
-    return lang if lang is not None else get_output_language()
-
 
 def _row_to_outlook(row: dict) -> CompanyOutlook:
     o = row.get("outlook") or {}
@@ -109,7 +106,7 @@ def get_or_generate(
     company = (company or "").strip()
     if not company:
         return None
-    lang = _resolve_lang(lang)
+    lang = resolve_output_language(lang)
     role_title = (role_title or "").strip()
     company_norm = normalize_company(company)
 

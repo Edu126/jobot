@@ -2192,47 +2192,6 @@ article.job-swipeable:focus-visible {
   .gen-orb span:nth-child(2) { transform: scale(0.85); }
 }
 
-/* ── Practice live-voice orb (practice_live.html). State-driven: idle (calm),
-   speaking (coach talking — steady glow), listening (candidate — expanding
-   ring), thinking (building feedback). Reuses the hunter-green primary.
-   Reduced-motion: states read via opacity/scale only, no continuous animation. ── */
-.practice-orb {
-  position: relative;
-  width: 120px;
-  height: 120px;
-  display: grid;
-  place-items: center;
-}
-.practice-orb::after {
-  content: "";
-  width: 64px;
-  height: 64px;
-  border-radius: 9999px;
-  background: oklch(var(--p));
-  transition: transform 0.3s ease, opacity 0.3s ease;
-}
-.practice-orb span {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  border: 2px solid oklch(var(--p));
-  opacity: 0;
-}
-.practice-orb[data-state="speaking"]::after { animation: orb-breathe 1.6s ease-in-out infinite; }
-.practice-orb[data-state="listening"] span { animation: orb-ring 1.8s ease-out infinite; }
-.practice-orb[data-state="listening"]::after { transform: scale(0.8); }
-.practice-orb[data-state="thinking"]::after { animation: orb-breathe 0.9s ease-in-out infinite; opacity: 0.7; }
-.practice-orb[data-state="connecting"]::after,
-.practice-orb[data-state="idle"]::after { opacity: 0.5; }
-@keyframes orb-breathe { 0%, 100% { transform: scale(0.9); } 50% { transform: scale(1.08); } }
-@keyframes orb-ring { 0% { transform: scale(0.55); opacity: 0.7; } 100% { transform: scale(1); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) {
-  .practice-orb::after { animation: none !important; }
-  .practice-orb span { animation: none !important; }
-  .practice-orb[data-state="speaking"]::after { transform: scale(1.05); }
-  .practice-orb[data-state="listening"] span { opacity: 0.3; transform: scale(0.9); }
-}
-
 /* ── Practice coach visual (canvas, static/voice_visuals.js "wave", ADR-073).
    Green while the coach speaks, salmon while the candidate does — both driven
    by real AnalyserNode energy. Calm when silent; slowed under reduced-motion. ── */

@@ -21,7 +21,7 @@ from typing import Optional
 # beside DEFAULT_MODEL_CHAIN so every model name has one home. Distinct from the Live
 # model; a normal generate_content call.
 from core.llm.gemini import AUDIO_SCORE_MODEL, resolve_api_key
-from core.settings import get_output_language, language_instruction
+from core.settings import language_instruction, resolve_output_language
 
 from . import prompts as P
 from . import session_score as SS
@@ -44,7 +44,7 @@ def score_from_audio(
     the score is built in code from evidence-gated checks (ADR-059)."""
     if not wav_bytes or not competencies:
         return None
-    lang = lang if lang is not None else get_output_language()
+    lang = resolve_output_language(lang)
 
     # Respect the daily cap / kill-switch, like GeminiClient does.
     from core.llm import usage as llm_usage
@@ -70,7 +70,9 @@ def score_from_audio(
             config=t.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
         )
         raw = json.loads(resp.text or "{}")
-    except Exception:  # noqa: BLE001 — any failure → caller falls back to transcript debrief
+    except Exception as exc:  # noqa: BLE001 — any failure → caller falls back to transcript debrief
+        # Leave a trace in `fly logs`: the fallback debrief is weaker, and silently so.
+        print("[prep.audio_score] audio scoring failed, falling back:", type(exc).__name__, str(exc)[:200], flush=True)
         return None
     finally:
         if uploaded is not None:

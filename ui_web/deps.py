@@ -331,3 +331,21 @@ def safe_url(url: str) -> str:
 
 
 templates.env.filters["safe_url"] = safe_url
+
+
+# ---- shared route helpers ---------------------------------------------------
+
+def current_resume():
+    """(resume dict, resume_hash, resume_id, resume_text) or (None, "", 0, "")."""
+    from core import db
+    r = db.get_current_resume()
+    if not r:
+        return None, "", 0, ""
+    return (r, r.get("text_hash") or "", int(r["id"]),
+            (r["parsed"].get("raw_text") or "").strip())
+
+
+def see_other(url: str):
+    """303 redirect after a POST (or a GET that must land elsewhere)."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url, status_code=303)

@@ -35,7 +35,7 @@ from typing import Any, Optional
 
 from core import db
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
-from core.settings import get_output_language, language_instruction
+from core.settings import language_instruction, resolve_output_language
 
 from . import brief as p1
 from . import prompts as P
@@ -210,9 +210,6 @@ def save_facts(interview_id: int, answers: dict[str, str], *, asked: Optional[li
 
 # ---------- cache keys ----------
 
-def _resolve_lang(lang: Optional[str]) -> str:
-    return lang if lang is not None else get_output_language()
-
 
 def _fingerprint(brief: dict, stories: list[dict], facts: dict[str, str]) -> str:
     comps = sorted((str(c.get("id", "")), str(c.get("name", "")))
@@ -246,7 +243,7 @@ def read_cached_toolkit(
     """Cache-only read (never generates) — for Practice setup, readiness and the
     live coach. None when the toolkit hasn't been built for the current brief /
     Story Bank / facts."""
-    lang = _resolve_lang(lang)
+    lang = resolve_output_language(lang)
     brief = p1.read_cached_brief(interview_id, lang=lang, path=path)
     if brief is None or brief.is_empty():
         return None
@@ -281,7 +278,7 @@ def get_or_generate_toolkit(
     interview_id = interview.get("id")
     if not interview_id or not resume_text.strip() or not brief.get("competencies"):
         return None
-    lang = _resolve_lang(lang)
+    lang = resolve_output_language(lang)
     facts = read_facts(interview_id, path=path)
     version = _cache_version(brief, stories, facts)
 

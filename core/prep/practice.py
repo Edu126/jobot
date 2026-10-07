@@ -27,7 +27,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
-from core.settings import get_output_language, language_instruction
+from core.settings import language_instruction, resolve_output_language
 
 from . import prompts as P
 from . import session_score as SS
@@ -69,7 +69,7 @@ def interviewer_system_prompt(
     on system instructions over ~4000 chars (undocumented). Persona identity +
     behaviour + tone only; the candidate/company context + the question list are
     injected separately via `interviewer_context_turn` (sendClientContent)."""
-    lang = lang if lang is not None else get_output_language()
+    lang = resolve_output_language(lang)
     role = (interview.get("role_title") or "the role").strip()
     company = (interview.get("company") or "the company").strip()
     round_type = (interview.get("round_type") or "screening").strip()
@@ -236,7 +236,7 @@ def evaluate_answer(
     separately in `delivery_metrics`)."""
     if not (transcript or "").strip() or client.all_models_exhausted():
         return None
-    lang = lang if lang is not None else get_output_language()
+    lang = resolve_output_language(lang)
     prompt = _build_p8_prompt(question, competency, story, transcript,
                               answer_seconds, target_seconds, lang=lang)
     try:
@@ -378,7 +378,7 @@ def session_debrief(
     evals' already-graded `evidence` (P8 checks), aggregated in code."""
     if not evaluations or client.all_models_exhausted():
         return None
-    lang = lang if lang is not None else get_output_language()
+    lang = resolve_output_language(lang)
     prompt = _build_p9_prompt(evaluations, delivery_metrics_list, competencies, lang=lang)
     try:
         raw = client.generate_json(prompt, temperature=0.0)
@@ -405,7 +405,7 @@ def session_debrief_from_transcript(
     turns = [t for t in (transcript or []) if isinstance(t, dict) and str(t.get("text", "")).strip()]
     if not turns or client.all_models_exhausted():
         return None
-    lang = lang if lang is not None else get_output_language()
+    lang = resolve_output_language(lang)
     prompt = _build_p9_transcript_prompt(turns, questions, competencies, lang=lang)
     try:
         raw = client.generate_json(prompt, temperature=0.0)

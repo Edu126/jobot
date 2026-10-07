@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
-from core.settings import get_output_language, language_instruction
+from core.settings import language_instruction, resolve_output_language
 
 from . import prompts as P
 
@@ -137,7 +137,7 @@ def draft_stories_from_resume(
     résumé with nothing story-worthy."""
     if not resume_text.strip() or client.all_models_exhausted():
         return []
-    lang = lang if lang is not None else get_output_language()
+    lang = resolve_output_language(lang)
     tags = competency_tags or DEFAULT_COMPETENCY_TAGS
     prompt = _build_p5_prompt(P.clip(resume_text, P.MAX_RESUME_CHARS), tags, lang=lang)
     try:
@@ -223,7 +223,7 @@ def story_from_voice(
     role and asks one follow-up. None on failure or an empty transcript."""
     if not transcript.strip() or client.all_models_exhausted():
         return None
-    lang = lang if lang is not None else get_output_language()
+    lang = resolve_output_language(lang)
     tags = competency_tags or DEFAULT_COMPETENCY_TAGS
     prompt = _build_p6_prompt(P.clip(transcript, MAX_TRANSCRIPT_CHARS), tags, lang=lang)
     try:
@@ -306,7 +306,7 @@ def refine_story(
     answers = {k: str(v).strip() for k, v in (answers or {}).items() if str(v).strip()}
     if not answers or client.all_models_exhausted():
         return None
-    lang = lang if lang is not None else get_output_language()
+    lang = resolve_output_language(lang)
     star = "\n".join(f"{k}: {str(story.get(k) or '').strip() or '(empty)'}"
                      for k in ("title", "situation", "task", "action", "result", "metric"))
     qa = "\n".join(f"- {k}: {v}" for k, v in answers.items())

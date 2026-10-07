@@ -31,17 +31,9 @@ from core.prep import matching
 from core.settings import get_output_language
 
 from ..deps import templates
+from ..deps import current_resume as _current, see_other as _redirect_to
 
 router = APIRouter(tags=["prep"])
-
-
-def _current():
-    """(resume dict, resume_hash, resume_id, resume_text) or (None, ...)."""
-    r = db.get_current_resume()
-    if not r:
-        return None, "", 0, ""
-    return (r, r.get("text_hash") or "", int(r["id"]),
-            (r["parsed"].get("raw_text") or "").strip())
 
 
 def _looks_like_url(s: str) -> bool:
@@ -350,7 +342,3 @@ async def _load_outlook(session: dict, *, use_cache: bool):
 
 def _redirect_to_session(sid: int) -> HTMLResponse:
     return HTMLResponse("", headers={"HX-Redirect": f"/prep/{sid}"})
-
-
-def _redirect_to(url: str) -> RedirectResponse:
-    return RedirectResponse(url, status_code=303)

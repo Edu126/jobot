@@ -119,25 +119,31 @@ def _read_pcm(wav_bytes: bytes) -> tuple[bytes, int]:
         return b"", 0
 
 
-def speaking_seconds_wav(wav_bytes: bytes) -> int:
-    """`speaking_seconds` from WAV bytes (mono 16-bit); 0 if unreadable."""
-    pcm, rate = _read_pcm(wav_bytes)
-    return speaking_seconds(pcm, rate=rate) if pcm else 0
-
-
-def answer_seconds_wav(wav_bytes: bytes, bounds: list[int]) -> list[int]:
-    """Speaking seconds per answer (ADR-071). `bounds` are sample offsets into the
+def speaking_profile_wav(wav_bytes: bytes, bounds: list[int]) -> tuple[int, list[int]]:
+    """(total speaking seconds, per-answer seconds) from ONE decode of the WAV.
+    Total: ADR-070. Per answer (ADR-071): `bounds` are sample offsets into the
     candidate audio where each coach turn began; the audio between two of them
-    is one answer. Replies under MIN_ANSWER_S are dropped (not real answers)."""
+    is one answer, and replies under MIN_ANSWER_S are dropped (not real answers).
+    (0, []) when the WAV is unreadable or nothing stands out from its noise."""
     pcm, rate = _read_pcm(wav_bytes)
     voiced = _voiced_frames(pcm, rate) if pcm else np.zeros(0, dtype=bool)
     if not voiced.size:
-        return []
+        return 0, []
     hop = max(1, int(rate * FRAME_MS / 1000))
     cuts = sorted({b // hop for b in bounds if isinstance(b, int) and 0 < b // hop < voiced.size})
     edges = [0, *cuts, voiced.size]
-    secs = (_bridged_seconds(voiced[a:b]) for a, b in zip(edges, edges[1:]))
-    return [s for s in secs if s >= MIN_ANSWER_S]
+    per = (_bridged_seconds(voiced[a:b]) for a, b in zip(edges, edges[1:]))
+    return _bridged_seconds(voiced), [x for x in per if x >= MIN_ANSWER_S]
+
+
+def speaking_seconds_wav(wav_bytes: bytes) -> int:
+    """`speaking_seconds` from WAV bytes (mono 16-bit); 0 if unreadable."""
+    return speaking_profile_wav(wav_bytes, [])[0]
+
+
+def answer_seconds_wav(wav_bytes: bytes, bounds: list[int]) -> list[int]:
+    """Speaking seconds per answer (ADR-071) — see `speaking_profile_wav`."""
+    return speaking_profile_wav(wav_bytes, bounds)[1]
 
 
 def measure_wav(path: str, words: Optional[int] = None) -> dict:

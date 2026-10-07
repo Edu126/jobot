@@ -281,10 +281,9 @@ def _config(interview: dict, lang: str, personality_id: str = DEFAULT_PERSONALIT
 
 
 def _load_context(interview: dict, lang: str):
-    """(brief_dict, persona, cues_by_question_index) for the live session — what
-    the coach knows + the Study-mode STAR cues. Best-effort; empties on miss."""
+    """(brief_dict, persona) for the live session — what the coach knows.
+    Best-effort; empties on miss."""
     from . import brief as prep_brief
-    from . import toolkit as prep_mapping  # ADR-057: story picks live in the toolkit
     b = prep_brief.read_cached_brief(interview["id"], lang=lang)
     brief_dict = b.to_dict_for_cache() if b else None
     persona = ""
@@ -294,26 +293,7 @@ def _load_context(interview: dict, lang: str):
             persona = ai_summary.persona_line(int(interview["resume_id"])) or ""
         except Exception:  # noqa: BLE001 — persona is a nice-to-have
             persona = ""
-    # Study cues: competency what_good + mapped story title, keyed by competency.
-    cue_by_comp: dict = {}
-    if b:
-        comp_by_id = {c.id: c for c in b.competencies}
-        stories = db.list_stories(interview["resume_hash"], status="saved")
-        mapping = prep_mapping.read_cached_mapping(interview["id"], stories, lang=lang) or []
-        story_by_id = {str(s["id"]): s for s in stories}
-        for m in mapping:
-            comp = comp_by_id.get(m.competency_id)
-            if not comp:
-                continue
-            story = story_by_id.get(m.story_id) if m.story_id else None
-            cue_by_comp[m.competency_id] = {
-                "competency": comp.name, "what_good": comp.what_good_looks_like,
-                "story_title": story["title"] if story else None}
-        # also cover competencies with no mapping row
-        for c in b.competencies:
-            cue_by_comp.setdefault(c.id, {
-                "competency": c.name, "what_good": c.what_good_looks_like, "story_title": None})
-    return brief_dict, persona, cue_by_comp
+    return brief_dict, persona
 
 
 def create_ephemeral_token(interview: dict, session_row: dict, *, lang: str):
@@ -334,7 +314,7 @@ def create_ephemeral_token(interview: dict, session_row: dict, *, lang: str):
 
     personality_id = session_row.get("persona") or DEFAULT_PERSONALITY  # `persona` col now holds the personality id
     voice = session_row.get("voice") or DEFAULT_VOICE
-    brief_dict, candidate_persona, _cues = _load_context(interview, lang)
+    brief_dict, candidate_persona = _load_context(interview, lang)
     cfg = _config(interview, lang, personality_id, voice)
     context = interviewer_context_turn(interview, questions, brief=brief_dict,
                                        persona=candidate_persona)

@@ -43,6 +43,7 @@ from core.settings import get_output_language
 PRACTICE_CONSENT_KEY = "prep_practice_consent"
 
 from ..deps import templates
+from ..deps import current_resume as _current, see_other as _redirect
 from ..i18n import translate as _t
 
 router = APIRouter(tags=["interviews"])
@@ -50,15 +51,6 @@ router = APIRouter(tags=["interviews"])
 # Keep a strong ref to background toolkit warm-up tasks so they aren't GC'd
 # mid-flight (asyncio only holds a weak reference to a bare create_task).
 _warmups: set[asyncio.Task] = set()
-
-
-def _current():
-    """(resume dict, resume_hash, resume_id, resume_text) or (None, "", 0, "")."""
-    r = db.get_current_resume()
-    if not r:
-        return None, "", 0, ""
-    return (r, r.get("text_hash") or "", int(r["id"]),
-            (r["parsed"].get("raw_text") or "").strip())
 
 
 def _make_client_factory():
@@ -618,7 +610,8 @@ async def practice_voice(request: Request, interview_id: int, session_id: int):
         {"active_tab": "prep", "interview": interview, "session": session,
          "step": "practice", "live_model": prep_live.live_model(),
          "coach_name": prep_live.coach_name(lab["voice"] if lab else (session.get("voice") or prep_live.DEFAULT_VOICE)),
-         "lab": lab, "lab_line": prep_voice_lab.delivery_line(lab) if lab else ""})
+         "lab": lab, "lab_line": prep_voice_lab.delivery_line(lab) if lab else "",
+         "keep_coach_audio": prep_live.save_audio_enabled()})
 
 
 @router.post("/interviews/{interview_id}/practice/{session_id}/live-token")
@@ -679,11 +672,11 @@ async def practice_audio(
         _persist_practice_audio(session_id, coach_wav, wav)
     # Speaking time is measured from the recorded audio (ADR-070); the browser's
     # level-gated count is only a fallback when no audio arrived / none stood out.
-    secs = (await asyncio.to_thread(prep_audio_metrics.speaking_seconds_wav, wav) if wav else 0) or secs
     bounds = _parse_json(answer_bounds)
-    answer_secs = (await asyncio.to_thread(prep_audio_metrics.answer_seconds_wav, wav,
-                                           bounds if isinstance(bounds, list) else [])
-                   if wav else [])
+    measured, answer_secs = (await asyncio.to_thread(
+        prep_audio_metrics.speaking_profile_wav, wav, bounds if isinstance(bounds, list) else [])
+        if wav else (0, []))
+    secs = measured or secs
     debrief = None
     if wav:
         debrief = await asyncio.to_thread(
@@ -958,7 +951,3 @@ def _parse_int(raw: str, default: int) -> int:
         return int(str(raw).strip())
     except (ValueError, TypeError):
         return default
-
-
-def _redirect(url: str) -> RedirectResponse:
-    return RedirectResponse(url, status_code=303)

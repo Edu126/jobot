@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 from core import db
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
-from core.settings import get_output_language, language_instruction
+from core.settings import language_instruction, resolve_output_language
 
 from . import prompts as P
 
@@ -116,9 +116,6 @@ class Brief:
         }
 
 
-def _resolve_lang(lang: Optional[str]) -> str:
-    return lang if lang is not None else get_output_language()
-
 
 def _row_to_brief(row: dict) -> Brief:
     a = row.get("artifact") or {}
@@ -144,7 +141,7 @@ def get_or_generate_brief(
     interview_id = interview.get("id")
     if not interview_id or not resume_text.strip():
         return None
-    lang = _resolve_lang(lang)
+    lang = resolve_output_language(lang)
 
     if use_cache:
         cached = db.get_prep_artifact(interview_id, ARTIFACT_KIND, lang, PROMPT_VERSION, path=path)
@@ -173,7 +170,7 @@ def read_cached_brief(
     on a miss) without risking a synchronous LLM call on a page load."""
     if not interview_id:
         return None
-    lang = _resolve_lang(lang)
+    lang = resolve_output_language(lang)
     cached = db.get_prep_artifact(interview_id, ARTIFACT_KIND, lang, PROMPT_VERSION, path=path)
     return _row_to_brief(cached) if cached is not None else None
 

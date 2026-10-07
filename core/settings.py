@@ -18,6 +18,8 @@ the fallback chain described in docs/next-work.md.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from core import db
 
 
@@ -88,6 +90,12 @@ def get_ui_language(accept_language: str = "") -> str:
     if explicit in SUPPORTED_LANGUAGES:
         return explicit
     return _parse_accept_language(accept_language)
+
+
+def resolve_output_language(lang: Optional[str] = None) -> str:
+    """`lang` when the caller pinned one, else the user's output language. Language
+    is a cache-key dimension (ADR-008 rule 3), so every LLM module resolves it here."""
+    return lang if lang is not None else get_output_language()
 
 
 def get_output_language() -> str:

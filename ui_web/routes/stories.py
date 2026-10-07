@@ -32,16 +32,9 @@ from core.prep import story_bank
 from core.settings import get_output_language
 
 from ..deps import templates
+from ..deps import current_resume as _current, see_other as _redirect
 
 router = APIRouter(tags=["stories"])
-
-
-def _current():
-    r = db.get_current_resume()
-    if not r:
-        return None, "", 0, ""
-    return (r, r.get("text_hash") or "", int(r["id"]),
-            (r["parsed"].get("raw_text") or "").strip())
 
 
 def _with_strength(story: dict) -> dict:
@@ -343,6 +336,3 @@ async def story_delete(request: Request, story_id: int):
 
 
 # ---------- helpers ----------
-
-def _redirect(url: str) -> RedirectResponse:
-    return RedirectResponse(url, status_code=303)
