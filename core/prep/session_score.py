@@ -15,7 +15,8 @@ competency — the model can't award credit it can't point to.
   quantified   — a number in the evidence (also checked in code: needs a digit
                  or number word in the quote)
   own_actions is also checked in code: needs a first-person word in the quote.
-Band: 5 strong · 4 solid · ≤3 needs_work.
+Band: strong = all five · solid = the full story (answered, example,
+own_actions, result) without a number · anything else needs_work (ADR-072).
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ import unicodedata
 from typing import Any, Iterable, Optional, Sequence
 
 CHECKS = ("answered", "example", "own_actions", "result", "quantified")
+STORY_CHECKS = CHECKS[:4]   # solid needs all of these; only the number is optional
 MAX_POINTS = len(CHECKS)
 
 # Verdict thresholds on the 0–100 session score.
@@ -91,12 +93,13 @@ def _has_first_person(text: str) -> bool:
     return any(tok in _FIRST_PERSON for tok in _norm(text).split())
 
 
-def band_for(points: int) -> str:
-    """5 = strong (complete STAR + a number) · 4 = solid (complete STAR, no
-    number) · ≤3 = needs_work (a piece of the story is missing)."""
-    if points >= MAX_POINTS:
+def band_for(checks: dict) -> str:
+    """strong = all five checks · solid = the complete story (answered, example,
+    own_actions, result) with no number · needs_work = a piece of the story is
+    missing — even at 4/5 ("we cut it by 40%" lacks own_actions, ADR-072)."""
+    if all(checks.get(k) for k in CHECKS):
         return "strong"
-    if points >= 4:
+    if all(checks.get(k) for k in STORY_CHECKS):
         return "solid"
     return "needs_work"
 
@@ -188,7 +191,7 @@ def aggregate(
         if g is None:
             g = {"competency_id": cid, "asked": asked, "quote": "", "verified": False,
                  "checks": {k: False for k in CHECKS}, "points": 0, "missing": ""}
-        g = {**g, "asked": asked, "band": band_for(g["points"]) if asked else "not_asked"}
+        g = {**g, "asked": asked, "band": band_for(g["checks"]) if asked else "not_asked"}
         evidence.append(g)
 
     asked = [e for e in evidence if e["asked"]]

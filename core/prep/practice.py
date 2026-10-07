@@ -324,7 +324,7 @@ def _parse_eval(raw: Any, *, question_id: str, transcript: str = "",
             "missing": raw.get("fix") or "",
         }, transcript)
         if evidence:
-            overall = SS.band_for(evidence["points"])
+            overall = SS.band_for(evidence["checks"])
     ratings_in = raw.get("ratings") if isinstance(raw.get("ratings"), dict) else {}
     ratings = {k: P.band_or_default(ratings_in.get(k)) for k in _RATING_KEYS}
     ww_in = raw.get("what_worked") if isinstance(raw.get("what_worked"), dict) else {}

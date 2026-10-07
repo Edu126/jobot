@@ -64,8 +64,12 @@ def test_own_actions_gate():
 
 
 def test_bands_and_verdicts():
-    _assert([SS.band_for(p) for p in range(6)] ==
-            ["needs_work", "needs_work", "needs_work", "needs_work", "solid", "strong"], "band ladder")
+    yes = {k: True for k in SS.CHECKS}
+    _assert(SS.band_for(yes) == "strong", "all five → strong")
+    _assert(SS.band_for({**yes, "quantified": False}) == "solid", "full story, no number → solid")
+    for k in SS.STORY_CHECKS:   # ADR-072: 4/5 with a story piece missing is NOT solid
+        _assert(SS.band_for({**yes, k: False}) == "needs_work", f"missing {k} → needs_work")
+    _assert(SS.band_for({}) == "needs_work", "nothing → needs_work")
     _assert(SS.verdict_for(74) == "close" and SS.verdict_for(75) == "ready"
             and SS.verdict_for(49) == "not_ready", "verdict thresholds")
     _assert(SS.pace_for(305) == "fast" and SS.pace_for(140) == "on_target" and SS.pace_for(90) == "slow", "pace")

@@ -75,9 +75,9 @@ reference** that lists every score and the principles all of them must follow.
   - `own_actions` needs a first-person word in the quote (I / my / me, je / mon, yo / mi).
     - Known false negative: Spanish that drops the pronoun ("lideré").
 - **Band per competency:**
-  - 5 = strong (complete story with a number)
-  - 4 = solid (complete story, no number)
-  - ≤3 = needs work
+  - strong = all five checks (complete story with a number)
+  - solid = answered + example + own actions + result, no number. Only the number is optional ([ADR-072](../decisions/ADR-072-solid-band-needs-the-full-story.md)).
+  - anything else = needs work, even at 4/5. Example: "we cut clashes by 40%" has no own actions, so it's needs work.
   - A competency with no question this session is "Not asked". It's shown, but left out of the score.
 - **Score** = points ÷ (5 × competencies asked) × 100, rounded.
 - **Verdict:**
@@ -90,8 +90,9 @@ reference** that lists every score and the principles all of them must follow.
 ### Known weak spots (where we are NOT yet aligned / need watching)
 - **#12:** if the model ticks checks on a real-but-weak quote, the code gates can't fully catch it. Answered and example rely on the model. Mitigations:
   - the quote is shown next to the ticks, so the user can see when it's being generous
-  - the solid band needs 4/5
+  - solid needs the full story; only the number is optional (ADR-072)
   - the ready cap
+  - measured by `scripts/practice_judge_eval.py` over a junk-answer set ([EXP-002](../experiments/EXP-002-practice-judge-leniency.md)). Track the false-solid rate after every rubric or prompt change.
 - **#1 vs #6 vs #12** use different thresholds for similar words ("strong", "solid"). Thresholds should converge or be renamed.
 - **#10 only reads the latest session.** One bad short session can drop readiness.
 - **#15 judges are self-graded** (Gemini judges Gemini output).
