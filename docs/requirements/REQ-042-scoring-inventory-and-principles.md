@@ -91,6 +91,7 @@ reference** that lists every score and the principles all of them must follow.
 - **#12:** if the model ticks checks on a real-but-weak quote, the code gates can't fully catch it. Answered and example rely on the model. Mitigations:
   - the quote is shown next to the ticks, so the user can see when it's being generous
   - solid needs the full story; only the number is optional (ADR-072)
+  - `result` must be a concrete outcome of their own actions, and the quote must include what they did. Measured false-solid: 19% → 0%, with controls at 9/9 (EXP-002).
   - the ready cap
   - measured by `scripts/practice_judge_eval.py` over a junk-answer set ([EXP-002](../experiments/EXP-002-practice-judge-leniency.md)). Track the false-solid rate after every rubric or prompt change.
 - **#1 vs #6 vs #12** use different thresholds for similar words ("strong", "solid"). Thresholds should converge or be renamed.

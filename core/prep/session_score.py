@@ -237,10 +237,10 @@ RUBRIC_BLOCK = """Score each competency with five YES/NO checks. Be strict: when
 - answered: the candidate actually answered the question that tests this competency. Rambling, "I don't know", off-topic talk, or repeating the question = false.
 - example: they described ONE specific real situation (when, where, what project). Generic habits ("I usually…", "I would…") = false.
 - own_actions: they said what THEY personally did ("I built…"), not only "we" or the team.
-- result: they said what happened because of their actions.
+- result: a concrete, observable outcome that followed from THEIR actions — something changed (a metric, a decision made, a deliverable shipped, a problem fixed, specific feedback). Vague impressions ("it went well", "things were smoother", "people liked it", "everyone was happy") = false. Something that just happened to them (a colleague left, the problem went away) = false.
 - quantified: the result or situation includes a real number (money, %, time, people, volume).
 For every competency also give:
-- quote: the candidate's EXACT words (8–30 words) that best support your checks. Copy them, do not paraphrase. Empty string if they said nothing relevant.
+- quote: the candidate's EXACT words (8–40 words) that best support your checks — include what they personally did ("I …") and, if it fits, the result. Copy them, do not paraphrase. Empty string if they said nothing relevant.
 - asked: true if a question in the interview tested this competency.
 - missing: one short line — the single most important thing the answer lacked.
 Example of a weak answer: "Um, yeah, I mean budgets are important, you just have to manage them, you know." → answered=false, example=false, own_actions=false, result=false, quantified=false."""

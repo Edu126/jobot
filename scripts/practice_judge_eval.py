@@ -39,10 +39,10 @@ def judge_once(item: dict, comp: dict, client: GeminiClient) -> dict:
     d = PR.session_debrief_from_transcript(turns, questions, [comp], client, lang="en")
     ev = next((e for e in (d.competency_evidence if d else []) if e.get("competency_id") == comp["id"]), None)
     if not ev:
-        return {"band": "error", "points": None, "checks": {}, "verified": False}
+        return {"band": "error", "points": None, "checks": {}, "verified": False, "quote": ""}
     band = next((b["band"] for b in d.competency_bands if b.get("competency_id") == comp["id"]), "needs_work")
     return {"band": band, "points": ev.get("points"), "checks": ev.get("checks") or {},
-            "verified": bool(ev.get("verified"))}
+            "verified": bool(ev.get("verified")), "quote": ev.get("quote") or ""}
 
 
 def passed(item: dict, band: str) -> bool:
@@ -80,6 +80,7 @@ def main() -> None:
         rows.append({"id": item["id"], "kind": item["kind"], "expect": item["expect"], "bands": bands,
                      "points": [r["points"] for r in results], "ok": all(oks),
                      "drift": len(set(bands)) > 1,
+                     "fail_quotes": [r["quote"] for r, ok in zip(results, oks) if not ok],
                      "ticked": ", ".join(f"{k}×{n}" for k, n in ticked.items()) or "—"})
         print(f"{'PASS' if all(oks) else 'FAIL'}  {item['id']:<24} {bands}", flush=True)
 
@@ -97,6 +98,10 @@ def main() -> None:
     for r in rows:
         lines.append(f"| {r['id']} | {r['kind']} | {r['expect']} | {' · '.join(r['bands'])} | "
                      f"{' · '.join(str(p) for p in r['points'])} | {r['ticked']} | {'✅' if r['ok'] else '❌'} |")
+    fails = [r for r in rows if r["fail_quotes"]]
+    if fails:
+        lines += ["", "## Quotes on failing runs", ""]
+        lines += [f"- **{r['id']}:** " + " · ".join(f'"{q}"' for q in r["fail_quotes"]) for r in fails]
     report = "\n".join(lines)
     print("\n" + report)
     if args.out:

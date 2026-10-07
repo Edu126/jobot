@@ -19,7 +19,7 @@ Branch `feat/prep-interview-module` (unmerged; live on -edu). Merging to
 **Feedback & scoring (REQ-042, REQ-043, ADR-059)**
 6. ✅ 2026-10-06 ([ADR-070](decisions/ADR-070-speaking-time-measured-from-audio.md)): speaking seconds are now measured from the WAV on the server, with an adaptive noise floor. The browser gate and meter adapt too. ~~Speaking seconds 0 (session 39) / meter dead.~~
 7. ✅ 2026-10-06 ([ADR-071](decisions/ADR-071-voice-answers-split-at-coach-turns.md)): the answer-length gauge now works in voice. Audio is cut where coach turns start, and replies under 8 s are dropped.
-8. 🟡 2026-10-07 ([EXP-002](experiments/EXP-002-practice-judge-leniency.md), [ADR-072](decisions/ADR-072-solid-band-needs-the-full-story.md)): built the junk-answer set and eval script. False-solid is down from 19% to 8% with the band rule. Still open: the model accepts vague results ("much smoother") — tighten the `result` rubric and re-run.
+8. ✅ 2026-10-07 ([EXP-002](experiments/EXP-002-practice-judge-leniency.md), [ADR-072](decisions/ADR-072-solid-band-needs-the-full-story.md)): junk-answer set + eval script. False-solid went from 19% to 0% with controls at 9/9: band rule, strict `result`, quote includes own action. Re-run `scripts/practice_judge_eval.py` after any rubric change. Not measured yet: the audio judge.
 9. **Align score vocabularies:** fit ring / prep band / session score use "strong/solid" with different cut-offs (REQ-042 weak spots).
 10. **Readiness reads only the latest session.** Decide between the latest, the best, or a rolling view.
 
