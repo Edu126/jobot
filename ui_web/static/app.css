@@ -2233,9 +2233,9 @@ article.job-swipeable:focus-visible {
   .practice-orb[data-state="listening"] span { opacity: 0.3; transform: scale(0.9); }
 }
 
-/* ── Practice dual-voice orb (canvas). Green wave = the candidate's voice,
-   soft-salmon wave = the coach's — both driven by real AnalyserNode energy.
-   Calm idle breathing when silent. Reduced-motion: static attenuated rings. ── */
+/* ── Practice coach visual (canvas, static/voice_visuals.js "wave", ADR-073).
+   Green while the coach speaks, salmon while the candidate does — both driven
+   by real AnalyserNode energy. Calm when silent; slowed under reduced-motion. ── */
 .voice-orb-wrap {
   width: min(240px, 62vw);
   aspect-ratio: 1 / 1;

@@ -63,8 +63,19 @@ def test_js_interface_and_i18n():
     print("PASS test_js_interface_and_i18n")
 
 
+def test_practice_uses_wave():
+    """ADR-073: the live practice draws the lab's wave; the head code is gone."""
+    src = (ROOT / "ui_web/templates/pages/practice_live.html").read_text()
+    _assert("static_url('voice_visuals.js')" in src, "practice loads voice_visuals.js")
+    _assert("VoiceVisuals.make('wave'" in src, "practice draws the wave")
+    _assert("_drawEyes" not in src and "_headPath" not in src, "floating-head drawing removed")
+    _assert("playbackNode()" in src and "createMediaStreamDestination" in src, "audio graph kept")
+    print("PASS test_practice_uses_wave")
+
+
 if __name__ == "__main__":
     test_closed_without_flag()
     test_page_renders()
     test_js_interface_and_i18n()
+    test_practice_uses_wave()
     print("all avatar-lab tests passed")

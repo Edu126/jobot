@@ -162,47 +162,31 @@
   </div>
 </div>
 
+<script src="{{ static_url('voice_visuals.js') }}"></script>
 <script>
-  // Floating-head companion (ported from avatar_lab.html). Cream matte head, dark
-  // visor, glowing green Baymax "dot" eyes, no mouth — five states expressed in the
-  // eyes + a gentle tilt + a speaking halo. The audio graph is UNCHANGED from the
-  // old orb: it still owns playback + the echo-cancel routing and exposes
-  // playbackNode()/stop(). The head is driven by the SAME analysers (coach RMS →
-  // speaking intensity, mic RMS → listening liveliness) and by the runner's live
-  // flags (building / coachSpeaking / micLive / state).
+  // Coach visual = the "wave" from the avatar lab (REQ-047, ADR-073; replaced the
+  // floating head of ADR-067). This object owns the AUDIO graph — playback, the
+  // echo-cancel routing, playbackNode()/stop() — and feeds the drawing
+  // (static/voice_visuals.js) the runner's state + real analyser energy:
+  // coach RMS while it speaks, mic RMS while the candidate speaks.
   function voiceOrb() {
-    // matte palettes + eye glow (avatar_lab defaults: cream body + green eyes)
-    const BODY = { c0: '255,253,247', c1: '232,224,208', hi: '255,250,240' };
-    const EYEGLOW = '70,210,150';
-    const STATES = {
-      idle:      { tilt: 0.00, float: 1.00, eyeDx: 0.36, eyeVy: 0.02, eyeSize: 0.105, glow: 0.45, halo: 0, blinkRate: 1.0, gaze: 'drift' },
-      listening: { tilt: 0.00, float: 1.00, eyeDx: 0.36, eyeVy: -0.02, eyeSize: 0.120, glow: 0.7,  halo: 0, blinkRate: 1.2, gaze: 'follow' },
-      thinking:  { tilt: 0.05, float: 0.30, eyeDx: 0.30, eyeVy: -0.10, eyeSize: 0.090, glow: 0.5,  halo: 0, blinkRate: 0.6, gaze: 'up' },
-      speaking:  { tilt: 0.00, float: 1.15, eyeDx: 0.36, eyeVy: 0.02, eyeSize: 0.115, glow: 0.95, halo: 1, blinkRate: 1.0, gaze: 'lock' },
-    };
     return {
-      ctx: null, canvas: null, dpr: 1, W: 0, H: 0, running: false, raf: 0,
+      vis: null, running: false, raf: 0, runner: null,
       micA: null, coachA: null, coachGain: null, _mBuf: null, _cBuf: null,
-      micEnv: 0, coachEnv: 0, _onResize: null, runner: null, t0: 0,
-      reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      // head-animation state (lerped toward the current STATE each frame)
-      stateName: 'idle', blink: 0, nextBlink: 0,
-      cur: { tilt: 0, float: 1, eyeDx: 0.36, eyeVy: 0.02, eyeSize: 0.105, glow: 0.45, halo: 0, blinkRate: 1, gx: 0, gy: 0 },
 
       init(capCtx, playCtx, micSource, canvasEl, runner) {
-        this.canvas = canvasEl; this.ctx = canvasEl.getContext('2d'); this.runner = runner;
+        this.runner = runner;
         this.micA = capCtx.createAnalyser();
         this.micA.fftSize = 1024; this.micA.smoothingTimeConstant = 0.9;
         try { micSource.connect(this.micA); } catch (_) {}
         this.coachGain = playCtx.createGain();
         this.coachA = playCtx.createAnalyser();
-        this.coachA.fftSize = 1024; this.coachA.smoothingTimeConstant = 0.9;   // higher = smoother, less "crashing"
+        this.coachA.fftSize = 1024; this.coachA.smoothingTimeConstant = 0.9;
         this.coachGain.connect(this.coachA);
         // Route the coach OUT through a MediaStream + <audio> element (not
         // playCtx.destination) so Chrome's echo canceller includes it in its
         // reference and stops the coach bleeding into the mic (Eduardo: "my
-        // microphone also got activated / background muffle"). The analyser tap
-        // upstream still feeds the head.
+        // microphone also got activated / background muffle").
         this.msDest = playCtx.createMediaStreamDestination();
         this.coachA.connect(this.msDest);
         this.audioEl = new Audio();
@@ -211,25 +195,14 @@
         this.audioEl.play().catch(() => {});
         this._mBuf = new Uint8Array(this.micA.fftSize);
         this._cBuf = new Uint8Array(this.coachA.fftSize);
-        this.t0 = performance.now(); this.nextBlink = this.t0 + 1500;
-        this._resize();
-        this._onResize = () => this._resize(); addEventListener('resize', this._onResize);
-        // draw as soon as the canvas actually has a size (avoids the blank/delayed start)
-        try { this._ro = new ResizeObserver(() => this._resize()); this._ro.observe(this.canvas); } catch (_) {}
+        this.vis = VoiceVisuals.make('wave', canvasEl);
         this.running = true;
         this.raf = requestAnimationFrame((ts) => this.frame(ts));
       },
       playbackNode() { return this.coachGain; },
-      _resize() {
-        const r = this.canvas.getBoundingClientRect();
-        this.dpr = Math.min(2, window.devicePixelRatio || 1);
-        this.canvas.width = Math.max(1, r.width * this.dpr);
-        this.canvas.height = Math.max(1, r.height * this.dpr);
-        this.W = r.width; this.H = r.height;
-      },
       _rms(a, buf) { a.getByteTimeDomainData(buf); let s = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; } return Math.min(1, Math.sqrt(s / buf.length) * 1.8); },
 
-      // Map the runner's live flags → an avatar_lab state each frame.
+      // the runner's live flags → a visual state
       _pickState() {
         const r = this.runner;
         if (!r) return 'idle';
@@ -238,136 +211,21 @@
         if (r.micLive) return 'listening';
         return 'idle';
       },
-      _gaze(gz, now) {
-        switch (gz) {
-          case 'drift':  return [Math.sin(now / 2100) * 0.3, Math.sin(now / 2600) * 0.2];
-          case 'follow': return [Math.sin(now / 1250) * 0.75, Math.sin(now / 1900) * 0.15];
-          case 'up':     return [-0.4, -0.6];
-          default:       return [0, 0];
-        }
-      },
 
       frame(now) {
         if (!this.running) return;
-        now = now || performance.now();
         try {
-          // real analyser energy: coach drives the speaking intensity; mic the listening liveliness
-          const mic = this._rms(this.micA, this._mBuf);
-          const coach = this._rms(this.coachA, this._cBuf);
-          this.micEnv += (mic - this.micEnv) * 0.12;
-          this.coachEnv += (coach - this.coachEnv) * 0.12;
-          this.stateName = this._pickState();
-          const S = STATES[this.stateName] || STATES.idle;
-          // reduced-motion: keep it calm — no float/blink jitter, easing frozen toward the state
-          const ease = this.reduced ? 0.02 : 0.08;
-          for (const k of ['tilt', 'float', 'eyeDx', 'eyeVy', 'eyeSize', 'glow', 'halo', 'blinkRate']) this.cur[k] += (S[k] - this.cur[k]) * ease;
-          const gz = this.reduced ? [0, 0] : this._gaze(S.gaze, now);
-          this.cur.gx += (gz[0] - this.cur.gx) * 0.06; this.cur.gy += (gz[1] - this.cur.gy) * 0.06;
-          // speaking "voice envelope" comes from the real coach analyser (not a simulation)
-          const env = this.stateName === 'speaking' ? Math.min(1, this.coachEnv * 1.4) : 0;
-          this._render(now, env);
-        } catch (e) {
-          if (!this._errored) { this._errored = true; console.error('[live] head render error:', e); }
-        }
+          const state = this._pickState();
+          const level = state === 'speaking' ? this._rms(this.coachA, this._cBuf)
+                      : state === 'listening' ? this._rms(this.micA, this._mBuf) : 0;
+          this.vis.frame(state, level, (now || performance.now()) / 1000);
+        } catch (e) { console.error('[live] visual', e); }
         this.raf = requestAnimationFrame((ts) => this.frame(ts));
-      },
-
-      _mix(a, b, t) { const A = a.split(',').map(Number), B = b.split(',').map(Number); return A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(','); },
-      _softShadow(cx, cy, rx, ry, alpha, blur) {
-        const ctx = this.ctx;
-        ctx.save(); ctx.globalAlpha = alpha; ctx.filter = 'blur(' + blur + 'px)';
-        ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, 7); ctx.fillStyle = 'rgb(26,34,52)'; ctx.fill(); ctx.restore();
-      },
-      // soft matte-plastic fill inside the current path
-      _paintForm(pathFn, x, y, w, h, P, opt) {
-        const ctx = this.ctx; opt = opt || {};
-        const lx = x + w * 0.36, ly = y + h * 0.24, m = Math.min(w, h);
-        ctx.save(); pathFn(); ctx.clip();
-        let g = ctx.createRadialGradient(lx, ly, m * 0.04, x + w * 0.5, y + h * 0.64, Math.max(w, h) * 0.85);
-        g.addColorStop(0, 'rgb(' + this._mix(P.c0, P.hi, 0.45) + ')');
-        g.addColorStop(0.42, 'rgb(' + P.c0 + ')');
-        g.addColorStop(0.78, 'rgb(' + this._mix(P.c0, P.c1, 0.65) + ')');
-        g.addColorStop(1, 'rgb(' + P.c1 + ')');
-        ctx.fillStyle = g; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
-        let ao = ctx.createLinearGradient(0, y + h * 0.46, 0, y + h + 2);
-        ao.addColorStop(0, 'rgba(28,40,62,0)'); ao.addColorStop(1, 'rgba(28,40,62,' + (opt.ao != null ? opt.ao : 0.18) + ')');
-        ctx.fillStyle = ao; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
-        ctx.globalAlpha = 0.6; ctx.filter = 'blur(' + (m * 0.06) + 'px)';                     // broad sheen
-        ctx.beginPath(); ctx.ellipse(lx, y + h * 0.15, w * 0.30, h * 0.12, -0.28, 0, 7); ctx.fillStyle = 'rgb(' + P.hi + ')'; ctx.fill();
-        ctx.globalAlpha = 0.5; ctx.filter = 'blur(' + (m * 0.02) + 'px)';                     // hotspot
-        ctx.beginPath(); ctx.ellipse(lx - w * 0.03, y + h * 0.11, w * 0.08, h * 0.045, -0.3, 0, 7); ctx.fill();
-        ctx.globalAlpha = 0.26; ctx.filter = 'blur(' + (m * 0.045) + 'px)';                   // far rim light
-        ctx.beginPath(); ctx.ellipse(x + w * 0.83, y + h * 0.56, w * 0.045, h * 0.30, 0.12, 0, 7); ctx.fill();
-        ctx.filter = 'none'; ctx.globalAlpha = 1; ctx.restore();
-      },
-      _headPath(R) { const ctx = this.ctx, w = R, h = R * 1.05;   // soft squircle pebble head
-        ctx.beginPath(); ctx.moveTo(0, -h);
-        ctx.bezierCurveTo(w * 0.62, -h, w, -h * 0.55, w, 0);
-        ctx.bezierCurveTo(w, h * 0.60, w * 0.55, h, 0, h);
-        ctx.bezierCurveTo(-w * 0.55, h, -w, h * 0.60, -w, 0);
-        ctx.bezierCurveTo(-w, -h * 0.55, -w * 0.62, -h, 0, -h); ctx.closePath();
-      },
-      _drawVisor(R) {
-        const ctx = this.ctx;
-        ctx.save();
-        ctx.filter = 'blur(' + R * 0.03 + 'px)'; ctx.beginPath(); ctx.ellipse(0, R * 0.06, R * 0.86, R * 0.60, 0, 0, 7);
-        ctx.fillStyle = 'rgba(8,12,18,0.5)'; ctx.fill(); ctx.filter = 'none';                 // soft visor edge
-        ctx.beginPath(); ctx.ellipse(0, R * 0.04, R * 0.82, R * 0.57, 0, 0, 7);
-        let g = ctx.createRadialGradient(-R * 0.22, -R * 0.16, R * 0.08, 0, R * 0.12, R * 0.95);
-        g.addColorStop(0, '#232a34'); g.addColorStop(0.5, '#12161d'); g.addColorStop(1, '#06090d');
-        ctx.fillStyle = g; ctx.fill();
-        ctx.save(); ctx.clip(); ctx.globalAlpha = 0.13; ctx.filter = 'blur(' + R * 0.05 + 'px)';   // top reflection sweep
-        ctx.beginPath(); ctx.ellipse(-R * 0.14, -R * 0.30, R * 0.5, R * 0.16, -0.25, 0, 7); ctx.fillStyle = '#a6bad2'; ctx.fill(); ctx.restore();
-        ctx.restore();
-      },
-      _drawEyes(cx, cy, R, env) {
-        const ctx = this.ctx, glow = EYEGLOW, now = performance.now();
-        if (!this.reduced && now > this.nextBlink) { this.blink = 1; this.nextBlink = now + 2600 / this.cur.blinkRate + Math.random() * 3000; }
-        this.blink = Math.max(0, this.blink - 0.14); const open = 1 - Math.min(1, this.blink * 1.7);
-        const dx = R * this.cur.eyeDx, vy = cy + R * this.cur.eyeVy, gx = this.cur.gx * R * 0.16, gy = this.cur.gy * R * 0.16;
-        const sz = R * this.cur.eyeSize * Math.max(0.14, open), g = Math.min(1, this.cur.glow + env * 0.3);
-        ctx.save(); ctx.shadowColor = `rgb(${glow})`; ctx.shadowBlur = 8 + g * 16; ctx.fillStyle = `rgb(${glow})`; ctx.strokeStyle = `rgb(${glow})`;
-        ctx.globalAlpha = 0.16 + g * 0.1; ctx.lineWidth = R * 0.028; ctx.beginPath();
-        ctx.moveTo(cx - dx + gx, vy + gy); ctx.lineTo(cx + dx + gx, vy + gy); ctx.stroke();   // faint Baymax link
-        ctx.globalAlpha = 0.72 + g * 0.28;
-        for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(cx + s * dx + gx, vy + gy, sz, sz * (open < 0.5 ? Math.max(0.14, open) : 1), 0, 0, 7); ctx.fill(); }
-        ctx.restore();
-      },
-      _render(now, env) {
-        const ctx = this.ctx; if (!ctx) return;
-        if (!this.W || !this.H) { this._resize(); if (!this.W || !this.H) return; }   // canvas not laid out yet → wait
-        const W = this.W, H = this.H;
-        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-        ctx.clearRect(0, 0, W, H);
-        const cx = W / 2, P = BODY, R = Math.max(1, Math.min(W * 0.26, H * 0.26));
-        const floatAmp = this.reduced ? 0 : (4 + (this.stateName === 'speaking' ? env * 8 : 0)) * this.cur.float;
-        const floatY = Math.sin(now / 1000) * floatAmp;
-        const cy = H * 0.48 + floatY;
-        // soft floating shadow under the head
-        this._softShadow(cx, H * 0.86, R * 0.9 * (1 - Math.max(0, floatY) * 0.01), H * 0.02, 0.16, 16);
-        // halo (speaking) behind the head — breathes with the real coach envelope
-        if (this.cur.halo > 0.04) {
-          for (let i = 0; i < 3; i++) {
-            const rad = Math.max(2, R * (1.1 + i * 0.34) + (this.reduced ? 0 : Math.sin(now / 560 + i) * 3) + (0.3 + env) * this.cur.halo * 22);
-            let hg = ctx.createRadialGradient(cx, cy, rad * 0.72, cx, cy, rad * 1.18);
-            hg.addColorStop(0, `rgba(${EYEGLOW},0)`);
-            hg.addColorStop(0.75, `rgba(${EYEGLOW},${(0.06 + env * 0.14) * this.cur.halo * (1 - i * 0.24)})`);
-            hg.addColorStop(1, `rgba(${EYEGLOW},0)`);
-            ctx.fillStyle = hg; ctx.beginPath(); ctx.ellipse(cx, cy, rad * 1.18, rad * 1.28, 0, 0, 7); ctx.fill();
-          }
-        }
-        // head (with tilt)
-        ctx.save(); ctx.translate(cx, cy); ctx.rotate(this.cur.tilt);
-        this._paintForm(() => this._headPath(R), -R, -R * 1.05, 2 * R, 2 * R * 1.05, P, { ao: 0.16 });
-        this._drawVisor(R);
-        this._drawEyes(0, R * 0.04, R, env);
-        ctx.restore();
       },
       stop() {
         this.running = false;
         if (this.raf) cancelAnimationFrame(this.raf);
-        if (this._onResize) removeEventListener('resize', this._onResize);
-        try { this._ro && this._ro.disconnect(); } catch (_) {}
+        try { this.vis && this.vis.destroy(); } catch (_) {}
         try { this.micA && this.micA.disconnect(); } catch (_) {}
         try { this.coachGain && this.coachGain.disconnect(); this.coachA && this.coachA.disconnect(); } catch (_) {}
         try { if (this.audioEl) { this.audioEl.pause(); this.audioEl.srcObject = null; } } catch (_) {}

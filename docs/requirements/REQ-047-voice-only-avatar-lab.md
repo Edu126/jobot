@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 Source: Eduardo
-Status: Building. `/lab/avatar` on -edu (same flag as REQ-046). Variants in `ui_web/static/voice_visuals.js`.
+Status: Decided 2026-10-07. Eduardo picked **Wave** and it now drives the live practice for everyone ([ADR-073](../decisions/ADR-073-coach-visual-is-the-wave.md)). The lab stays at `/lab/avatar` (-edu only) for future tuning.
 
 ## What they asked for
 > "Generate a tab where we can design the other avatars. I want to try something more voice-only, like a Siri wave style, or something more geometric 3D like the loading screen. Something more ethereal, or something less AI. The current 3D model we have does not look nice to me."

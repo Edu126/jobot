@@ -1,7 +1,7 @@
 # ADR-067: Floating-head companion + streamed captions in the voice runner
 
 Date: 2026-09-28 (backfilled 2026-10-01)
-Status: Accepted (look still under exploration — `static/avatar_lab.html`)
+Status: Accepted. The floating-head look is superseded by ADR-073 (wave); the streamed captions still stand.
 Relates to: ADR-052, ADR-054, commits 550550c, db09311
 
 ## Context
