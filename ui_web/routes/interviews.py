@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from core import db
 from core.llm.gemini import GeminiClient, resolve_api_key
 from core.prep import brief as prep_brief
+from core.prep import audio_metrics as prep_audio_metrics
 from core.prep import audio_score as prep_audio_score
 from core.prep import live as prep_live
 from core.prep import pipeline
@@ -675,6 +676,9 @@ async def practice_audio(
     # Eduardo can A/B fidelity vs Google's playground and I can measure pacing. Off in prod.
     if prep_live.save_audio_enabled():
         _persist_practice_audio(session_id, coach_wav, wav)
+    # Speaking time is measured from the recorded audio (ADR-070); the browser's
+    # level-gated count is only a fallback when no audio arrived / none stood out.
+    secs = (await asyncio.to_thread(prep_audio_metrics.speaking_seconds_wav, wav) if wav else 0) or secs
     debrief = None
     if wav:
         debrief = await asyncio.to_thread(

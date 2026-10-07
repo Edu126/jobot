@@ -60,9 +60,60 @@ def test_wpm():
     print("PASS test_wpm")
 
 
+def _speech(seconds, rate=16000, gain=0.3):
+    """Syllable-like bursts: 200ms tone / 80ms gap — gaps a speaking clock must bridge."""
+    t = np.arange(int(0.2 * rate)) / rate
+    burst = (np.sin(2 * np.pi * 180.0 * t) * gain * 32767).astype("<i2").tobytes()
+    return (burst + _silence(0.08, rate)) * int(np.ceil(seconds / 0.28))
+
+
+def test_speaking_seconds_bridges_word_gaps_not_answer_gaps():
+    # 3s wait · 10s talking · 4s wait (coach turn already cut out) · 6s talking · 2s wait
+    pcm = _silence(3, 16000) + _speech(10) + _silence(4, 16000) + _speech(6) + _silence(2, 16000)
+    s = am.speaking_seconds(pcm, rate=16000)
+    _assert(15 <= s <= 17, f"expected ~16s speaking, got {s}")
+    print("PASS test_speaking_seconds_bridges_word_gaps_not_answer_gaps")
+
+
+def test_speaking_seconds_quiet_mic():
+    # session 39: speech ~0.002 rms never crossed the browser's fixed 0.02 gate → 0s
+    rng = np.random.default_rng(0)
+    pcm = _silence(2, 16000) + _speech(8, gain=0.003) + _silence(2, 16000)
+    x = np.frombuffer(pcm, "<i2").astype(np.float32) + rng.normal(0, 2, len(pcm) // 2)
+    s = am.speaking_seconds(x.astype("<i2").tobytes(), rate=16000)
+    _assert(7 <= s <= 9, f"quiet mic should still measure ~8s, got {s}")
+    print("PASS test_speaking_seconds_quiet_mic")
+
+
+def test_speaking_seconds_silence_and_noise_are_zero():
+    rng = np.random.default_rng(1)
+    noise = rng.normal(0, 200, 16000 * 5).astype("<i2").tobytes()
+    _assert(am.speaking_seconds(_silence(5, 16000), rate=16000) == 0, "silence → 0")
+    _assert(am.speaking_seconds(noise, rate=16000) == 0, "steady noise → 0")
+    _assert(am.speaking_seconds(b"", rate=16000) == 0, "empty → 0")
+    print("PASS test_speaking_seconds_silence_and_noise_are_zero")
+
+
+def test_speaking_seconds_wav():
+    import io
+    import wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+        w.writeframes(_silence(1, 16000) + _speech(5) + _silence(1, 16000))
+    s = am.speaking_seconds_wav(buf.getvalue())
+    _assert(4 <= s <= 6, f"wav → ~5s, got {s}")
+    _assert(am.speaking_seconds_wav(b"not a wav") == 0, "garbage → 0")
+    print("PASS test_speaking_seconds_wav")
+
+
 if __name__ == "__main__":
     test_empty()
     test_detects_pauses()
     test_micro_gaps_ignored()
     test_wpm()
+    test_speaking_seconds_bridges_word_gaps_not_answer_gaps()
+    test_speaking_seconds_quiet_mic()
+    test_speaking_seconds_silence_and_noise_are_zero()
+    test_speaking_seconds_wav()
     print("all audio_metrics tests passed")

@@ -33,7 +33,7 @@
                 :title="muted ? '{{ _('prep2.live.unmute') }}' : '{{ _('prep2.live.mute') }}'"
                 :class="muted && 'live-bar__btn--off'">
           <i class="ph-thin" :class="muted ? 'ph-microphone-slash' : 'ph-microphone'"></i>
-          <span class="live-bar__meter" x-show="!muted"><span :style="`width:${micLive ? Math.min(100, Math.max(0, (Math.sqrt(level)-0.12)*260)) : 0}%`"></span></span>
+          <span class="live-bar__meter" x-show="!muted"><span :style="`width:${micLive ? Math.min(100, Math.max(0, (20 * Math.log10(level + 1e-6) + 55) * 2.5)) : 0}%`"></span></span>
           <span x-show="muted" x-cloak>{{ _('prep2.live.muted_lbl') }}</span>
         </button>
         <span class="live-bar__sep" aria-hidden="true"></span>
@@ -390,7 +390,7 @@
       // voice lab override (REQ-046) can tune these on -edu; defaults otherwise
       _stretch: {{ 'false' if (lab and not lab.stretch) else 'true' }}, _silThresh: 0.012,
       _minPauseS: {{ lab.min_pause_s if lab else 0.18 }}, _pauseTargetS: {{ lab.pause_target_s if lab else 0.6 }},
-      _lvl: 0, _micHoldUntil: 0,
+      _lvl: 0, _noise: 0.01, _micHoldUntil: 0,
       _ctx: '',                        // context turn (from /live-token)
       coachSpeaking: false, micReady: false, _coachTimer: null,  // echo gating + grace
       _wrapUp: false, _coachLine: '',   // auto-end when the coach says its closing line
@@ -530,12 +530,15 @@
           const { pcm, rms } = ev.data;
           this._lvl = this._lvl * 0.85 + rms * 0.15;
           this.level = this._lvl;
-          if (this._lvl > 0.02) this._micHoldUntil = performance.now() + 300;
+          // Voice gate relative to THIS mic's noise floor (fast down, slow up), not a
+          // fixed level — AGC/noise suppression can leave real speech below 0.02.
+          this._noise = this._lvl < this._noise ? this._lvl : this._noise + (this._lvl - this._noise) * 0.0005;
+          if (this._lvl > Math.max(0.003, this._noise * 3)) this._micHoldUntil = performance.now() + 300;
           // Gate: don't send/record until the coach has spoken (grace period) and
           // never while the coach is speaking (echo defence, half-duplex) or muted.
           const sending = this.micReady && !this.coachSpeaking && !this.muted && this._session;
           this.micLive = !!sending && performance.now() < this._micHoldUntil;
-          if (this.micLive) { this._speakingMs += 8; this._resetSilence(); }  // ~128 samples @16k per frame
+          if (this.micLive) { this._speakingMs += pcm.byteLength / 2 / this._cap.sampleRate * 1000; this._resetSilence(); }  // fallback only (ADR-070)
           if (!sending) return;
           // record the user's audio for scoring (cap ~12 min) + stream to Gemini
           if (this._pcmLen < 16000 * 60 * 12) { this._pcm.push(new Int16Array(pcm).slice()); this._pcmLen += pcm.byteLength / 2; }

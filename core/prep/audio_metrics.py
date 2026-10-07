@@ -9,6 +9,7 @@ saved coach/candidate audio objectively — I can't hear timbre, but I can measu
 """
 from __future__ import annotations
 
+import io
 import wave
 from typing import Optional
 
@@ -17,6 +18,8 @@ import numpy as np
 FRAME_MS = 20
 MIN_PAUSE_MS = 250      # a real breathing pause
 MICRO_GAP_MS = 120      # shorter gaps are just phoneme boundaries, ignore
+BRIDGE_GAP_MS = 1000    # speaking time: gaps shorter than this are part of speech (ADR-070)
+MIN_SNR_DB = 15         # loudest speech must clear the noise floor by this much to count
 
 
 def measure_pacing(pcm16: bytes, rate: int = 24000, words: Optional[int] = None) -> dict:
@@ -68,6 +71,43 @@ def measure_pacing(pcm16: bytes, rate: int = 24000, words: Optional[int] = None)
         "longest_run_s": round(float(np.max(runs)), 2) if runs else 0.0,
         "wpm": wpm,
     }
+
+
+def speaking_seconds(pcm16: bytes, rate: int = 16000) -> int:
+    """Seconds the candidate was speaking, measured from their recorded audio
+    (ADR-070). Voiced frames are found against THIS recording's own noise floor
+    (not a fixed level, so a quiet mic still counts), then gaps < BRIDGE_GAP_MS
+    are folded in: speaking rate norms (REQ-043, 130–160 wpm) include the short
+    pauses between words and phrases, not the long silences between answers.
+    Returns 0 when nothing in the audio stands out from its noise."""
+    x = np.frombuffer(pcm16, dtype="<i2").astype(np.float32) / 32768.0
+    hop = max(1, int(rate * FRAME_MS / 1000))
+    n = x.size // hop
+    if n == 0:
+        return 0
+    rms = np.sqrt((x[: n * hop].reshape(n, hop) ** 2).mean(axis=1) + 1e-12)
+    db = 20 * np.log10(rms + 1e-9)
+    noise, peak = np.percentile(db, 10), np.percentile(db, 95)
+    if peak - noise < MIN_SNR_DB:
+        return 0
+    voiced = db > max(noise + 10, peak - 35)
+    idx = np.flatnonzero(voiced)
+    bridge = BRIDGE_GAP_MS / FRAME_MS
+    total = 1
+    for gap in np.diff(idx):
+        total += gap if gap <= bridge else 1
+    return int(round(total * hop / rate))
+
+
+def speaking_seconds_wav(wav_bytes: bytes) -> int:
+    """`speaking_seconds` from WAV bytes (mono 16-bit); 0 if unreadable."""
+    try:
+        with wave.open(io.BytesIO(wav_bytes), "rb") as w:
+            if w.getsampwidth() != 2 or w.getnchannels() != 1:
+                return 0
+            return speaking_seconds(w.readframes(w.getnframes()), rate=w.getframerate())
+    except (wave.Error, EOFError):
+        return 0
 
 
 def measure_wav(path: str, words: Optional[int] = None) -> dict:

@@ -17,7 +17,7 @@ Branch `feat/prep-interview-module` (unmerged; live on -edu). Merging to
 5. Hear the new opening ("Hello Eduardo, I'm Maya…") + calm register live; adjust P7 if it still sounds salesy (budget < 2500 chars).
 
 **Feedback & scoring (REQ-042, REQ-043, ADR-059)**
-6. **Speaking seconds are 0 on some voice sessions** (session 39), which leaves no pace gauge. Check the mic meter / `_speakingMs` path. This is linked to the known "meter dead" bug.
+6. ✅ 2026-10-06 ([ADR-070](decisions/ADR-070-speaking-time-measured-from-audio.md)): speaking seconds are now measured from the WAV on the server, with an adaptive noise floor. The browser gate and meter adapt too. ~~Speaking seconds 0 (session 39) / meter dead.~~
 7. **Answer-length gauge in voice:** split answers on coach turns so length works for voice too.
 8. **Session-score leniency watch:** the AI can still tick "answered/example" on a real-but-weak quote. Build a junk-answer fixture set into the adversarial harness and track the false-solid rate.
 9. **Align score vocabularies:** fit ring / prep band / session score use "strong/solid" with different cut-offs (REQ-042 weak spots).
