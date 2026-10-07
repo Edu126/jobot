@@ -18,6 +18,7 @@
   {% call ui.page_header(_('lab.voice.title'), lede=_('lab.voice.lede'), size='sm') %}
     {{ ui.chip(_('lab.voice.experimental'), kind='accent', icon='ph-flask') }}
   {% endcall %}
+  {{ ui.link_tabs([('/lab/voice', _('lab.nav.voice'), 'ph-microphone'), ('/lab/avatar', _('lab.nav.avatar'), 'ph-waveform')], '/lab/voice') }}
 
   <div class="grid lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-6 items-start">
 

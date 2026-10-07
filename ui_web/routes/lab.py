@@ -38,6 +38,15 @@ async def voice_lab_page(request: Request):
          "interviews": interviews, "takes": rows, "summary": lab.voice_summary(rows)})
 
 
+@router.get("/lab/avatar")
+async def avatar_lab_page(request: Request):
+    """Voice-only avatar playground (REQ-047) — same flag as /lab/voice. Pure
+    front-end: no data, no model calls."""
+    if not lab.enabled():
+        return _off()
+    return templates.TemplateResponse(request, "pages/avatar_lab.html", {"active_tab": "prep"})
+
+
 def _state() -> dict:
     rows = lab.takes()
     return {"takes": rows, "summary": lab.voice_summary(rows)}

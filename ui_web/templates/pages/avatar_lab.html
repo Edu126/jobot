@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
+{% block title %}{{ _('lab.avatar.title') }}{% endblock %}
+{% block container_class %}max-w-4xl{% endblock %}
+{% block main_class %}py-6{% endblock %}
+
+{# Avatar playground (REQ-047) — -edu only, same flag as the voice lab. One job:
+   see four voice-only looks react to idle / coach / you / thinking, with a
+   synthetic level or your own mic. Visuals live in static/voice_visuals.js. #}
+{% set variants = [('wave', _('lab.avatar.wave')), ('ethereal', _('lab.avatar.ethereal')),
+                   ('geometric', _('lab.avatar.geometric')), ('minimal', _('lab.avatar.minimal'))] %}
+{% block content %}
+<div class="space-y-6" x-data="avatarLab()" x-init="start()">
+
+  {% call ui.page_header(_('lab.avatar.title'), lede=_('lab.avatar.lede'), size='sm') %}
+    {{ ui.chip(_('lab.voice.experimental'), kind='accent', icon='ph-flask') }}
+  {% endcall %}
+  {{ ui.link_tabs([('/lab/voice', _('lab.nav.voice'), 'ph-microphone'), ('/lab/avatar', _('lab.nav.avatar'), 'ph-waveform')], '/lab/avatar') }}
+
+  <section class="card-quiet p-4 space-y-4">
+    <canvas x-ref="stage" class="block w-full h-64 sm:h-80" aria-hidden="true"></canvas>
+
+    <div class="space-y-1.5">
+      {{ ui.seg_tabs([('wave', _('lab.avatar.wave'), none), ('ethereal', _('lab.avatar.ethereal'), none),
+                      ('geometric', _('lab.avatar.geometric'), none), ('minimal', _('lab.avatar.minimal'), none)], 'variant') }}
+    </div>
+
+    <div class="space-y-1.5">
+      <span class="text-label">{{ _('lab.avatar.state') }}</span>
+      {{ ui.seg_tabs([('idle', _('lab.avatar.state.idle'), none), ('speaking', _('lab.avatar.state.speaking'), none),
+                      ('listening', _('lab.avatar.state.listening'), none), ('thinking', _('lab.avatar.state.thinking'), none)], 'state') }}
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <span class="text-label">{{ _('lab.avatar.source') }}</span>
+      <span x-show="!mic" class="text-sm text-body-muted">{{ _('lab.avatar.simulate') }}</span>
+      {{ ui.button(_('lab.avatar.mic'), icon='ph-microphone', attrs={'@click': 'toggleMic()', 'x-show': '!mic'}) }}
+      {{ ui.button(_('lab.avatar.mic_on'), variant='primary', icon='ph-stop', attrs={'@click': 'toggleMic()', 'x-show': 'mic', 'x-cloak': ''}) }}
+    </div>
+    <p class="text-sm text-body-muted" x-show="mic" x-cloak>{{ _('lab.avatar.mic_note') }}</p>
+    <p class="text-sm text-body-muted" x-show="denied" x-cloak>{{ _('lab.avatar.mic_denied') }}</p>
+  </section>
+
+  <section class="space-y-2">
+    <span class="text-label">{{ _('lab.avatar.compare') }}</span>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {% for key, label in variants %}
+      <button type="button" class="card-quiet p-2 text-left space-y-1" @click="variant = '{{ key }}'">
+        <canvas data-thumb="{{ key }}" class="block w-full h-24" aria-hidden="true"></canvas>
+        <span class="text-sm" :class="variant === '{{ key }}' ? 'text-body-strong' : 'text-body-muted'">{{ label }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    <p class="text-xs text-subtle">{{ _('lab.avatar.skipped') }}</p>
+  </section>
+</div>
+
+<script src="/static/voice_visuals.js"></script>
+<script>
+function avatarLab() {
+  // Non-reactive internals (canvases, audio nodes) live in the closure.
+  let main = null, thumbs = {}, raf = 0, ctx = null, analyser = null, stream = null, buf = null, micEnv = 0;
+  const t0 = performance.now();
+  // Level that moves like speech: syllable-rate bursts inside phrases, with breaths between.
+  const sim = (state, t) => {
+    if (state === 'idle' || state === 'thinking') return 0;
+    const phrase = Math.max(0, Math.sin(t * 0.55) * 1.6 - 0.35);
+    const syl = 0.55 + 0.45 * Math.sin(t * 9.0) * Math.sin(t * 3.1 + 1);
+    const amp = state === 'speaking' ? 1 : 0.7;
+    return Math.min(1, Math.max(0, phrase * syl * amp));
+  };
+  return {
+    variant: 'wave', state: 'speaking', mic: false, denied: false,
+    start() {
+      const make = () => { main = VoiceVisuals.make(this.variant, this.$refs.stage); };
+      make();
+      this.$root.querySelectorAll('canvas[data-thumb]').forEach(c => { thumbs[c.dataset.thumb] = VoiceVisuals.make(c.dataset.thumb, c); });
+      this.$watch('variant', () => { main && main.destroy(); make(); });
+      const loop = () => {
+        const t = (performance.now() - t0) / 1000;
+        const level = this.mic ? micEnv : sim(this.state, t);
+        if (this.mic) this._readMic();
+        main && main.frame(this.state, level, t);
+        for (const k in thumbs) thumbs[k].frame(this.state, level, t);
+        raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+    },
+    _readMic() {
+      if (!analyser) return;
+      analyser.getByteTimeDomainData(buf);
+      let s = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; }
+      micEnv += (Math.min(1, Math.sqrt(s / buf.length) * 4) - micEnv) * 0.3;
+    },
+    async toggleMic() {
+      if (this.mic) { this._stopMic(); return; }
+      this.denied = false;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = ctx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.8;
+        ctx.createMediaStreamSource(stream).connect(analyser);
+        buf = new Uint8Array(analyser.fftSize);
+        this.mic = true; this.state = 'listening';
+      } catch (_) { this.denied = true; this._stopMic(); }
+    },
+    _stopMic() {
+      try { stream && stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      try { ctx && ctx.close(); } catch (_) {}
+      stream = ctx = analyser = null; micEnv = 0; this.mic = false;
+    },
+  };
+}
+</script>
+{% endblock %}

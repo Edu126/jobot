@@ -282,6 +282,7 @@ Soft, purposeful, accessible. **Every animation guarded by `@media (prefers-redu
 | `meter` | `(n, total=5, label=None)` | dot counts for a discrete rubric (e.g. 3 of 5 checks) — never a % |
 | `gauge` | `(g, label, unit, verdict, note)` — `g` from `session_score.delivery_gauges` | a measured number on a zoned scale vs a research baseline (REQ-043); the note says the baseline. The second chart after the ring — only for real, measured numbers |
 | `seg_tabs` / `utabs` | `(items=[(value,label,icon)], model='alpineVar')` | copy-pasted `:class` ternaries |
+| `link_tabs` | `(items=[(href,label,icon)], active=href)` | utab styling on page links (e.g. Voice · Avatar lab) |
 | `empty_state` | `(sentence, hint=None, action=(href,label,icon), icon=None)` | illustration + giant-button empties |
 | `split_workspace` | `{% call(pane) ui.split_workspace() %}` — body rendered for `'list'` and `'detail'` | the ADR-012 grid |
 

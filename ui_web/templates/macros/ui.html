@@ -234,6 +234,16 @@
 </div>
 {%- endmacro %}
 
+{# link_tabs: utabs whose items are pages (anchors), not a model. items = (href, label, icon). #}
+{% macro link_tabs(items, active, class_='') -%}
+<nav class="utabs {{ class_ }}">
+  {%- for href, label, icon in items %}
+  <a href="{{ href }}" class="utab {{ 'utab--active' if href == active else '' }}"{% if href == active %} aria-current="page"{% endif %}>
+    {%- if icon %}<i class="ph-thin {{ icon }}"></i>{% endif %}{{ label }}</a>
+  {%- endfor %}
+</nav>
+{%- endmacro %}
+
 
 {# ── empty_state ─────────────────────────────────────────────────
    A written sentence, not an illustration + giant button: what will appear
