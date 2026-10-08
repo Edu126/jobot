@@ -61,7 +61,7 @@ def test_clean_config():
     cfg = V.clean_config({"voice": "Evil", "speed": "warp", "tone": "calm", "silence_ms": 99999,
                           "extra": "x" * 2000, "affective": 1})
     _assert(cfg["voice"] == "Sulafat" and cfg["speed"] == "normal", "unknown values → defaults")
-    _assert(cfg["silence_ms"] == 2000 and len(cfg["extra"]) == V.MAX_EXTRA and cfg["affective"] is True, "clamped")
+    _assert(cfg["silence_ms"] == 5000 and len(cfg["extra"]) == V.MAX_EXTRA and cfg["affective"] is True, "clamped")
     _assert(len(V.GEMINI_VOICES) == 30, "the full Gemini catalogue")
     line = V.delivery_line(V.clean_config({"speed": "slower", "tone": "calm", "energy": "low", "extra": "lower pitch"}))
     _assert("slowly" in line and "calm" in line and "low, steady energy" in line and "lower pitch." in line, line)
@@ -168,7 +168,7 @@ def test_promoted_coach_voices():
         cfg = L._config({"role_title": "Specialist, IT Financial and Capacity Management",
                          "company": "Canada Mortgage and Housing Corporation (CMHC)"}, "en", "harsh", v)
         p = cfg.system_instruction.parts[0].text
-        _assert("Speak slowly" in p and "Max one filler per turn" in p and f"I'm {L.coach_name(v)}" in p, v)
+        _assert("Speak slowly" in p and "no filler sounds" in p and f"I'm {L.coach_name(v)}" in p, v)
         _assert(len(p) < 4500, f"{v} prompt bounded ({len(p)})")
     _assert("high energy" in L.coach_delivery("Sulafat") and "moderate energy" in L.coach_delivery("Erinome"),
             "per-voice energy from the lab")

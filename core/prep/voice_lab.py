@@ -84,10 +84,11 @@ def clean_config(raw: dict[str, Any]) -> dict[str, Any]:
     """Coerce a config from the browser to known values (never trust the form)."""
     raw = raw if isinstance(raw, dict) else {}
     pick = lambda v, opts, d: v if v in opts else d  # noqa: E731
+    from .live import SILENCE_MS
     try:
-        silence = int(raw.get("silence_ms", 700))
+        silence = int(raw.get("silence_ms", SILENCE_MS))
     except (TypeError, ValueError):
-        silence = 700
+        silence = SILENCE_MS
     return {
         "voice": pick(raw.get("voice"), GEMINI_VOICES, "Sulafat"),
         "speed": pick(raw.get("speed"), SPEEDS, "normal"),
@@ -97,7 +98,7 @@ def clean_config(raw: dict[str, Any]) -> dict[str, Any]:
         "mode": pick(raw.get("mode"), MODES, "script"),
         "affective": bool(raw.get("affective")),
         "proactive": bool(raw.get("proactive")),
-        "silence_ms": max(300, min(2000, silence)),
+        "silence_ms": max(300, min(5000, silence)),
         # Jobot's pause stretch (the same algorithm the live page runs, ADR-054)
         "stretch": bool(raw.get("stretch", True)),
         "min_pause_s": _clamp(raw.get("min_pause_s"), 0.10, 0.50, STRETCH_MIN_PAUSE_S),

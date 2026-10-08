@@ -8,7 +8,7 @@
    setting, hear it, and keep every take in a side list to compare, rate and
    like across mixed settings. #}
 {% set seed = {'voice': 'Sulafat', 'speed': 'normal', 'tone': 'calm', 'energy': 'low', 'extra': '',
-               'mode': 'script', 'affective': false, 'proactive': false, 'silence_ms': 700,
+               'mode': 'script', 'affective': false, 'proactive': false, 'silence_ms': silence_ms_default,
                'stretch': true, 'min_pause_s': 0.18, 'pause_target_s': 0.6} %}
 {% block content %}
 <div class="space-y-6"
@@ -81,7 +81,7 @@
             <label class="flex items-center justify-between gap-3"><span>{{ _('lab.voice.proactive') }}</span>
               <input type="checkbox" class="toggle toggle-sm" x-model="cfg.proactive"></label>
             <label class="block space-y-1"><span>{{ _('lab.voice.silence') }}: <b x-text="cfg.silence_ms"></b> ms</span>
-              <input type="range" min="300" max="2000" step="100" class="range range-xs" x-model.number="cfg.silence_ms"></label>
+              <input type="range" min="300" max="5000" step="100" class="range range-xs" x-model.number="cfg.silence_ms"></label>
             <p class="text-subtle">{{ _('lab.voice.live_only_note') }}</p>
           </div>
         </details>

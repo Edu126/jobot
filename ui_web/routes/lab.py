@@ -12,6 +12,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from core import db
+from core.prep import live as prep_live
 from core.prep import voice_lab as lab
 
 from ..deps import templates
@@ -35,7 +36,8 @@ async def voice_lab_page(request: Request):
         request, "pages/voice_lab.html",
         {"active_tab": "prep", "voices": lab.GEMINI_VOICES, "tones": list(lab.TONES),
          "default_line": lab.DEFAULT_LINE, "override": lab.live_override(),
-         "interviews": interviews, "takes": rows, "summary": lab.voice_summary(rows)})
+         "interviews": interviews, "takes": rows, "summary": lab.voice_summary(rows),
+         "silence_ms_default": prep_live.SILENCE_MS})
 
 
 @router.get("/lab/avatar")

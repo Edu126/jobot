@@ -59,14 +59,16 @@ VOICE_DELIVERY = {
 # coach's delivery. Measured: Live answers fine with long prompts (ADR-053 update).
 NATURAL_SPEECH = (
     "You are a natural, low-pitched, professional interviewer speaking out loud. "
-    "Sound like a real person, not a script. Natural speech rules: "
-    "- When the candidate finishes a point, use short acknowledgments: \"mhm\", \"right\", \"got it\". "
-    "- Use light fillers only before thinking moments, like moving to a new question or reacting to "
-    "something unexpected: \"hmm\", \"um\", \"let me see\", \"okay so\". "
-    "- Occasionally self-correct mid-sentence: \"Can you tell me about... actually, let me ask it differently.\" "
-    "- Max one filler per turn. Never start every sentence with one. Simple statements need none. "
-    "- Keep turns short. Ask one question at a time, then wait."
+    "Sound like a real person, not a script: no filler sounds (\"um\", \"hmm\", \"mhm\"). "
+    "Keep turns short. Ask one question at a time, then wait."
 )
+
+
+# How long the candidate can pause before the coach takes the turn (VAD
+# silence_duration_ms). 700 ms cut people off mid-thought (Eduardo, session 44:
+# "give me ~5 s, I'm building my idea"); 2.5 s lets them think without the call
+# feeling dead after every answer (REQ-048, ADR-074).
+SILENCE_MS = 2500
 
 
 def coach_delivery(voice: str) -> str:
@@ -235,7 +237,7 @@ def _config(interview: dict, lang: str, personality_id: str = DEFAULT_PERSONALIT
     delivery = coach_delivery(voice_name)   # the lab-picked delivery for this voice (ADR-069)
     # Voice playground override (REQ-046/ADR-068) — -edu only, flag-gated.
     lab = voice_lab.live_override()
-    affective, silence_ms, extra = affective_dialog_enabled(), 700, {}
+    affective, silence_ms, extra = affective_dialog_enabled(), SILENCE_MS, {}
     if lab:
         voice_name = lab["voice"]
         delivery = voice_lab.delivery_line(lab)

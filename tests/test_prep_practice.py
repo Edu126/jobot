@@ -110,10 +110,13 @@ def test_p7_core_prompt_short_and_toned():
     _assert("David" in p and "direct and probing" in p, "persona name + style folded in")
     # tone tweaks: no cheerleader fillers + a backchannel cue + one-follow-up
     _assert("cheerleader" in p.lower() and "that's interesting" in p.lower(), "bans enthusiastic fillers")
-    _assert("Mm-hmm" in p or "I see" in p, "allows a brief listener cue")
+    # REQ-048: acknowledge by restating a detail, never a bare "Mm-hmm"
+    _assert("restating one concrete detail" in p and "Never reply with only a listener sound" in p,
+            "acks show listening, no bare listener sound")
     _assert("one follow-up" in p.lower(), "one-follow-up rule present")
     # must stay well under the ~4000-char Live silent-hang limit
     _assert(len(p) < 2500, f"core prompt must be short, got {len(p)} chars")
+    print(f"  P7 core prompt: {len(p)} chars")
     _assert("1. Tell me about yourself" not in p, "questions are NOT in the core prompt (split out)")
     # professional opening: greeting + candidate name, then the coach's name
     g = PR.interviewer_system_prompt(iv, lang="en", coach_name="Maya", candidate_name="Eduardo")
