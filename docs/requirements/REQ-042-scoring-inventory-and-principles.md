@@ -80,6 +80,7 @@ reference** that lists every score and the principles all of them must follow.
   - solid = answered + example + own actions + result, no number. Only the number is optional ([ADR-072](../decisions/ADR-072-solid-band-needs-the-full-story.md)).
   - anything else = needs work, even at 4/5. Example: "we cut clashes by 40%" has no own actions, so it's needs work.
   - A competency with no question this session is "Not asked". It's shown, but left out of the score.
+  - Character questions (REQ-049, ADR-076) and openers have no competency, so they don't count toward the score yet. A "learned or changed" check for them is the open follow-up.
 - **Score** = points ÷ (5 × competencies asked) × 100, rounded.
 - **Verdict:**
   - ≥75 ready

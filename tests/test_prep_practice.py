@@ -75,7 +75,7 @@ _QS = [
 
 def test_pick_questions_length_and_focus():
     _assert(len(PR.pick_session_questions(_QS, length="quick")) == 3, "quick = 3")
-    _assert(len(PR.pick_session_questions(_QS, length="full")) == 5, "full caps at available 5")
+    _assert(len(PR.pick_session_questions(_QS, length="full")) == 7, "full = 5 available + 2 character")
     focused = PR.pick_session_questions(_QS, length="standard", focus_competency="c1")
     ids = [q["id"] for q in focused]
     _assert("q3" not in ids, f"focus c1 excludes c2 question, got {ids}")
@@ -94,6 +94,31 @@ def test_pick_questions_prefer_missed():
     print("PASS test_pick_questions_prefer_missed")
 
 
+def test_pick_questions_character_mix_and_rotation():
+    """REQ-049: plain sessions mix in character questions and rotate across sessions."""
+    s1 = PR.pick_session_questions(_QS, length="standard")
+    types = [q["type"] for q in s1]
+    _assert(len(s1) == 5 and types[0] == "opener", f"standard = 5, opens with opener, got {types}")
+    _assert(types.count("character") == 1, f"one character question, got {types}")
+    _assert(types[-1] != "character", "the character question sits inside the set, not tacked on")
+    full = PR.pick_session_questions(_QS, length="full")
+    _assert([q["type"] for q in full].count("character") == 2, "full = two character questions")
+    # rotation: what the last session asked goes to the back of the line
+    s2 = PR.pick_session_questions(_QS, length="standard", recent=[[q["id"] for q in s1]])
+    c1 = [q["id"] for q in s1 if q["type"] == "character"]
+    c2 = [q["id"] for q in s2 if q["type"] == "character"]
+    _assert(c1 != c2, f"character question rotates, got {c1} then {c2}")
+    q3 = PR.pick_session_questions(_QS, length="quick", recent=[["q2"]])
+    _assert("q2" not in [q["id"] for q in q3], "recently asked role question yields to a fresh one")
+    es = PR.pick_session_questions(_QS, length="quick", lang="es")
+    _assert(all(q["text"].startswith(("Cuéntame", "¿")) for q in es if q["type"] == "character"),
+            "character questions in the interview's language")
+    # drills stay pure
+    _assert(all(q["type"] != "character" for q in PR.pick_session_questions(_QS, length="standard", focus_competency="c1")),
+            "focus drill has no character questions")
+    print("PASS test_pick_questions_character_mix_and_rotation")
+
+
 def test_target_seconds():
     _assert(PR.target_seconds_for({"type": "behavioral"}) == 90, "behavioral target")
     _assert(PR.target_seconds_for({"type": "opener"}) == 60, "opener target")
@@ -110,11 +135,14 @@ def test_p7_core_prompt_short_and_toned():
     _assert("David" in p and "direct and probing" in p, "persona name + style folded in")
     # tone tweaks: no cheerleader fillers + a backchannel cue + one-follow-up
     _assert("cheerleader" in p.lower() and "that's interesting" in p.lower(), "bans enthusiastic fillers")
-    # REQ-048: acknowledge by restating a detail, never a bare "Mm-hmm"
-    _assert("restating one concrete detail" in p and "Never reply with only a listener sound" in p,
-            "acks show listening, no bare listener sound")
-    _assert("Never start two acknowledgments the same way" in p and "Thanks — so you" not in p,
-            "acks vary: no single example for the model to copy every turn")
+    # REQ-048: graded, capped reactions (no summaries, no bare "Mm-hmm", no hype)
+    _assert("matched to its substance" in p and "That's a strong example." in p and "Never stronger" in p,
+            "reactions graded by the answer, capped at moderate")
+    _assert("Never reply with only a listener sound" in p, "no bare listener sound")
+    _assert("never start two reactions the same way" in p and "Thanks — so you" not in p,
+            "reactions vary: no single example for the model to copy every turn")
+    _assert('Asked to repeat: "Sure —"' in p, "repeat requests get a 'Sure' first")
+    _assert("names what it's about" in p, "follow-ups say which answer they refer to")
     _assert("one follow-up" in p.lower(), "one-follow-up rule present")
     # must stay well under the ~4000-char Live silent-hang limit
     _assert(len(p) < 2500, f"core prompt must be short, got {len(p)} chars")
@@ -305,6 +333,7 @@ if __name__ == "__main__":
     test_delivery_length_bands_and_safety()
     test_pick_questions_length_and_focus()
     test_pick_questions_prefer_missed()
+    test_pick_questions_character_mix_and_rotation()
     test_target_seconds()
     test_p7_core_prompt_short_and_toned()
     test_p7_context_turn_carries_questions()

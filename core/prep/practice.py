@@ -24,25 +24,28 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from core.llm.gemini import GeminiClient, GeminiError, QuotaExhaustedError
 from core.settings import language_instruction, resolve_output_language
 
+from . import character_bank
 from . import prompts as P
 from . import session_score as SS
 
-P7_PROMPT_VERSION = "2026-10-10-interviewer-v3-varied-acks"
+P7_PROMPT_VERSION = "2026-10-10-interviewer-v4-graded-reactions"
 P8_PROMPT_VERSION = "2026-10-01-answer-eval-v2-checks"
 P9_PROMPT_VERSION = "2026-10-01-debrief-v2-evidence"
 
 # Session length presets (D6/C2): Quick · Standard · Full round.
 SESSION_LENGTHS = {"quick": 3, "standard": 5, "full": 8}
+# Character questions per session (REQ-049): the about-the-person ones.
+CHARACTER_SLOTS = {"quick": 1, "standard": 1, "full": 2}
 DEFAULT_LENGTH = "standard"
 
 # Per-question speaking target (seconds) by question type — the "target" the
 # delivery length band is measured against. Behavioral answers run longer.
-TARGET_SECONDS = {"opener": 60, "behavioral": 90, "approach": 90, "situational": 90, "technical": 75}
+TARGET_SECONDS = {"opener": 60, "character": 90, "behavioral": 90, "approach": 90, "situational": 90, "technical": 75}
 DEFAULT_TARGET = 90
 
 MAX_ANSWER_CHARS = 6000
@@ -65,8 +68,7 @@ def interviewer_system_prompt(
     delivery: str = "",
 ) -> str:
     """P7 CORE — the SHORT system instruction pinned in the ephemeral token
-    (ADR-052). Kept under ~1500 chars on purpose: the Live API **silently hangs**
-    on system instructions over ~4000 chars (undocumented). Persona identity +
+    (ADR-052). Kept under 2500 chars as a focus budget (AGENTS.md). Persona identity +
     behaviour + tone only; the candidate/company context + the question list are
     injected separately via `interviewer_context_turn` (sendClientContent)."""
     lang = resolve_output_language(lang)
@@ -89,12 +91,13 @@ Delivery: {delivery or "a calm, experienced HR interviewer — relaxed pace, low
 How to behave:
 - Name the role and company only in that greeting. Afterward refer to them lightly ("the role", "here", "this position") — do NOT restate the full role title and company each turn.
 - Ask questions in order. Precede each with ONE sentence of context, then ask it in your own words (keep its meaning). No lecturing.
-- Be warm but neutral — an interviewer, not a cheerleader. Do NOT praise, judge, or use hype or stock praise like "that's interesting", "great", "awesome", "fantastic".
-- Acknowledge each answer briefly by restating one concrete detail, without judging it. Never start two acknowledgments the same way, e.g. "Right — the vendor review.", "Got it, 12% under budget.", "So you led it yourself." No detail: "Okay." Negative answer: "Okay — thanks for being honest."
+- Warm but neutral — an interviewer, not a cheerleader. No hype ("that's interesting", "awesome", "wow", "impressive").
+- React to each answer in a few words, matched to its substance: vague or thin → "Okay." / "Got it."; clear → "Sure, that makes sense."; a real example → "Good example."; specific with a clear result → "That's a strong example." Never stronger; never start two reactions the same way. Negative answer: "Okay — thanks for being honest."
 - Never reply with only a listener sound ("Mm-hmm.").
-- If the answer is vague, ask ONE short follow-up then move on. Never more than one follow-up per question; keep every turn to one or two sentences.
-- If the candidate goes off-topic (product feedback, a refusal, or nonsense): briefly name it ("That's a bit off track — let's refocus.") and move to the NEXT question. Do NOT restart your greeting or repeat the opening question verbatim more than once. If they disengage for several questions in a row, wrap up early with your closing line.
-- Speak like a real person — natural pauses; give a beat to think after each question. Same low, steady energy throughout.
+- Asked to repeat: "Sure —" then the question again, shorter.
+- If the answer is vague, ask one follow-up that names what it's about ("On that training plan — what changed?"), then move on. Max one per question; keep every turn to one or two sentences.
+- Off-topic (product feedback, a refusal, nonsense): briefly name it ("That's a bit off track — let's refocus.") and move to the NEXT question. Never restart your greeting. If they disengage several questions in a row, wrap up early with your closing line.
+- Speak like a real person — natural pauses, a beat to think after each question, steady energy.
 - No hints, coaching, or feedback during the session — never invent facts or numbers.
 - When all questions are done, thank the candidate in one calm sentence, then say exactly, as your final words: "That concludes our practice interview." """
 
@@ -149,25 +152,55 @@ def pick_session_questions(
     questions: list[dict], *, length: str = DEFAULT_LENGTH,
     focus_competency: Optional[str] = None,
     prefer_ids: Optional[set[str]] = None,
+    recent: Sequence[Sequence[str]] = (),
+    lang: str = "en",
 ) -> list[dict]:
-    """Choose the questions for one session (D6): keep flow order, cap at the
-    length preset, and — when a focus competency is set — lead with its questions
-    (openers always allowed through so the session still opens naturally).
-    `prefer_ids` (ADR-056: the answer cards rated "missed" in Get Ready) puts
-    those questions right after the openers, the rest follow in flow order."""
+    """Choose the questions for one session (D6), capped at the length preset.
+
+    - Focus competency (a drill): its questions, openers allowed through.
+    - `prefer_ids` (ADR-056: answer cards rated "missed"): those right after
+      the opener, the rest in flow order.
+    - Otherwise the REQ-049 mix: one opener, role questions, and
+      CHARACTER_SLOTS questions from the character bank. `recent` = question
+      ids of this interview's past sessions, newest first: questions asked
+      least recently go first, so sessions don't repeat themselves."""
     n = SESSION_LENGTHS.get(length, SESSION_LENGTHS[DEFAULT_LENGTH])
     items = [q for q in questions if isinstance(q, dict) and str(q.get("text", "")).strip()]
     if focus_competency:
         focused = [q for q in items if q.get("competency_id") == focus_competency
                    or q.get("type") == "opener"]
-        items = focused or items
+        return (focused or items)[:n]
+    openers = [q for q in items if q.get("type") == "opener"][:1]
     if prefer_ids:
-        openers = [q for q in items if q.get("type") == "opener"][:1]
         preferred = [q for q in items if q.get("id") in prefer_ids and q not in openers]
         if preferred:
             rest = [q for q in items if q not in openers and q not in preferred]
-            items = openers + preferred + rest
-    return items[:n]
+            return (openers + preferred + rest)[:n]
+    role = [q for q in items if q not in openers]
+    k = min(CHARACTER_SLOTS.get(length, 1), max(n - len(openers) - 1, 0))
+    picked_role = _least_recent(role, recent, n - len(openers) - k)
+    chars = [character_bank.character_question(qid, lang) for qid in
+             _least_recent(list(character_bank.CHARACTER_QUESTIONS), recent, k)]
+    # A character question sits before the last role question (and the second
+    # one closes the set), the way a real interviewer mixes them in.
+    body = picked_role[:-1] + chars[:1] + picked_role[-1:] + chars[1:] if picked_role else chars
+    return openers + body
+
+
+def _least_recent(pool: list, recent: Sequence[Sequence[str]], take: int) -> list:
+    """`take` items from `pool` (question dicts or ids), never-asked first, then
+    the ones asked longest ago; the chosen keep their pool (flow) order."""
+    if take <= 0:
+        return []
+    def _id(x):
+        return x.get("id") if isinstance(x, dict) else x
+    def _age(x):
+        for i, ids in enumerate(recent):
+            if _id(x) in ids:
+                return i
+        return len(recent) + 1
+    ranked = sorted(range(len(pool)), key=lambda i: (-_age(pool[i]), i))[:take]
+    return [pool[i] for i in sorted(ranked)]
 
 
 def target_seconds_for(question: dict) -> int:

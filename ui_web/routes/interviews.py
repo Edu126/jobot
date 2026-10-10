@@ -557,7 +557,10 @@ async def practice_start(
     picked = prep_practice.pick_session_questions(
         qdicts, length=length,
         focus_competency=None if missed else (focus.strip() or None),
-        prefer_ids=_missed_question_ids(interview_id, qdicts) if missed else None)
+        prefer_ids=_missed_question_ids(interview_id, qdicts) if missed else None,
+        recent=[[q.get("id") for q in (s.get("questions") or []) if isinstance(q, dict)]
+                for s in db.list_practice_sessions(interview_id)[:6]],
+        lang=lang)
     # Voice + personality are decoupled: `persona` column stores the personality id.
     personality_id = personality if personality in prep_live.PERSONALITIES else prep_live.DEFAULT_PERSONALITY
     voice_id = voice if voice in prep_live.VOICES else prep_live.DEFAULT_VOICE
