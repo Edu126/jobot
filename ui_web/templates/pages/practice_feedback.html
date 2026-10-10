@@ -58,12 +58,10 @@
     <div class="divide-y divide-base-200">
       {% for e in evidence %}
       <details class="py-2 group">
-        <summary class="flex items-center justify-between gap-3 cursor-pointer list-none">
+        <summary class="score-row cursor-pointer list-none">
           <span class="min-w-0">{{ comp_names.get(e.competency_id, e.competency_id) }}</span>
-          <span class="flex items-center gap-3 shrink-0">
-            {% if e.asked %}{{ ui.meter(e.points, 5) }}{% endif %}
-            <span class="pill {{ band_pill.get(e.band, 'pill-neutral') }}">{{ _('prep2.score.not_asked') if e.band == 'not_asked' else _('prep2.band.' + e.band) }}</span>
-          </span>
+          <span>{% if e.asked %}{{ ui.meter(e.points, 5) }}{% endif %}</span>
+          <span class="score-row__band pill {{ band_pill.get(e.band, 'pill-neutral') }}">{{ _('prep2.score.not_asked') if e.band == 'not_asked' else _('prep2.band.' + e.band) }}</span>
         </summary>
         {% if e.asked %}
         <div class="mt-3 space-y-2 text-sm">

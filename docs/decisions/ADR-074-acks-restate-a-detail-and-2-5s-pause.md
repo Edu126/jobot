@@ -22,3 +22,8 @@ In real sessions a bare "Mm-hmm" sounded inattentive. Separately, VAD `silence_d
 ## Consequences
 - Each turn takes about 1.8 s longer.
 - Restating a detail relies on the model getting the detail right. A wrong restatement would be worse than "Okay". Watch for it in the next sessions.
+
+**Update 2026-10-10 (session 46 on -edu):** acks were accurate and no answer was
+cut off at 2.5 s, but all 5 opened "Thanks — so you…" — the model copied the
+single example. Now: three differently-shaped examples + "never start two
+acknowledgments the same way" (P7 `2026-10-10-interviewer-v3-varied-acks`).

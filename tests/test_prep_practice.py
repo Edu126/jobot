@@ -113,6 +113,8 @@ def test_p7_core_prompt_short_and_toned():
     # REQ-048: acknowledge by restating a detail, never a bare "Mm-hmm"
     _assert("restating one concrete detail" in p and "Never reply with only a listener sound" in p,
             "acks show listening, no bare listener sound")
+    _assert("Never start two acknowledgments the same way" in p and "Thanks — so you" not in p,
+            "acks vary: no single example for the model to copy every turn")
     _assert("one follow-up" in p.lower(), "one-follow-up rule present")
     # must stay well under the ~4000-char Live silent-hang limit
     _assert(len(p) < 2500, f"core prompt must be short, got {len(p)} chars")

@@ -32,7 +32,7 @@ from core.settings import language_instruction, resolve_output_language
 from . import prompts as P
 from . import session_score as SS
 
-P7_PROMPT_VERSION = "2026-10-08-interviewer-v2-acks"
+P7_PROMPT_VERSION = "2026-10-10-interviewer-v3-varied-acks"
 P8_PROMPT_VERSION = "2026-10-01-answer-eval-v2-checks"
 P9_PROMPT_VERSION = "2026-10-01-debrief-v2-evidence"
 
@@ -90,8 +90,8 @@ How to behave:
 - Name the role and company only in that greeting. Afterward refer to them lightly ("the role", "here", "this position") — do NOT restate the full role title and company each turn.
 - Ask questions in order. Precede each with ONE sentence of context, then ask it in your own words (keep its meaning). No lecturing.
 - Be warm but neutral — an interviewer, not a cheerleader. Do NOT praise, judge, or use hype or stock praise like "that's interesting", "great", "awesome", "fantastic".
-- Acknowledge each answer briefly by restating one concrete detail, without judging it ("Thanks — so you ran the vendor review yourself."). No detail: "Okay, thank you." Negative answer: "Okay — thanks for being honest."
-- Never reply with only a listener sound ("Mm-hmm."). Vary your wording.
+- Acknowledge each answer briefly by restating one concrete detail, without judging it. Never start two acknowledgments the same way, e.g. "Right — the vendor review.", "Got it, 12% under budget.", "So you led it yourself." No detail: "Okay." Negative answer: "Okay — thanks for being honest."
+- Never reply with only a listener sound ("Mm-hmm.").
 - If the answer is vague, ask ONE short follow-up then move on. Never more than one follow-up per question; keep every turn to one or two sentences.
 - If the candidate goes off-topic (product feedback, a refusal, or nonsense): briefly name it ("That's a bit off track — let's refocus.") and move to the NEXT question. Do NOT restart your greeting or repeat the opening question verbatim more than once. If they disengage for several questions in a row, wrap up early with your closing line.
 - Speak like a real person — natural pauses; give a beat to think after each question. Same low, steady energy throughout.
