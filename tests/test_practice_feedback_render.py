@@ -72,8 +72,45 @@ def test_voice_length_gauge_both_shapes():
     print("PASS test_voice_length_gauge_both_shapes")
 
 
+
+def _req():
+    return Request({"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b"", "app": None})
+
+
+def test_history_and_empty_state():
+    """REQ-050: past sessions listed (this one marked); Feedback before any session explains itself."""
+    hist = [{"id": 40, "status": "done", "completed_at": "2026-10-10T21:22:41Z", "debrief": {"score": 72}, "transcript_json": "[]"},
+            {"id": 39, "status": "done", "completed_at": "2026-10-08T00:07:00Z", "debrief": None, "transcript_json": None}]
+    req = _req()
+    html = templates.get_template("pages/practice_feedback.html").render(
+        request=req, active_tab="prep", interview={"id": 3, "role_title": "S", "company": "C"},
+        session={"id": 39, "debrief": {"takeaway": "t"}, "transcript": None}, answers=[], comp_names={},
+        readiness={"level": "almost_ready", "pct": 78, "missing": "strengthen", "missing_count": 1},
+        delta=None, gauges=[], step="feedback", history=hist)
+    _assert("Past sessions" in html and "/practice/40/feedback" in html and "viewing" in html, "history listed, current marked")
+    empty = templates.get_template("pages/feedback_empty.html").render(
+        request=req, active_tab="prep", interview={"id": 3, "role_title": "S", "company": "C"}, step="feedback")
+    _assert("No practice sessions yet." in empty and "/interviews/3/practice" in empty, "empty state with CTA")
+    print("PASS test_history_and_empty_state")
+
+
+def test_setup_topics_checklist():
+    """REQ-050: setup is a checklist (about you + each competency), all checked by default."""
+    html = templates.get_template("pages/practice_setup.html").render(
+        request=_req(), active_tab="prep", interview={"id": 3, "role_title": "S", "company": "C"}, step="practice",
+        missed_count=2, checked=["c1", "c2", PR.ABOUT_YOU], about_you=PR.ABOUT_YOU,
+        competencies=[{"id": "c1", "name": "Budget"}, {"id": "c2", "name": "Workforce"}],
+        voice_enabled=False, voices={}, default_voice="x", personalities={}, default_personality="y")
+    _assert(html.count('name="topics"') == 3 and "About you" in html and "Budget" in html, "checklist items")
+    _assert("{n} questions" in html and "Start with the 2 answers I missed" in html, "count + missed option")
+    _assert('href="/interviews/3/feedback"' in html, "stepper links Feedback from Practice")
+    _assert('name="length"' not in html and 'name="focus"' not in html, "old pickers gone")
+    print("PASS test_setup_topics_checklist")
+
 if __name__ == "__main__":
     test_new_shape()
     test_legacy_shape()
     test_voice_length_gauge_both_shapes()
+    test_history_and_empty_state()
+    test_setup_topics_checklist()
     print("all feedback-render tests passed")

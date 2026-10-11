@@ -180,5 +180,25 @@
     </div>
   </div>
 
+  {# ---- past sessions (REQ-050): every finished rehearsal, this one marked ---- #}
+  {% if history | length > 1 %}
+  {% call ui.section(eyebrow=_('prep2.feedback.history')) %}
+    <div class="divide-y divide-base-200">
+      {% for h in history %}
+      {% set hd = h.debrief or {} %}
+      {% set here = h.id == session.id %}
+      <a href="/interviews/{{ interview.id }}/practice/{{ h.id }}/feedback"
+         class="flex items-center justify-between gap-3 py-2 {{ 'font-semibold' if here }}"{% if here %} aria-current="page"{% endif %}>
+        <span class="min-w-0">
+          <span x-data x-text="new Date('{{ h.completed_at or h.created_at }}').toLocaleDateString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})">{{ (h.completed_at or h.created_at)[:10] }}</span>
+          <span class="text-sm text-subtle"> · {{ _('prep2.setup.channel_voice') if h.transcript_json else _('prep2.setup.channel_text') }}{% if here %} · {{ _('prep2.feedback.viewing') }}{% endif %}</span>
+        </span>
+        {% if hd.score is number %}<span class="tabular-nums">{{ hd.score }}</span>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  {% endcall %}
+  {% endif %}
+
 </div>
 {% endblock %}

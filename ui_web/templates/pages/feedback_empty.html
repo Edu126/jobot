@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
+{% import "partials/interview_stepper.html" as steps %}
+{% import "partials/prep_macros.html" as pm %}
+{% block title %}{{ _('prep2.step.feedback') }} · {{ interview.company }}{% endblock %}
+{% block container_class %}max-w-5xl{% endblock %}
+{% block main_class %}py-6{% endblock %}
+
+{% block content %}
+{# Feedback before the first finished session (REQ-050): the step is always
+   reachable, so it explains itself instead of being a dead link. #}
+<div class="space-y-6">
+  {% call ui.page_header(_('prep2.feedback.heading'), lede=(interview.role_title or _('prep2.gen.the_role')) ~ '  ·  ' ~ pm.iv_meta(interview), size='sm') %}{{ steps.stepper('feedback', interview.id) }}{% endcall %}
+  {{ ui.empty_state(_('prep2.feedback.empty'), hint=_('prep2.feedback.empty_hint'),
+                    action=('/interviews/' ~ interview.id ~ '/practice', _('prep2.step.practice'), 'ph-microphone'), icon='ph-chat-circle-text') }}
+</div>
+{% endblock %}

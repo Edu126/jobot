@@ -487,15 +487,15 @@ async def practice_entry(request: Request, interview_id: int):
         interview_id, db.list_stories(interview["resume_hash"], status="saved"), lang=lang, fresh=False)
     qlist = [q.to_dict() for q in cached.questions] if cached else []
     missed_count = len(_missed_question_ids(interview_id, qlist))
+    # The topics checklist (REQ-050): everything checked; "Drill <weakest>" from
+    # Feedback (ADR-059) arrives as ?focus=<id> and checks only that one.
+    comp_ids = [c.id for c in brief.competencies]
     focus_q = request.query_params.get("focus", "")
-    if focus_q in {c.id for c in brief.competencies}:
-        focus_default = focus_q    # "Drill <weakest>" from Feedback (ADR-059)
-    else:
-        focus_default = "__missed__" if (missed_count and focus_q != "all") else ""
+    checked = [focus_q] if focus_q in comp_ids else comp_ids + [prep_practice.ABOUT_YOU]
     return templates.TemplateResponse(
         request, "pages/practice_setup.html",
         {"active_tab": "prep", "interview": interview, "step": "practice",
-         "missed_count": missed_count, "focus_default": focus_default,
+         "missed_count": missed_count, "checked": checked, "about_you": prep_practice.ABOUT_YOU,
          "competencies": [c.to_dict() for c in brief.competencies],
          "voice_enabled": prep_live.is_enabled(),
          "voices": prep_live.VOICES, "default_voice": prep_live.DEFAULT_VOICE,
@@ -525,8 +525,8 @@ async def practice_start(
     request: Request,
     interview_id: int,
     mode: str = Form("simulate"),
-    length: str = Form("standard"),
-    focus: str = Form(""),
+    topics: list[str] = Form([]),
+    missed: str = Form(""),
     channel: str = Form("text"),
     voice: str = Form(""),
     personality: str = Form(""),
@@ -553,10 +553,11 @@ async def practice_start(
     qdicts = [q.to_dict() for q in (toolkit.questions if toolkit else [])]
     if not qdicts:
         return _error("prep2.err.questions_failed")
-    missed = focus.strip() == "__missed__"
+    topics = [t for t in topics if t]
+    if not topics:
+        return _error("prep2.err.no_topics")
     picked = prep_practice.pick_session_questions(
-        qdicts, length=length,
-        focus_competency=None if missed else (focus.strip() or None),
+        qdicts, topics=topics,
         prefer_ids=_missed_question_ids(interview_id, qdicts) if missed else None,
         recent=[[q.get("id") for q in (s.get("questions") or []) if isinstance(q, dict)]
                 for s in db.list_practice_sessions(interview_id)[:6]],
@@ -565,8 +566,8 @@ async def practice_start(
     personality_id = personality if personality in prep_live.PERSONALITIES else prep_live.DEFAULT_PERSONALITY
     voice_id = voice if voice in prep_live.VOICES else prep_live.DEFAULT_VOICE
     sid = db.create_practice_session(
-        interview_id, mode=mode, length=length,
-        focus_competency=None if missed else (focus.strip() or None),
+        interview_id, mode=mode, length=str(len(picked)),
+        focus_competency=topics[0] if len(topics) == 1 and topics[0] != prep_practice.ABOUT_YOU else None,
         persona=personality_id, voice=voice_id,
         questions=picked)
     dest = "voice" if (channel == "voice" and prep_live.is_enabled()) else str(sid)
@@ -888,14 +889,30 @@ async def practice_feedback(request: Request, interview_id: int, session_id: int
     comp_names = {c.id: c.name for c in brief.competencies} if brief else {}
     answers = db.list_practice_answers(session_id)
     readiness = prep_readiness.compute(interview, lang=lang)
-    delta = prep_session_score.delta_vs_previous(
-        db.list_practice_sessions(interview_id), session_id)
+    sessions = db.list_practice_sessions(interview_id)
+    delta = prep_session_score.delta_vs_previous(sessions, session_id)
     gauges = _delivery_gauges(session, answers)
+    history = [s for s in sessions if s.get("status") == "done"]
     return templates.TemplateResponse(
         request, "pages/practice_feedback.html",
         {"active_tab": "prep", "interview": interview, "session": session,
          "answers": answers, "comp_names": comp_names, "readiness": readiness,
-         "delta": delta, "gauges": gauges, "step": "feedback"})
+         "delta": delta, "gauges": gauges, "step": "feedback", "history": history})
+
+
+@router.get("/interviews/{interview_id}/feedback")
+async def feedback_latest(request: Request, interview_id: int):
+    """The Feedback step is always reachable (REQ-050): the latest finished
+    session (past ones are listed on it), or an empty state before the first."""
+    interview = db.get_interview(interview_id)
+    if not interview:
+        return _redirect("/interviews")
+    done = [s for s in db.list_practice_sessions(interview_id) if s.get("status") == "done"]
+    if done:
+        return _redirect(f"/interviews/{interview_id}/practice/{done[0]['id']}/feedback")
+    return templates.TemplateResponse(
+        request, "pages/feedback_empty.html",
+        {"active_tab": "prep", "interview": interview, "step": "feedback"})
 
 
 def _delivery_gauges(session: dict, answers: list[dict]) -> list[dict]:

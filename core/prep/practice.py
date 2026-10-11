@@ -38,10 +38,6 @@ P8_PROMPT_VERSION = "2026-10-01-answer-eval-v2-checks"
 P9_PROMPT_VERSION = "2026-10-01-debrief-v2-evidence"
 
 # Session length presets (D6/C2): Quick · Standard · Full round.
-SESSION_LENGTHS = {"quick": 3, "standard": 5, "full": 8}
-# Character questions per session (REQ-049): the about-the-person ones.
-CHARACTER_SLOTS = {"quick": 1, "standard": 1, "full": 2}
-DEFAULT_LENGTH = "standard"
 
 # Per-question speaking target (seconds) by question type — the "target" the
 # delivery length band is measured against. Behavioral answers run longer.
@@ -111,15 +107,21 @@ def interviewer_context_turn(
     context + the ordered questions, then tells the coach to begin."""
     ctx = _context_block(brief, persona)
     q_lines = "\n".join(
-        f'{i+1}. {str(q.get("text","")).strip()}'
+        f'{i+1}. [{_STAGE.get(str(q.get("type")), "the role")}] {str(q.get("text","")).strip()}'
         for i, q in enumerate(session_questions) if str(q.get("text", "")).strip()
     )
     return f"""Context for this interview (use only this — never invent facts or numbers):
 {ctx}
-Questions to cover, in order:
+Questions to cover, in order (each tagged with its part of the interview):
 {q_lines}
 
+The interview follows an arc: career → about you → the role. When the part changes, bridge with one natural sentence before the question (e.g. "Let's step away from the role for a moment — I'd like to get to know you a bit." / "Thanks. Let's turn to the work itself."). Never jump into a new part cold.
+
 Now begin with your opening greeting, then ask your first question."""
+
+
+# The arc's parts (REQ-050), as tagged in the context turn.
+_STAGE = {"opener": "career", "character": "about you"}
 
 
 def _context_block(brief: Optional[dict], persona: str) -> str:
@@ -148,43 +150,48 @@ def _context_block(brief: Optional[dict], persona: str) -> str:
 
 # ---------- session shaping (code) ----------
 
+ABOUT_YOU = "about_you"   # the setup checklist's personal & behavioral item (REQ-050)
+# The arc's order inside the role part (REQ-050): how you work → a time you did
+# it → role knowledge → a scenario ("first 90 days" lands last).
+_ROLE_ORDER = {"approach": 0, "behavioral": 1, "technical": 2, "situational": 3}
+
+
 def pick_session_questions(
-    questions: list[dict], *, length: str = DEFAULT_LENGTH,
-    focus_competency: Optional[str] = None,
+    questions: list[dict], *, topics: Optional[Sequence[str]] = None,
     prefer_ids: Optional[set[str]] = None,
     recent: Sequence[Sequence[str]] = (),
     lang: str = "en",
 ) -> list[dict]:
-    """Choose the questions for one session (D6), capped at the length preset.
+    """The questions for one session, as an interview ARC (REQ-050, ADR-077):
+    career (one opener) → about you (a character question) → the role (one
+    question per checked competency, ordered approach → behavioral → technical
+    → situational).
 
-    - Focus competency (a drill): its questions, openers allowed through.
-    - `prefer_ids` (ADR-056: answer cards rated "missed"): those right after
-      the opener, the rest in flow order.
-    - Otherwise the REQ-049 mix: one opener, role questions, and
-      CHARACTER_SLOTS questions from the character bank. `recent` = question
-      ids of this interview's past sessions, newest first: questions asked
-      least recently go first, so sessions don't repeat themselves."""
-    n = SESSION_LENGTHS.get(length, SESSION_LENGTHS[DEFAULT_LENGTH])
+    `topics` = the setup checklist: competency ids + ABOUT_YOU. None = every
+    competency the questions cover + ABOUT_YOU. Per topic, the question asked
+    least recently wins (`recent` = this interview's past sessions' question
+    ids, newest first), unless one is in `prefer_ids` (ADR-056 missed cards)."""
     items = [q for q in questions if isinstance(q, dict) and str(q.get("text", "")).strip()]
-    if focus_competency:
-        focused = [q for q in items if q.get("competency_id") == focus_competency
-                   or q.get("type") == "opener"]
-        return (focused or items)[:n]
-    openers = [q for q in items if q.get("type") == "opener"][:1]
-    if prefer_ids:
-        preferred = [q for q in items if q.get("id") in prefer_ids and q not in openers]
-        if preferred:
-            rest = [q for q in items if q not in openers and q not in preferred]
-            return (openers + preferred + rest)[:n]
-    role = [q for q in items if q not in openers]
-    k = min(CHARACTER_SLOTS.get(length, 1), max(n - len(openers) - 1, 0))
-    picked_role = _least_recent(role, recent, n - len(openers) - k)
-    chars = [character_bank.character_question(qid, lang) for qid in
-             _least_recent(list(character_bank.CHARACTER_QUESTIONS), recent, k)]
-    # A character question sits before the last role question (and the second
-    # one closes the set), the way a real interviewer mixes them in.
-    body = picked_role[:-1] + chars[:1] + picked_role[-1:] + chars[1:] if picked_role else chars
-    return openers + body
+    if topics is None:
+        topics = list(dict.fromkeys(q["competency_id"] for q in items if q.get("competency_id")))
+        topics.append(ABOUT_YOU)
+    prefer_ids = prefer_ids or set()
+
+    def best(pool: list) -> list:
+        preferred = [q for q in pool if isinstance(q, dict) and q.get("id") in prefer_ids]
+        return preferred[:1] or _least_recent(pool, recent, 1)
+
+    opener = best([q for q in items if q.get("type") == "opener"])
+    about = ([character_bank.character_question(qid, lang) for qid in
+              _least_recent(list(character_bank.CHARACTER_QUESTIONS), recent, 1)]
+             if ABOUT_YOU in topics else [])
+    role: list[dict] = []
+    for cid in topics:
+        if cid == ABOUT_YOU:
+            continue
+        role += best([q for q in items if q.get("competency_id") == cid and q.get("type") != "opener"])
+    role.sort(key=lambda q: _ROLE_ORDER.get(str(q.get("type")), 2))
+    return opener + about + role
 
 
 def _least_recent(pool: list, recent: Sequence[Sequence[str]], take: int) -> list:

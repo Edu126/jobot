@@ -1,7 +1,7 @@
 """Practice pipeline P7/P8/P9 + delivery metrics (REQ-041 / ADR-048/049). Locks:
   1. delivery_metrics computes real numbers in code — wpm, filler count (single
      + phrases), length band vs target — and is safe on empty/zero;
-  2. pick_session_questions caps at the length preset and honours a focus
+  2. pick_session_questions builds the arc from the checked topics (REQ-050)
      competency (openers still allowed through);
   3. P7 system prompt lists the session questions in order + names role/company;
   4. P8 parse coerces bad bands → needs_work, keeps what_worked/fix, nulls a
@@ -73,50 +73,49 @@ _QS = [
 ]
 
 
-def test_pick_questions_length_and_focus():
-    _assert(len(PR.pick_session_questions(_QS, length="quick")) == 3, "quick = 3")
-    _assert(len(PR.pick_session_questions(_QS, length="full")) == 7, "full = 5 available + 2 character")
-    focused = PR.pick_session_questions(_QS, length="standard", focus_competency="c1")
-    ids = [q["id"] for q in focused]
-    _assert("q3" not in ids, f"focus c1 excludes c2 question, got {ids}")
-    _assert("q1" in ids or "q5" in ids, "openers still allowed through under focus")
-    print("PASS test_pick_questions_length_and_focus")
+def test_pick_questions_arc_and_topics():
+    """REQ-050: career → about you → the role, one question per checked topic."""
+    s = PR.pick_session_questions(_QS)
+    types = [q["type"] for q in s]
+    _assert(types[0] == "opener" and types[1] == "character", f"opens career → about you, got {types}")
+    _assert(len(s) == 1 + 1 + 2, f"default = opener + about you + one per competency (c1, c2), got {len(s)}")
+    role = types[2:]
+    _assert(role.index("technical") > role.index("behavioral"), f"role part ordered approach→behavioral→technical→situational, got {role}")
+    only = PR.pick_session_questions(_QS, topics=["c1"])
+    _assert([q["type"] for q in only] == ["opener", "behavioral"] or len(only) == 2, f"one topic = opener + its question, got {only}")
+    _assert(all(q["type"] != "character" for q in only), "about you unchecked → no character question")
+    _assert(len(PR.pick_session_questions(_QS, topics=["c1", "c2", PR.ABOUT_YOU])) == 4, "more checked = more covered")
+    print("PASS test_pick_questions_arc_and_topics")
 
 
 def test_pick_questions_prefer_missed():
-    """ADR-056: answer cards rated "missed" lead the session, right after one opener."""
-    ids = [q["id"] for q in PR.pick_session_questions(_QS, length="quick", prefer_ids={"q4"})]
-    _assert(ids[1] == "q4", f"missed card comes right after the opener, got {ids}")
-    _assert(ids[0] == next(q["id"] for q in _QS if q.get("type") == "opener"), "session still opens with an opener")
-    plain = [q["id"] for q in PR.pick_session_questions(_QS, length="quick")]
-    _assert([q["id"] for q in PR.pick_session_questions(_QS, length="quick", prefer_ids={"zz"})] == plain,
-            "unknown preferred ids change nothing")
+    """ADR-056: a missed answer card wins its topic's slot."""
+    ids = [q["id"] for q in PR.pick_session_questions(_QS, topics=["c1"], prefer_ids={"q4"})]
+    _assert("q4" in ids and "q2" not in ids, f"missed card picked for c1, got {ids}")
     print("PASS test_pick_questions_prefer_missed")
 
 
-def test_pick_questions_character_mix_and_rotation():
-    """REQ-049: plain sessions mix in character questions and rotate across sessions."""
-    s1 = PR.pick_session_questions(_QS, length="standard")
-    types = [q["type"] for q in s1]
-    _assert(len(s1) == 5 and types[0] == "opener", f"standard = 5, opens with opener, got {types}")
-    _assert(types.count("character") == 1, f"one character question, got {types}")
-    _assert(types[-1] != "character", "the character question sits inside the set, not tacked on")
-    full = PR.pick_session_questions(_QS, length="full")
-    _assert([q["type"] for q in full].count("character") == 2, "full = two character questions")
-    # rotation: what the last session asked goes to the back of the line
-    s2 = PR.pick_session_questions(_QS, length="standard", recent=[[q["id"] for q in s1]])
-    c1 = [q["id"] for q in s1 if q["type"] == "character"]
-    c2 = [q["id"] for q in s2 if q["type"] == "character"]
-    _assert(c1 != c2, f"character question rotates, got {c1} then {c2}")
-    q3 = PR.pick_session_questions(_QS, length="quick", recent=[["q2"]])
-    _assert("q2" not in [q["id"] for q in q3], "recently asked role question yields to a fresh one")
-    es = PR.pick_session_questions(_QS, length="quick", lang="es")
+def test_pick_questions_rotation():
+    """Least recently asked first: sessions don't replay the same set."""
+    s1 = PR.pick_session_questions(_QS)
+    s2 = PR.pick_session_questions(_QS, recent=[[q["id"] for q in s1]])
+    c = lambda s: [q["id"] for q in s if q["type"] == "character"]
+    _assert(c(s1) != c(s2), f"character question rotates, got {c(s1)} then {c(s2)}")
+    ids2 = [q["id"] for q in PR.pick_session_questions(_QS, topics=["c1"], recent=[["q2"]])]
+    _assert("q4" in ids2, f"recently asked c1 question yields to the other, got {ids2}")
+    _assert([q["id"] for q in s2 if q["type"] == "opener"] == ["q5"], "opener rotates too")
+    es = PR.pick_session_questions(_QS, lang="es")
     _assert(all(q["text"].startswith(("Cuéntame", "¿")) for q in es if q["type"] == "character"),
             "character questions in the interview's language")
-    # drills stay pure
-    _assert(all(q["type"] != "character" for q in PR.pick_session_questions(_QS, length="standard", focus_competency="c1")),
-            "focus drill has no character questions")
-    print("PASS test_pick_questions_character_mix_and_rotation")
+    print("PASS test_pick_questions_rotation")
+
+
+def test_context_turn_tags_the_arc():
+    qs = PR.pick_session_questions(_QS)
+    turn = PR.interviewer_context_turn({}, qs)
+    _assert("[career]" in turn and "[about you]" in turn and "[the role]" in turn, "questions tagged by part")
+    _assert("bridge with one natural sentence" in turn, "coach bridges between parts")
+    print("PASS test_context_turn_tags_the_arc")
 
 
 def test_target_seconds():
@@ -164,7 +163,7 @@ def test_p7_context_turn_carries_questions():
                                     brief={"role_summary": "own analytics",
                                            "competencies": [{"id": "c1", "name": "Stakeholder", "what_good_looks_like": "aligns"}]},
                                     persona="a data analyst")
-    _assert("1. Tell me about yourself." in c and "2. A stakeholder conflict?" in c, "numbered questions in order")
+    _assert("1. [career] Tell me about yourself." in c and "2. [the role] A stakeholder conflict?" in c, "numbered, tagged questions in order")
     _assert("Stakeholder" in c and "data analyst" in c, "context carries competencies + persona")
     _assert("begin" in c.lower(), "tells the coach to begin")
     print("PASS test_p7_context_turn_carries_questions")
@@ -331,9 +330,10 @@ def test_setup_labels_translated():
 if __name__ == "__main__":
     test_delivery_metrics()
     test_delivery_length_bands_and_safety()
-    test_pick_questions_length_and_focus()
+    test_pick_questions_arc_and_topics()
     test_pick_questions_prefer_missed()
-    test_pick_questions_character_mix_and_rotation()
+    test_pick_questions_rotation()
+    test_context_turn_tags_the_arc()
     test_target_seconds()
     test_p7_core_prompt_short_and_toned()
     test_p7_context_turn_carries_questions()
