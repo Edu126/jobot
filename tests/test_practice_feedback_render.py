@@ -107,10 +107,21 @@ def test_setup_topics_checklist():
     _assert('name="length"' not in html and 'name="focus"' not in html, "old pickers gone")
     print("PASS test_setup_topics_checklist")
 
+
+def test_live_talking_points():
+    """REQ-050: live aid = one big line per point, no STAR labels, point to land last."""
+    frame = [{"section": "situation", "points": ["At the CRA we lacked visibility."]},
+             {"section": "result", "points": ["I saved 60+ staff hours a month."]}]
+    html = templates.get_template("partials/live_talking_points.html").render(frame=frame, point="I build tools that save hours.")
+    _assert(html.count("<li>") == 2 and "saved 60+" in html and "live-points__land" in html, "points + land")
+    _assert("Situation" not in html and "script__cue" not in html, "no section labels")
+    print("PASS test_live_talking_points")
+
 if __name__ == "__main__":
     test_new_shape()
     test_legacy_shape()
     test_voice_length_gauge_both_shapes()
     test_history_and_empty_state()
     test_setup_topics_checklist()
+    test_live_talking_points()
     print("all feedback-render tests passed")

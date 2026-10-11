@@ -2530,3 +2530,9 @@ a.stepper-arrow:hover { background: var(--surf-3); }
    column so every meter lines up whatever the band label's length. */
 .score-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 8.5rem; align-items: center; column-gap: 0.75rem; }
 .score-row__band { justify-self: end; }
+
+/* Live interview talking points (REQ-050): big, one line each, glanceable. */
+.live-points { display: flex; flex-direction: column; gap: 0.625rem; }
+.live-points li { position: relative; padding-left: 1rem; font-size: 1.125rem; line-height: 1.45; }
+.live-points li::before { content: ""; position: absolute; left: 0; top: 0.65em; width: 0.375rem; height: 0.375rem; border-radius: 999px; background: oklch(var(--p)); }
+.live-points__land { font-size: 1.125rem; font-weight: 600; line-height: 1.45; padding-top: 0.25rem; }

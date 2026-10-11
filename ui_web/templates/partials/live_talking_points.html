@@ -1,0 +1,10 @@
+{# The prepared answer as glanceable talking points for the LIVE interview
+   (REQ-050, Eduardo 2026-10-10: the STAR-labelled script paragraphs were hard
+   to read mid-conversation). One line per point, large, no section labels;
+   the point to land closes it. Same data as answer_frame.html. #}
+<ul class="live-points">
+  {% for sec in frame %}{% for pt in sec.points %}
+  <li>{{ pt | hints(clickable=false) }}</li>
+  {% endfor %}{% endfor %}
+</ul>
+{% if point %}<p class="live-points__land">{{ point }}</p>{% endif %}

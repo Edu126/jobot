@@ -18,3 +18,9 @@ empty state.
 ## Why
 Two controls (length, focus) become one that also explains what's evaluated
 (§2A subtract-first). Code-owned order keeps the arc the same every time.
+
+**Update 2026-10-10 — live aids:** Eduardo picked glanceable talking points
+(option a) over keywords. The live page now shows the prepared answer as one
+large line per point, no STAR labels, point to land last
+(`partials/live_talking_points.html`); the question itself is small and muted.
+Code-only — same frame data, no regeneration.

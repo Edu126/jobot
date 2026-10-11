@@ -132,9 +132,9 @@
       <p x-show="qIndex < 0" class="text-body-muted text-sm">{{ _('prep2.live.cue_wait') }}</p>
       {% for q in qs %}
       <div x-show="qIndex === {{ loop.index0 }}" x-cloak class="space-y-3 live-cue__q">
-        <p class="text-body-strong">{{ q.text }}</p>
+        <p class="text-sm text-body-muted">{{ q.text }}</p>
         {% if q.frame %}
-          {% with frame=q.frame, point=q.point_to_land, clickable=false %}{% include "partials/answer_frame.html" %}{% endwith %}
+          {% with frame=q.frame, point=q.point_to_land %}{% include "partials/live_talking_points.html" %}{% endwith %}
         {% else %}
           <p class="text-body-muted text-sm">{{ _('prep2.live.cue_none') }}</p>
         {% endif %}
