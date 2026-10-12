@@ -283,13 +283,14 @@ Soft, purposeful, accessible. **Every animation guarded by `@media (prefers-redu
 | `gauge` | `(g, label, unit, verdict, note)` — `g` from `session_score.delivery_gauges` | a measured number on a zoned scale vs a research baseline (REQ-043); the note says the baseline. The second chart after the ring — only for real, measured numbers |
 | `seg_tabs` / `utabs` | `(items=[(value,label,icon)], model='alpineVar')` | copy-pasted `:class` ternaries |
 | `link_tabs` | `(items=[(href,label,icon)], active=href)` | utab styling on page links (e.g. Voice · Avatar lab) |
+| `multiselect` | `(name, options=[(value,label,sub)], checked, summary_all, summary_some)` + optional call block (reads Alpine `sel`) | a select-looking dropdown with checkboxes inside — never a wall of checkbox tiles (Eduardo 2026-10-12) |
 | `empty_state` | `(sentence, hint=None, action=(href,label,icon), icon=None)` | illustration + giant-button empties |
 | `split_workspace` | `{% call(pane) ui.split_workspace() %}` — body rendered for `'list'` and `'detail'` | the ADR-012 grid |
 
 - `attrs` passes hx-*, `@click`, `:class`, `x-show`, `data-*`, `aria-*` straight through — HTMX/Alpine wiring stays at the call site.
 - Text ramp: `text-body-muted` (secondary) · `text-subtle` (meta, hints) · `text-faint` (separators, decorative icons). Never `text-base-content/NN`.
 - Page width comes from `{% block container_class %}` — one of the three in §6.
-- Small CSS pieces (no macro needed): `.ui-list` / `.ui-list--num` (dash / numbered lists, §5B) · `.ui-field` (textarea/input box) · `.ui-option` + `--on` (selectable option tile) · `.ui-inset` (small grey part inside a box) · `.ui-kv` (bold label + text line) · `.ui-bubble--coach/--me` (conversation) · `.ui-source` (source link) · `.text-answer` / `.text-masthead` / `.text-body-strong` (§5A).
+- Small CSS pieces (no macro needed): `.ui-list` / `.ui-list--num` (dash / numbered lists, §5B) · `.ui-field` (textarea/input box) · `.ui-option` + `--on` (selectable option tile) · `.ui-inset` (small grey part inside a box) · `.ui-kv` (bold label + text line) · `.ui-bubble--coach/--me` (conversation) · `.ui-source` (source link) · `.ui-scroll-list` (a list that can grow, capped with its own scroll — never an endless list) · `.live-script` (live aid read like a teleprompter: body-size prose, no bullets) · `.text-answer` / `.text-masthead` / `.text-body-strong` (§5A).
 - Interview metadata line: `{% import "partials/prep_macros.html" as pm %}` → `pm.iv_meta(interview, extra=None)` (company · round · interviewer · date — never length).
 - **Lint (ratchet):** `.venv/bin/python scripts/lint_ui.py` — fails on any (file, rule) count above `scripts/lint_ui_baseline.json` (raw colours, text opacities, ad-hoc radius, `text-[..]`, outlined boxes, hand `<h1>`, `btn` without variant). Fix debt → `--update` to lower the baseline. Test: `tests/test_ui_lint.py`.
 

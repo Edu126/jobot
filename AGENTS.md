@@ -91,9 +91,16 @@ fills, no outlines around things) and §9.0 (the macro kit).
 
 ## Verification
 
-- **Eduardo does the visual QA himself.** Don't take browser screenshots by
-  default (2026-09-20 — it burns usage); verify in code: unit tests, template
-  render checks with fixtures, grep, and HTTP status on the deploy.
+- **UI is self-checked before hand-off (2026-10-12).** Code checks first (unit
+  tests, template render checks with fixtures, lint, HTTP status on the
+  deploy), then ONE screenshot per UI change on -edu at desktop + phone width:
+  a cheap model (Haiku/Sonnet subagent) drives the browser and captures; the
+  main model judges against design.md §2A/§7A and fixes before Eduardo sees it.
+  Not per micro-tweak. (Replaces the 2026-09-20 "no screenshots" rule — UI
+  shipped unseen came back junior.)
+- **High-fidelity UI loop:** 4–5 line brief (job of the screen, moment of use,
+  hierarchy, what's cut) → real content in both languages → a static mock for
+  Eduardo's review before wiring → build → self-check above.
 - End-to-end runs on **jobbotv2-edu** (the user's Fly staging app), **not**
   locally. When fixtures are needed use the `verify-on-edu` skill (seed over
   SSH → check → restore). -edu holds the user's own data — back up before any

@@ -88,6 +88,7 @@ def test_history_and_empty_state():
         readiness={"level": "almost_ready", "pct": 78, "missing": "strengthen", "missing_count": 1},
         delta=None, gauges=[], step="feedback", history=hist)
     _assert("Past sessions" in html and "/practice/40/feedback" in html and "viewing" in html, "history listed, current marked")
+    _assert("Session 1" in html and "ui-scroll-list" in html, "which session (oldest = 1) + a scrolling box")
     empty = templates.get_template("pages/feedback_empty.html").render(
         request=req, active_tab="prep", interview={"id": 3, "role_title": "S", "company": "C"}, step="feedback")
     _assert("No practice sessions yet." in empty and "/interviews/3/practice" in empty, "empty state with CTA")
@@ -101,7 +102,8 @@ def test_setup_topics_checklist():
         missed_count=2, checked=["c1", "c2", PR.ABOUT_YOU], about_you=PR.ABOUT_YOU,
         competencies=[{"id": "c1", "name": "Budget"}, {"id": "c2", "name": "Workforce"}],
         voice_enabled=False, voices={}, default_voice="x", personalities={}, default_personality="y")
-    _assert(html.count('name="topics"') == 3 and "About you" in html and "Budget" in html, "checklist items")
+    _assert(html.count('name="topics"') == 3 and "About you" in html and "Budget" in html, "checkbox items")
+    _assert("ui-multiselect__panel" in html and "All topics ({total})" in html, "a dropdown, not a grid of tiles")
     _assert("{n} questions" in html and "Start with the 2 answers I missed" in html, "count + missed option")
     _assert('href="/interviews/3/feedback"' in html, "stepper links Feedback from Practice")
     _assert('name="length"' not in html and 'name="focus"' not in html, "old pickers gone")
@@ -109,13 +111,27 @@ def test_setup_topics_checklist():
 
 
 def test_live_talking_points():
-    """REQ-050: live aid = one big line per point, no STAR labels, point to land last."""
+    """REQ-050: live aid reads like a script — one flowing paragraph, no bullets or labels, point to land last."""
     frame = [{"section": "situation", "points": ["At the CRA we lacked visibility."]},
              {"section": "result", "points": ["I saved 60+ staff hours a month."]}]
     html = templates.get_template("partials/live_talking_points.html").render(frame=frame, point="I build tools that save hours.")
-    _assert(html.count("<li>") == 2 and "saved 60+" in html and "live-points__land" in html, "points + land")
+    _assert("<li" not in html and html.count("<p>") == 2 and "visibility. I saved 60+" in html, "points flow as prose, land closes it")
     _assert("Situation" not in html and "script__cue" not in html, "no section labels")
     print("PASS test_live_talking_points")
+
+
+def test_with_help_label():
+    """ADR-079: a "With my answers" session is labelled and says it doesn't count."""
+    html = templates.get_template("pages/practice_feedback.html").render(
+        request=_req(), active_tab="prep", interview={"id": 3, "role_title": "S", "company": "C"},
+        session={"id": 55, "mode": "study", "debrief": {"takeaway": "t", "score": 95, "verdict_key": "ready"}, "transcript": None},
+        answers=[], comp_names={}, readiness={"level": "almost_ready", "pct": 78, "missing": "strengthen", "missing_count": 1},
+        delta=None, gauges=[], step="feedback",
+        history=[{"id": 55, "mode": "study", "status": "done", "completed_at": "2026-10-12T14:50:42Z", "debrief": {"score": 95}},
+                 {"id": 54, "mode": "simulate", "status": "done", "completed_at": "2026-10-12T10:24:00Z", "debrief": {"score": 40}}])
+    _assert("With help" in html and "count toward readiness" in html, "label + why")
+    _assert("· with help" in html, "history marks helped sessions")
+    print("PASS test_with_help_label")
 
 if __name__ == "__main__":
     test_new_shape()
@@ -124,4 +140,5 @@ if __name__ == "__main__":
     test_history_and_empty_state()
     test_setup_topics_checklist()
     test_live_talking_points()
+    test_with_help_label()
     print("all feedback-render tests passed")

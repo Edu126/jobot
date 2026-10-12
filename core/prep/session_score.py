@@ -215,16 +215,19 @@ def aggregate(
 
 
 def delta_vs_previous(sessions: list[dict], session_id: int) -> Optional[int]:
-    """Score change vs the most recent EARLIER done session that has a score.
+    """Score change vs the most recent EARLIER done session that has a score
+    and the same help level (with vs without your answers on screen, ADR-079).
     `sessions` is newest-first (db.list_practice_sessions)."""
     seen = False
     current = None
+    helped = None
     for s in sessions:
         if s.get("id") == session_id:
             seen = True
             current = (s.get("debrief") or {}).get("score")
+            helped = s.get("mode") == "study"
             continue
-        if not seen or s.get("status") != "done":
+        if not seen or s.get("status") != "done" or (s.get("mode") == "study") != helped:
             continue
         prev = (s.get("debrief") or {}).get("score")
         if isinstance(prev, int) and isinstance(current, int):

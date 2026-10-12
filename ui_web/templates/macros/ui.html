@@ -271,3 +271,29 @@
   <div class="workspace-pane min-w-0">{{ caller('detail') }}</div>
 </div>
 {%- endmacro %}
+
+
+{# ── multiselect ─────────────────────────────────────────────────
+   A dropdown that looks like the kit's select and opens a panel of
+   checkboxes (REQ-050 topics). Each checked box posts as `name`.
+   - options: [(value, label, sub_or_none)]; checked: list of values.
+   - summary_all / summary_some: trigger text; {n} = checked, {total}.
+   The optional call block renders inside the Alpine scope, so it can read
+   `sel` (e.g. a live count). #}
+{% macro multiselect(name, options, checked, summary_all, summary_some) -%}
+<div class="ui-multiselect" x-data='{ open: false, sel: {{ checked | tojson }} }'
+     @click.outside="open = false" @keydown.escape="open = false">
+  <button type="button" class="select select-bordered select-sm w-full ui-multiselect__trigger"
+          @click="open = !open" :aria-expanded="open"
+          x-text="(sel.length === {{ options | length }} ? '{{ summary_all }}' : '{{ summary_some }}').replace('{n}', sel.length).replace('{total}', {{ options | length }})"></button>
+  <div class="ui-multiselect__panel" x-show="open" x-cloak>
+    {%- for value, label, sub in options %}
+    <label class="ui-multiselect__item">
+      <input type="checkbox" class="checkbox checkbox-sm" name="{{ name }}" value="{{ value }}" x-model="sel">
+      <span>{{ label }}{% if sub %}<span class="ui-multiselect__sub">{{ sub }}</span>{% endif %}</span>
+    </label>
+    {%- endfor %}
+  </div>
+  {%- if caller is defined %}{{ caller() }}{% endif %}
+</div>
+{%- endmacro %}

@@ -15,7 +15,13 @@
 
   {# header + stepper #}
   <div class="space-y-4">
-    {% call ui.page_header(_('prep2.feedback.heading'), lede=(interview.role_title or _('prep2.gen.the_role')) ~ '  ·  ' ~ pm.iv_meta(interview), size='sm') %}{{ steps.stepper('feedback', interview.id) }}{% endcall %}
+    {# which session this is (REQ-050): "Session 3 · Oct 10, 9:22 PM" #}
+    {% set done_ids = (history or []) | map(attribute='id') | list | reverse | list %}
+    {% set n = (done_ids.index(session.id) + 1) if session.id in done_ids else none %}
+    {% set when = session.completed_at or session.created_at %}
+    {% call ui.page_header(_('prep2.feedback.heading'), lede=(interview.role_title or _('prep2.gen.the_role')) ~ '  ·  ' ~ pm.iv_meta(interview), size='sm',
+                           eyebrow=(_('prep2.feedback.session_n', n=n) if n else none)) %}{{ steps.stepper('feedback', interview.id) }}{% endcall %}
+    {% if when %}<p class="text-sm text-subtle" x-data x-text="new Date('{{ when }}').toLocaleString(undefined, {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})"></p>{% endif %}
   </div>
 
   {% set ring_key = {'ready': 'strong_fit', 'close': 'stretch', 'not_ready': 'poor_fit'} %}
@@ -39,6 +45,12 @@
         </span>
         {% endif %}
       </div>
+      {% endif %}
+      {# ADR-079: read from your prepared answers → labelled, kept out of readiness #}
+      {% if session.mode == 'study' %}
+      <p class="flex flex-wrap items-center gap-2 text-sm text-body-muted">
+        {{ ui.chip(_('prep2.feedback.with_help'), icon='ph-note') }}{{ _('prep2.feedback.with_help_note') }}
+      </p>
       {% endif %}
       {% if debrief.takeaway %}<p class="leading-relaxed">{{ debrief.takeaway }}</p>{% endif %}
       <a href="{{ prep_href }}" class="ui-link-quiet inline-block">{{ _('prep2.score.readiness') }}: {{ rd.readiness_line(readiness) }} →</a>
@@ -183,7 +195,7 @@
   {# ---- past sessions (REQ-050): every finished rehearsal, this one marked ---- #}
   {% if history | length > 1 %}
   {% call ui.section(eyebrow=_('prep2.feedback.history')) %}
-    <div class="divide-y divide-base-200">
+    <div class="divide-y divide-base-200 ui-scroll-list">
       {% for h in history %}
       {% set hd = h.debrief or {} %}
       {% set here = h.id == session.id %}
@@ -191,7 +203,7 @@
          class="flex items-center justify-between gap-3 py-2 {{ 'font-semibold' if here }}"{% if here %} aria-current="page"{% endif %}>
         <span class="min-w-0">
           <span x-data x-text="new Date('{{ h.completed_at or h.created_at }}').toLocaleDateString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})">{{ (h.completed_at or h.created_at)[:10] }}</span>
-          <span class="text-sm text-subtle"> · {{ _('prep2.setup.channel_voice') if h.transcript_json else _('prep2.setup.channel_text') }}{% if here %} · {{ _('prep2.feedback.viewing') }}{% endif %}</span>
+          <span class="text-sm text-subtle"> · {{ _('prep2.setup.channel_voice') if h.transcript_json else _('prep2.setup.channel_text') }}{% if h.mode == 'study' %} · {{ _('prep2.feedback.with_help') | lower }}{% endif %}{% if here %} · {{ _('prep2.feedback.viewing') }}{% endif %}</span>
         </span>
         {% if hd.score is number %}<span class="tabular-nums">{{ hd.score }}</span>{% endif %}
       </a>

@@ -144,6 +144,11 @@ def test_delta():
     _assert(SS.delta_vs_previous(sessions, 3) == 12, "delta vs last scored session")
     _assert(SS.delta_vs_previous(sessions, 1) is None, "first session → no delta")
     _assert(SS.delta_vs_previous([{"id": 3, "status": "done", "debrief": {}}], 3) is None, "legacy → none")
+    mixed = [{"id": 5, "status": "done", "mode": "simulate", "debrief": {"score": 40}},
+             {"id": 4, "status": "done", "mode": "study", "debrief": {"score": 95}},
+             {"id": 3, "status": "done", "mode": "simulate", "debrief": {"score": 30}}]
+    _assert(SS.delta_vs_previous(mixed, 5) == 10, "unaided compares with unaided, skipping the helped 95 (ADR-079)")
+    _assert(SS.delta_vs_previous(mixed, 4) is None, "a helped session has no helped one before it")
     print("PASS test_delta")
 
 

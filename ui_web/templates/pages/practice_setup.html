@@ -103,36 +103,25 @@
     </div>
     {% endif %}
 
-    {# topics (REQ-050): one question per checked item, plus the opener — so the
-       person sees exactly what gets evaluated; more checked = more covered.
-       Replaces the old length + focus pickers. Own x-data so tojson can sit in a
-       single-quoted attribute. #}
-    <div x-data='{ topics: {{ checked | tojson }} }'>
-      <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-        <label class="text-label">{{ _('prep2.setup.topics') }}</label>
-        <span class="text-sm text-body-muted tabular-nums"
-              x-text="'{{ _('prep2.setup.topics_count') }}'.replace('{n}', topics.length + 1).replace('{m}', Math.round((topics.length + 1) * 2.5))"></span>
-      </div>
-      <div class="grid sm:grid-cols-2 gap-2">
-        <label class="ui-option flex items-start gap-3 cursor-pointer" :class="topics.includes('{{ about_you }}') && 'ui-option--on'">
-          <input type="checkbox" name="topics" value="{{ about_you }}" x-model="topics" class="checkbox checkbox-sm mt-0.5">
-          <span>
-            <span class="text-body-strong block">{{ _('prep2.setup.about_you') }}</span>
-            <span class="text-sm text-body-muted">{{ _('prep2.setup.about_you_sub') }}</span>
-          </span>
-        </label>
-        {% for c in competencies %}
-        <label class="ui-option flex items-start gap-3 cursor-pointer" :class="topics.includes('{{ c.id }}') && 'ui-option--on'">
-          <input type="checkbox" name="topics" value="{{ c.id }}" x-model="topics" class="checkbox checkbox-sm mt-0.5">
-          <span class="text-body-strong">{{ c.name }}</span>
-        </label>
-        {% endfor %}
+    {# topics (REQ-050): a dropdown of checkboxes — one question per checked
+       item, plus the opener; the count under it says what gets evaluated. #}
+    <div class="grid lg:grid-cols-2 gap-x-6 gap-y-5">
+      <div>
+        <label class="text-label block mb-2">{{ _('prep2.setup.topics') }}</label>
+        {% set opts = [(about_you, _('prep2.setup.about_you'), _('prep2.setup.about_you_sub'))] %}
+        {% for c in competencies %}{% set _ignored = opts.append((c.id, c.name, none)) %}{% endfor %}
+        {% call ui.multiselect('topics', opts, checked, _('prep2.setup.topics_all'), _('prep2.setup.topics_some')) %}
+          <p class="text-sm text-subtle mt-1.5 tabular-nums"
+             x-text="'{{ _('prep2.setup.topics_count') }}'.replace('{n}', sel.length + 1).replace('{m}', Math.round((sel.length + 1) * 2.5))"></p>
+        {% endcall %}
       </div>
       {% if missed_count %}
-      <label class="flex items-center gap-2 mt-3 text-sm cursor-pointer">
-        <input type="checkbox" name="missed" value="1" checked class="checkbox checkbox-sm">
-        {{ _('prep2.setup.start_missed', n=missed_count) }}
-      </label>
+      <div class="lg:pt-7">
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="missed" value="1" checked class="checkbox checkbox-sm">
+          {{ _('prep2.setup.start_missed', n=missed_count) }}
+        </label>
+      </div>
       {% endif %}
     </div>
 

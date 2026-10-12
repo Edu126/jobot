@@ -2812,10 +2812,12 @@ def save_practice_eval(answer_id: int, evaluation: dict, path: Path = DB_PATH) -
 
 
 def count_practice_sessions(interview_id: int, path: Path = DB_PATH) -> int:
-    """How many DONE sessions this interview has — a readiness signal (D9)."""
+    """How many DONE, unaided sessions this interview has — a readiness signal
+    (D9). "With my answers" (mode='study') sessions don't count (ADR-079)."""
     with connect(path) as conn:
         row = conn.execute(
-            "SELECT COUNT(*) AS n FROM practice_sessions WHERE interview_id = ? AND status = 'done'",
+            "SELECT COUNT(*) AS n FROM practice_sessions WHERE interview_id = ? AND status = 'done'"
+            " AND COALESCE(mode, '') != 'study'",
             (interview_id,)).fetchone()
     return int(row["n"]) if row else 0
 

@@ -115,7 +115,7 @@ def interviewer_context_turn(
 Questions to cover, in order (each tagged with its part of the interview):
 {q_lines}
 
-The interview follows an arc: career → about you → the role. When the part changes, bridge with one natural sentence before the question (e.g. "Let's step away from the role for a moment — I'd like to get to know you a bit." / "Thanks. Let's turn to the work itself."). Never jump into a new part cold.
+The interview follows an arc: career → about you → the role. Only when the part changes (once per change), bridge with one natural sentence before the question (e.g. "Let's step away from the role for a moment — I'd like to get to know you a bit." / "Thanks. Let's turn to the work itself."). Never jump into a new part cold.
 
 Now begin with your opening greeting, then ask your first question."""
 

@@ -2,7 +2,7 @@
   1. create_practice_session freezes the picked questions + starts in_progress;
   2. add/list answers round-trip delivery JSON in order; save_practice_eval fills
      eval; save_practice_debrief sets debrief + status=done + completed_at;
-  3. count_practice_sessions counts only DONE sessions;
+  3. count_practice_sessions counts only DONE, unaided sessions (ADR-079);
   4. deleting the interview cascades sessions + answers away.
     .venv/bin/python tests/test_practice_db.py
 """
@@ -58,7 +58,10 @@ def test_practice_lifecycle():
     s = db.get_practice_session(sid, path=p)
     _assert(s["status"] == "done" and s["completed_at"], "debrief sets done + completed_at")
     _assert(s["debrief"]["takeaway"] == "good", "debrief round-trips")
-    _assert(db.count_practice_sessions(iid, path=p) == 1, "one DONE session")
+    _assert(db.count_practice_sessions(iid, path=p) == 0, "a done 'With my answers' (study) session doesn't count (ADR-079)")
+    sid2 = db.create_practice_session(iid, mode="simulate", length="5", focus_competency=None, questions=qs, path=p)
+    db.save_practice_debrief(sid2, {"takeaway": "ok", "competency_bands": []}, path=p)
+    _assert(db.count_practice_sessions(iid, path=p) == 1, "one DONE unaided session")
     print("PASS test_practice_lifecycle")
 
 

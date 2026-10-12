@@ -134,7 +134,7 @@
       <div x-show="qIndex === {{ loop.index0 }}" x-cloak class="space-y-3 live-cue__q">
         <p class="text-sm text-body-muted">{{ q.text }}</p>
         {% if q.frame %}
-          {% with frame=q.frame, point=q.point_to_land %}{% include "partials/live_talking_points.html" %}{% endwith %}
+          {% with frame=q.frame, point=q.point_to_land, spoken=q.spoken %}{% include "partials/live_talking_points.html" %}{% endwith %}
         {% else %}
           <p class="text-body-muted text-sm">{{ _('prep2.live.cue_none') }}</p>
         {% endif %}

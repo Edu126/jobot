@@ -72,10 +72,11 @@ def compute(interview: dict, *, lang: Optional[str] = None, path=db.DB_PATH) -> 
 
 
 def _latest_competency_bands(interview_id: int, *, path=db.DB_PATH) -> dict:
-    """competency_id → band from the most recent DONE session's P9 debrief.
-    Empty when no debrief yet (→ everything reads as needs_work, correctly)."""
+    """competency_id → band from the most recent DONE, unaided session's P9
+    debrief ("With my answers" sessions are skipped, ADR-079). Empty when no
+    debrief yet (→ everything reads as needs_work, correctly)."""
     for s in db.list_practice_sessions(interview_id, path=path):
-        if s.get("status") == "done" and isinstance(s.get("debrief"), dict):
+        if s.get("status") == "done" and s.get("mode") != "study" and isinstance(s.get("debrief"), dict):
             out = {}
             for b in (s["debrief"].get("competency_bands") or []):
                 if isinstance(b, dict) and b.get("competency_id"):

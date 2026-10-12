@@ -31,6 +31,7 @@ from core.prep import audio_score as prep_audio_score
 from core.prep import live as prep_live
 from core.prep import pipeline
 from core.prep import practice as prep_practice
+from core.prep import spoken as prep_spoken
 from core.prep import toolkit as prep_toolkit
 from core.prep import readiness as prep_readiness
 from core.prep import session_score as prep_session_score
@@ -562,6 +563,11 @@ async def practice_start(
         recent=[[q.get("id") for q in (s.get("questions") or []) if isinstance(q, dict)]
                 for s in db.list_practice_sessions(interview_id)[:6]],
         lang=lang)
+    # "With my answers" (study): each prepared answer also gets its spoken
+    # version for the live aid (REQ-051) — cached, parallel, failures fall back.
+    if mode == "study":
+        await prep_spoken.attach_scripts(interview_id, picked, lang=lang,
+                                         make_client=_make_client_factory())
     # Voice + personality are decoupled: `persona` column stores the personality id.
     personality_id = personality if personality in prep_live.PERSONALITIES else prep_live.DEFAULT_PERSONALITY
     voice_id = voice if voice in prep_live.VOICES else prep_live.DEFAULT_VOICE
