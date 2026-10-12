@@ -297,3 +297,17 @@
   {%- if caller is defined %}{{ caller() }}{% endif %}
 </div>
 {%- endmacro %}
+
+
+{# ── dictate ─────────────────────────────────────────────────────
+   "Speak your answer": a quiet button that turns speech into text in the
+   field with id `field_id` (static/dictate.js, browser speech-to-text).
+   Hidden where the browser can't do it. Put it in the field's action row. #}
+{% macro dictate(field_id) -%}
+<button type="button" class="btn btn-quiet btn-sm ui-dictate" x-data="dictate('{{ field_id }}')" x-show="supported" x-cloak
+        @click="toggle()" @dictate-stop.window="stop()" :class="on && 'ui-dictate--on'" :aria-pressed="on">
+  <span class="ui-dictate__dot" x-show="on" aria-hidden="true"></span>
+  <i class="ph-thin ph-microphone" x-show="!on" aria-hidden="true"></i>
+  <span x-text="on ? '{{ _('prep2.dictate.listening') }}' : '{{ _('prep2.dictate.speak') }}'"></span>
+</button>
+{%- endmacro %}

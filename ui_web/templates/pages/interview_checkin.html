@@ -20,7 +20,7 @@
    after he had answered most of them (2026-10-01). #}
 <div class="space-y-6" x-data="{ i: 0, n: {{ qs | length }}, done: 0,
        answered() { return [...this.$root.querySelectorAll('textarea')].filter(t => t.value.trim()).length },
-       go(d) { this.i = Math.max(0, Math.min(this.n, this.i + d)); this.done = this.answered(); this.$nextTick(() => this.$root.querySelector('textarea[data-i=\'' + this.i + '\']')?.focus()) } }"
+       go(d) { window.dispatchEvent(new CustomEvent('dictate-stop')); this.i = Math.max(0, Math.min(this.n, this.i + d)); this.done = this.answered(); this.$nextTick(() => this.$root.querySelector('textarea[data-i=\'' + this.i + '\']')?.focus()) } }"
      @keydown.window.meta.enter.prevent="go(1)" @keydown.window.ctrl.enter.prevent="go(1)">
 
   {% call ui.page_header(interview.role_title or _('prep2.gen.the_role'), lede=pm.iv_meta(interview), size='sm') %}
@@ -47,13 +47,18 @@
       <textarea id="fact_{{ f.id }}" name="fact_{{ f.id }}" data-i="{{ loop.index0 }}" rows="3" class="ui-field checkin__field"
                 placeholder="{{ (_('prep2.brief.fact_eg') ~ ' ' ~ f.example) if f.example else _('prep2.brief.fact_ph') }}">{{ facts.get(f.key, '') }}</textarea>
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <button type="button" class="btn btn-quiet btn-sm" @click="go(-1)" :disabled="i === 0" aria-label="{{ _('prep2.common.back') }}"><i class="ph-thin ph-arrow-left"></i></button>
+        <div class="flex items-center gap-2">
+          <button type="button" class="btn btn-quiet btn-sm" @click="go(-1)" :disabled="i === 0" aria-label="{{ _('prep2.common.back') }}"><i class="ph-thin ph-arrow-left"></i></button>
+          {{ ui.dictate('fact_' ~ f.id) }}
+        </div>
         <div class="flex items-center gap-4">
           <button type="button" class="ui-link-quiet" @click="go(1)">{{ _('prep2.checkin.skip_one') }}</button>
           <button type="button" class="btn btn-primary btn-sm inline-flex items-center gap-1.5" @click="go(1)">{{ _('prep2.checkin.next') }}<i class="ph-thin ph-arrow-right"></i></button>
         </div>
       </div>
-      <p class="text-sm text-subtle hidden md:block">{{ _('prep2.checkin.kbd') }}</p>
+      {# the shortcut for THIS keyboard: ⌘ on a Mac, Ctrl elsewhere #}
+      <p class="text-sm text-subtle hidden md:block" x-data="{ mac: /Mac|iPhone|iPad/.test(navigator.platform) }"
+         x-text="mac ? '{{ _('prep2.checkin.kbd_mac') }}' : '{{ _('prep2.checkin.kbd_other') }}'">{{ _('prep2.checkin.kbd_other') }}</p>
     </div>
     {% endfor %}
 

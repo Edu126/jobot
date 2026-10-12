@@ -58,7 +58,7 @@
 
     {% if runs %}
     <div class="text-xs text-body-muted text-center my-3"
-         x-show="hasAnyRuns && !running" x-cloak>— {{ _('tailor.runs.separator') }} —</div>
+         x-show="hasAnyRuns && !running" x-cloak>{{ _('tailor.runs.separator') }}</div>
     {% endif %}
 
     <form hx-post="/jobs/tailor/{{ job.id }}"

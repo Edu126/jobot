@@ -37,7 +37,7 @@
         <label class="block space-y-1.5">
           <span class="text-label">{{ _('lab.voice.voice') }}</span>
           <select class="select select-bordered select-sm w-full" x-model="cfg.voice">
-            {% for v, meta in voices.items() %}<option value="{{ v }}">{{ v }} — {{ meta[0] }}</option>{% endfor %}
+            {% for v, meta in voices.items() %}<option value="{{ v }}">{{ v }} · {{ meta[0] }}</option>{% endfor %}
           </select>
         </label>
         <div class="space-y-1.5">

@@ -26,7 +26,7 @@
       <div class="flex items-start gap-3 mb-3">
         <i class="ph-fill ph-download-simple i-5" style="color: oklch(var(--a));"></i>
         <div class="flex-1 min-w-0">
-          <div class="font-semibold">Update downloaded — ready to install</div>
+          <div class="font-semibold">Update downloaded and ready to install</div>
           <div class="text-body-muted text-xs mt-1">
             Now: close this tab, open your Jobot folder in Finder, and
             <strong>double-click <code>Update Jobot.command</code></strong>.
@@ -38,7 +38,7 @@
               hx-target="#update-status"
               hx-swap="innerHTML"
               class="text-xs text-body-muted hover:text-base-content underline cursor-pointer">
-        Cancel — discard the download
+        Cancel and discard the download
       </button>
     </div>
 
@@ -52,7 +52,7 @@
           <div class="min-w-0">
             <div class="font-semibold">
               v{{ status.latest }} available
-              <span class="text-body-muted font-normal text-xs ml-1">— you have v{{ status.current }}</span>
+              <span class="text-body-muted font-normal text-xs ml-1">(you have v{{ status.current }})</span>
             </div>
             {% if status.release_notes %}
             <details class="mt-2">

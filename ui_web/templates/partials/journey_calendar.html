@@ -48,7 +48,7 @@
             {% endif %}
           <td class="calendar-cell"
               style="background: {{ _bg }};"
-              title="{{ cell.iso }} — {{ cell.count }} thing{{ 's' if cell.count != 1 }}">
+              title="{{ cell.iso }}: {{ cell.count }} thing{{ 's' if cell.count != 1 }}">
             <span class="calendar-daynum {% if cell.count > 0 %}calendar-daynum--active{% endif %}">
               {{ cell.day }}
             </span>

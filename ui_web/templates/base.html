@@ -31,6 +31,7 @@
   {# Alpine plugins MUST be loaded before Alpine core. Both use `defer` so
      the browser executes them in document order. Collapse enables `x-collapse`
      used in the mobile-menu drawer + job-card description expander. #}
+  <script src="{{ static_url('dictate.js') }}"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.14.9/dist/cdn.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
   {# Phosphor icons — thin variant for the Wealthsimple-esque minimal look.
@@ -334,7 +335,7 @@
                         cardEl.style.transition = 'transform 0.2s ease-out';
                         cardEl.style.transform = '';
                       })
-                      .catch(() => Alpine.store('toast').show('Undo failed — try again', 'info'));
+                      .catch(() => Alpine.store('toast').show('Undo failed. Try again', 'info'));
                   },
                 }
               );
@@ -343,7 +344,7 @@
               cardEl.style.transition = 'transform 0.2s ease-out';
               cardEl.style.transform = '';
               Alpine.store('toast').show(
-                action === 'dismiss' ? "Couldn't dismiss — try again" : "Couldn't save — try again",
+                action === 'dismiss' ? "Couldn't dismiss. Try again" : "Couldn't save. Try again",
                 'info'
               );
             });
@@ -594,7 +595,7 @@
           // tailor result / search progress).
           this._beforeUnload = (e) => {
             e.preventDefault();
-            e.returnValue = 'A task is still running — leaving will lose the result.';
+            e.returnValue = 'A task is still running. Leaving will lose the result.';
             return e.returnValue;
           };
           window.addEventListener('beforeunload', this._beforeUnload);
@@ -673,7 +674,7 @@
             this.elapsed++;
             Alpine.store('overlay').update(this.message(), this.elapsed);
             if (this.elapsed >= 60 && !this.titleFlashed) {
-              document.title = `⏳ Running… — Jobot`;
+              document.title = `⏳ Running… · Jobot`;
               this.titleFlashed = true;
             }
           }, 1000);
@@ -685,7 +686,7 @@
 
           // Restore title with a "done" flash when we'd shown a running indicator
           if (this.titleFlashed && this.originalTitle) {
-            document.title = ok ? `Done — Jobot` : `Error — Jobot`;
+            document.title = ok ? `Done · Jobot` : `Error · Jobot`;
             const orig = this.originalTitle;
             setTimeout(() => { document.title = orig; }, 5000);
           }

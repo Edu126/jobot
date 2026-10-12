@@ -38,9 +38,12 @@
                 <label class="text-sm font-medium" for="gap-field" x-text="gap"></label>
                 <textarea id="gap-field" x-ref="gapField" x-model="gapText" rows="2" class="ui-field"
                           placeholder="{{ _('prep2.gap.ph') }}" @keydown.meta.enter.prevent="saveGap()" @keydown.ctrl.enter.prevent="saveGap()"></textarea>
-                <div class="flex items-center justify-end gap-4">
+                <div class="flex items-center justify-between gap-4">
+                  {{ ui.dictate('gap-field') }}
+                  <div class="flex items-center gap-4 ml-auto">
                   <button type="button" class="ui-link-quiet" @click="gap = null">{{ _('prep2.gap.cancel') }}</button>
                   <button type="button" class="btn btn-quiet btn-sm" @click="saveGap()">{{ _('prep2.gap.save') }}</button>
+                  </div>
                 </div>
               </div>
               <p class="text-sm text-subtle" x-show="card && Object.keys(gapSaved).some(k => k.startsWith(card.text + ' — '))" x-cloak>✓ {{ _('prep2.gap.added') }}</p>

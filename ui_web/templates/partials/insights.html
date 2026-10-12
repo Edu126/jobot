@@ -12,7 +12,7 @@
       <i class="ph-thin ph-chart-line i-4"></i>No activity yet
     </div>
     <p class="mt-2">
-      Insights start building as you use the app — searches, tailored resumes,
+      Insights start building as you use the app: searches, tailored resumes,
       status changes. Come back after a few sessions.
     </p>
   </div>
@@ -23,7 +23,7 @@
     <div>
       <div class="text-label">This week</div>
       <p class="text-xs text-body-muted mt-1">
-        Everything below is computed locally from your own activity — nothing leaves this Mac.
+        Everything below is computed locally from your own activity. Nothing leaves this Mac.
       </p>
     </div>
     <button hx-post="/profile/insights/clear"
@@ -66,7 +66,7 @@
 
   {# ── Funnel (30-day rolling) ── #}
   <div>
-    <div class="text-label mb-3">Funnel — last 30 days</div>
+    <div class="text-label mb-3">Funnel, last 30 days</div>
     {% set _steps = [
       ('Viewed', funnel.viewed, 'oklch(var(--bc) / 0.6)'),
       ('Saved', funnel.saved, 'oklch(var(--p))'),
@@ -95,13 +95,13 @@
 
   {# ── Time-of-day heatmap (last 14 days, UTC) ── #}
   <div>
-    <div class="text-label mb-3">Activity by hour — last 14 days (UTC)</div>
+    <div class="text-label mb-3">Activity by hour, last 14 days (UTC)</div>
     <div class="flex items-end gap-0.5 h-16">
       {% for count in hourly %}
       {% set pct = (count / hourly_max * 100) if hourly_max else 0 %}
       <div class="flex-1 rounded-t transition-all"
            style="height: {{ pct }}%; min-height: 2px; background: {% if count %}oklch(var(--p) / {{ 0.4 + (count / hourly_max * 0.6) }}){% else %}oklch(var(--b3) / 0.5){% endif %};"
-           title="{{ '%02d' | format(loop.index0) }}:00 — {{ count }} events"></div>
+           title="{{ '%02d' | format(loop.index0) }}:00: {{ count }} events"></div>
       {% endfor %}
     </div>
     <div class="flex justify-between text-xs text-body-muted mt-1 font-mono">
@@ -112,13 +112,13 @@
   {# ── Daily sparkline (last 14 days) ── #}
   {% if daily %}
   <div>
-    <div class="text-label mb-3">Days with activity — last 14 days</div>
+    <div class="text-label mb-3">Days with activity, last 14 days</div>
     <div class="flex items-end gap-1 h-12">
       {% set _daily_max = daily | map(attribute='count') | max %}
       {% for d in daily %}
       <div class="flex-1 rounded-t"
            style="height: {{ (d.count / _daily_max * 100) if _daily_max else 0 }}%; min-height: 3px; background: oklch(var(--a) / 0.65);"
-           title="{{ d.day }} — {{ d.count }} events"></div>
+           title="{{ d.day }}: {{ d.count }} events"></div>
       {% endfor %}
     </div>
     <div class="text-xs text-body-muted mt-1">

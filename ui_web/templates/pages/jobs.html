@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Jobs — Jobot{% endblock %}
+{% block title %}Jobs · Jobot{% endblock %}
 {% block container_class %}max-w-7xl{% endblock %}
 {# ── Two-viewport model ──
    /jobs is a scrolling document of TWO full-height screens:
@@ -390,7 +390,7 @@
            description (from a LinkedIn post, a DM, anywhere). The handler
            disambiguates: a lone URL token → fetch; anything else → text. #}
         <textarea name="job_url" rows="3"
-                  placeholder="Paste a job link — or the whole job description (from a LinkedIn post, a message, anywhere)"
+                  placeholder="Paste a job link or the whole job description (from a LinkedIn post, a message, anywhere)"
                   required
                   :disabled="running"
                   class="textarea textarea-bordered w-full leading-relaxed"

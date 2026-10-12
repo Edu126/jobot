@@ -284,6 +284,7 @@ Soft, purposeful, accessible. **Every animation guarded by `@media (prefers-redu
 | `seg_tabs` / `utabs` | `(items=[(value,label,icon)], model='alpineVar')` | copy-pasted `:class` ternaries |
 | `link_tabs` | `(items=[(href,label,icon)], active=href)` | utab styling on page links (e.g. Voice · Avatar lab) |
 | `multiselect` | `(name, options=[(value,label,sub)], checked, summary_all, summary_some)` + optional call block (reads Alpine `sel`) | a select-looking dropdown with checkboxes inside — never a wall of checkbox tiles (Eduardo 2026-10-12) |
+| `dictate` | `(field_id)` | "Speak your answer" next to any field where people give their own words (browser speech-to-text, hidden when unsupported) |
 | `empty_state` | `(sentence, hint=None, action=(href,label,icon), icon=None)` | illustration + giant-button empties |
 | `split_workspace` | `{% call(pane) ui.split_workspace() %}` — body rendered for `'list'` and `'detail'` | the ADR-012 grid |
 

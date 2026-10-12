@@ -134,7 +134,7 @@ def test_takes_rate_like_page():
         _assert(c.post("/lab/voice/live", json={"clear": True}).json()["override"] is None, "override cleared")
         RI._current = lambda: (None, "", 0, "")
         r = c.get("/lab/voice")
-        _assert(r.status_code == 200 and "Vindemiatrix — Gentle" in r.text and "voiceLab(" in r.text
+        _assert(r.status_code == 200 and "Vindemiatrix · Gentle" in r.text and "voiceLab(" in r.text
                 and "Top rated" in r.text, "page renders with the takes list")
     finally:
         os.environ.pop("JOBOT_VOICE_LAB", None)

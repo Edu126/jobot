@@ -23,7 +23,7 @@
     {% if turn.question.frame %}
       {% with frame=turn.question.frame, point=turn.question.point_to_land, clickable=false %}{% include "partials/answer_frame.html" %}{% endwith %}
     {% else %}
-      {% if turn.cue.competency %}<div><b class="font-semibold">{{ turn.cue.competency }}</b> — {{ turn.cue.what_good }}</div>{% endif %}
+      {% if turn.cue.competency %}<div><b class="font-semibold">{{ turn.cue.competency }}</b>: {{ turn.cue.what_good }}</div>{% endif %}
       {% if turn.cue.story_title %}<div>{{ _('prep2.run.use_story') }} <b class="font-semibold">{{ turn.cue.story_title }}</b></div>{% endif %}
       <div class="text-body-muted">{{ _('prep2.run.star_hint') }}</div>
     {% endif %}
