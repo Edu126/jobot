@@ -2,7 +2,7 @@
 
 Date: 2026-09-05
 Source: Eduardo (self-testing Prep on -edu: March Networks, Kanak)
-Status: Open
+Status: Shipped 2026-09-07 (`3d1ef42`, ADR-030/031). Being replaced by REQ-041 (not merged yet).
 
 ## What they asked for
 Verbatim, batched from the -edu test:

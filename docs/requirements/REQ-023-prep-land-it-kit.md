@@ -2,7 +2,8 @@
 
 Date: 2026-09-03
 Source: Eduardo (product architect)
-Status: Open — scoped this session; product decisions RESOLVED below.
+Status: Shipped 2026-09-03 (`943adda`, `ed420d2`). Being replaced by the interview-prep
+module (REQ-041, ADR-047), which is not merged to main yet.
 
 > First **Cluster B** slice of the post-apply "land it" stage (REQ-017).
 > Cluster A (gap enhancement / profile) shipped 2026-09-02; this opens the

@@ -2,7 +2,7 @@
 
 Date: 2026-09-08
 Source: Eduardo
-Status: Open
+Status: Shipped 2026-09-09 (`b92f792`).
 
 ## What they asked for
 Verbatim: "si hoy hacemos extracción, a veces la data viene con ?? y lo cambiamos

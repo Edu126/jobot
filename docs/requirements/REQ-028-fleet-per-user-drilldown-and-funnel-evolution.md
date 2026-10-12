@@ -2,7 +2,7 @@
 
 Date: 2026-09-08
 Source: Eduardo (reading the fleet-pulse dashboard)
-Status: Open
+Status: Shipped 2026-09-08 (`9435f84`, ADR-036).
 
 ## What they asked for
 Verbatim: "en mi view grande de admin, si quiero ver el detalle de usuario, tipo

@@ -2,7 +2,7 @@
 
 Date: 2026-09-08
 Source: Eduardo (reading the fleet-pulse funnel — `saved` ~0 everywhere)
-Status: Open
+Status: Shipped 2026-09-09 (`b92f792`): Saved is a seg-tab on /jobs.
 
 ## What they asked for
 Verbatim: "una vez le das saved, este no se guarda o no se ve en ningún lado …

@@ -2,7 +2,7 @@
 
 Date: 2026-08-27
 Source: User (product spec, verbatim en chat)
-Status: Open
+Status: Shipped 2026-08-27 (`e5779c8`, with ADR-015).
 
 ## What they asked for
 

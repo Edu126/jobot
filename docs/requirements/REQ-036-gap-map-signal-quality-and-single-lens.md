@@ -2,8 +2,7 @@
 
 Date: 2026-09-09
 Source: Eduardo (product architect), from Mehran's real usage (2026-09-08)
-Status: Building — decisions resolved 2026-09-09 (ADR-040); skill-tree
-presentation is an evolution of the REQ-020 pillars, not a redesign.
+Status: Shipped 2026-09-09 (`a05898b`). The manual Rebuild was later removed (ADR-042).
 
 > Evolves REQ-019 / REQ-020 / ADR-025. Same real-only map (GOV-005), same
 > classification cache (ADR-023). Where REQ-020 Phase 2 added three lenses over

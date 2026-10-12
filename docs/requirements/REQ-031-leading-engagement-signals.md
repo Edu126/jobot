@@ -2,7 +2,7 @@
 
 Date: 2026-09-08
 Source: Eduardo (reading the fleet-pulse funnel)
-Status: Open
+Status: Shipped 2026-09-09 (`b92f792`, ADR-039).
 
 ## What they asked for
 Verbatim: "los usuarios rara vez van a decirnos que aplicaron, por eso, buscar,

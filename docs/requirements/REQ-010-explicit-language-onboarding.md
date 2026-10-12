@@ -2,7 +2,7 @@
 
 Date: 2026-08-25
 Source: Mehran (2026-08-25 PM feedback dump — bucket B)
-Status: Building — absorbed into REQ-013 onboarding wizard (step 1)
+Status: Shipped 2026-08-26 as step 1 (Language) of the REQ-013 onboarding wizard.
 
 ## What they asked for
 

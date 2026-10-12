@@ -2,7 +2,8 @@
 
 Date: 2026-09-07
 Source: Eduardo (strategy session — the investor/stakeholder framing)
-Status: Open
+Status: Partly shipped: Phase 0 KPIs on /admin/pulse 2026-09-08 (`aa272ea`, ADR-034).
+The stranger-cohort half moved to REQ-029.
 
 ## What they asked for
 "How do we collect the metrics? What are they?" — and, underneath the stakeholder

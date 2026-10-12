@@ -2,7 +2,7 @@
 
 Date: 2026-09-01
 Source: Eduardo (product architect)
-Status: Building — decisions resolved 2026-09-01, ADR-022 for the mechanism
+Status: Shipped 2026-09-02 (`d9317ae`). Reworked by REQ-036 (ADR-040).
 
 > Evolves REQ-018. Same honesty line (GOV-005). Where REQ-018 answers a gap
 > *inside one job's detail*, this makes the gap a **first-class, cross-job

@@ -1,7 +1,7 @@
 # ADR-046: Type system — Schibsted Grotesk + IBM Plex Sans
 
 Date: 2026-09-15
-Status: Accepted — live on jobbotv2-edu, NOT on main
+Status: Accepted — on main since `7efaad0` (2026-09-15)
 Relates to: REQ-040, [[design-jobot-v2]], supersedes the Plus Jakarta Sans
 choice from the Sep-2026 incremental refresh
 

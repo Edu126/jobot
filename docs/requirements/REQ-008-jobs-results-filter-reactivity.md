@@ -2,7 +2,7 @@
 
 Date: 2026-08-25
 Source: Mehran (2026-08-25 PM feedback dump)
-Status: Open
+Status: Shipped 2026-08-25 (`a0a7659`).
 
 ## What they asked for
 

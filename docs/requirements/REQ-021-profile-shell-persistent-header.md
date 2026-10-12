@@ -2,8 +2,8 @@
 
 Date: 2026-09-03
 Source: Eduardo (product architect)
-Status: Building — Phase A (shell + IA only); structured Tab 1, languages, and
-undo/hidden-gaps carved out to later REQs.
+Status: Phase A + B shipped 2026-09-03 (`ebbeb3a`, `39c9ddb`, PR #3). Structured Tab 1,
+languages and hidden gaps carved out to later REQs (REQ-022, REQ-039), not scheduled.
 
 > Evolves the REQ-020 two-sub-tab Profile. REQ-020 gave us the tabs and the
 > tactical gap map; it left the **résumé card trapped inside a tab** and the ATS

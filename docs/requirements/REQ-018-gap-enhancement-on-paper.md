@@ -2,7 +2,7 @@
 
 Date: 2026-09-01
 Source: Eduardo (product architect) — first slice of REQ-017 Cluster A
-Status: Building — mechanism decided (ADR-021), ready to implement
+Status: Shipped 2026-09-02 (`d9317ae`).
 
 > First buildable slice of the REQ-017 "land it" stage. Cluster A, on-sequence
 > (Phase 1). Bound by GOV-005 (enhance ≠ fabricate).

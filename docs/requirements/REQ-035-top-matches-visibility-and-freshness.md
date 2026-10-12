@@ -2,7 +2,7 @@
 
 Date: 2026-09-08
 Source: Eduardo
-Status: Open
+Status: Shipped 2026-09-09 (`b92f792`).
 
 ## What they asked for
 Verbatim: "no veo lo del section de top matches, tipo la colección de vacantes

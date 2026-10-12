@@ -3,7 +3,7 @@
 Date: 2026-08-25
 Source: Mehran (2026-08-25 PM feedback dump) + llm-surface.md drift
 audit (2026-08-25)
-Status: Open
+Status: Shipped 2026-08-25 (`a0a7659`, schema v14 migration).
 
 ## What they asked for
 

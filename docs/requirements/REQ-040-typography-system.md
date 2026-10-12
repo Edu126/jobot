@@ -1,7 +1,7 @@
 # REQ-040: A typography system — hierarchy, not just two fonts
 
 Date: 2026-09-15
-Status: Implemented on -edu (not merged to main)
+Status: Shipped to main (`7efaad0`, 2026-09-15, ADR-046).
 Relates to: ADR-046 (the decision), [[design-jobot-v2]], the Sep-2026 design
 refresh arc
 

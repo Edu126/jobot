@@ -2,8 +2,8 @@
 
 Date: 2026-09-02
 Source: Eduardo (product architect)
-Status: Building — v1 = full engine (pillars + clustering + ✕ dismiss) shipped;
-Phase 2 = context filters (All / Top 3 / Job-specific) building now (ADR-025).
+Status: Shipped 2026-09-02/03: v1 engine (`16d767e`) + Phase 2 lenses (`be5c4ff`).
+The three lenses were later cut to one by REQ-036 (ADR-040).
 
 > Evolves REQ-019. Same source gaps, same honesty line (GOV-005), same
 > real-only map. Where REQ-019 shipped a flat ranked list of real gaps, this
