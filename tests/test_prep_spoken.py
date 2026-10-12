@@ -53,6 +53,7 @@ def test_prompt_rules():
     _assert("I led analytics at ABI, saving 60+ hours a month." in p and "Point to land: I bring" in p, "all notes in")
     _assert("Never add a fact" in p and "Never change a number" in p, "no-new-facts rule")
     _assert("connectors" in p and '"script"' in p, "connectors + JSON shape")
+    _assert("no em dashes" in p, "plain English: no AI-style em dashes (AGENTS.md)")
     h = SP.build_prompt("q", [{"section": "action", "points": ["I cut costs by [[hint: how much?]] in 2023."]}], "", lang="en")
     _assert("[[hint" not in h and "how much" not in h and "I cut costs by in 2023." in h, "unfilled hint slots left out, never guessed")
     print("PASS test_prompt_rules")

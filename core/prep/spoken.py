@@ -21,7 +21,7 @@ from core.llm.gemini import GeminiClient, GeminiError
 from core.prep.toolkit import split_hints
 from core.settings import language_instruction, resolve_output_language
 
-PROMPT_VERSION = "2026-10-12-spoken-v2-true-connectors"
+PROMPT_VERSION = "2026-10-12-spoken-v3-plain"
 _KIND = "spoken:"
 
 
@@ -55,7 +55,7 @@ Write it as a short spoken script in the first person, the way a calm, confident
   - Never start two sentences with the same connector; use "So" at most once.
 - You may add connectors and light framing words ONLY. Every fact, name, number and claim must come from the notes, exactly as written. Never add a fact, a number, a duration, a feeling or a result that isn't in the notes. Never change a number.
 - Close with their key message (the point to land), said naturally ("So, in short, …").
-- 60–120 words. Plain sentences someone can read at a glance while speaking. No headings, no bullets, no quotes around it.
+- 60–120 words. Plain, everyday English someone can read at a glance while speaking: short sentences, no em dashes (—), no semicolons, no headings, no bullets, no quotes around it.
 
 {language_instruction(lang)}
 

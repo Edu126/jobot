@@ -1,5 +1,31 @@
 # Next work — open items
 
+## 🚧 Merge blockers — `feat/prep-interview-module` (pre-merge review 2026-10-12)
+
+Don't merge to `main` until these are closed (or Eduardo ships as an explicit
+"beta, scores in calibration").
+1. **Prepared-answer quality** — answers are ≤3×14-word skeletons and nothing
+   evaluates them. [REQ-052](requirements/REQ-052-prepared-answer-quality.md):
+   step 0 (material review) → reference set (EXP-003) → evaluator → story-shaped
+   generation → recalibrated session score.
+2. **Session-score calibration** — session 55 scored 95 on answers Eduardo calls
+   weak. EXP-002 measured only the transcript judge (#22), not the audio judge
+   (#23, which grades voice), and only in English; known Spanish false negative
+   on `own_actions` (two users speak Spanish). Re-run with audio + Spanish cases.
+3. **Migrations on real data** — run the branch's `init_db` on a backed-up copy
+   of a production DB; check Prep, Feedback, old prep kits (`routes/prep.py`
+   still serves `prep_kit`), Delete all.
+4. **Production env flags** — `JOBOT_SAVE_AUDIO` and `JOBOT_VOICE_LAB` OFF on the
+   4 user apps; each app's key supports `GEMINI_LIVE_MODEL` + the audio model
+   (`fly secrets list` per app).
+
+**Before merge, should do:** `/simplify` + `/code-review` on the 6 commits after
+the last review (`63fe6e9`…`9d19d89`); estimate $/user/month (P10 + audio debrief
++ Live minutes); recommend headphones + a quiet room in the user message;
+decide a single-app canary; write the EN/ES user message (new Prep flow, mic,
+strict scores in calibration, "With help" sessions don't count, prepared answers
+are drafts, where old kits went, how to send feedback).
+
 ## Prep / Practice — open (state as of 2026-10-01)
 
 Branch `feat/prep-interview-module` (unmerged; live on -edu). Merging to

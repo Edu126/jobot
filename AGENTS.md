@@ -83,6 +83,13 @@ fills, no outlines around things) and §9.0 (the macro kit).
   `border border-base-300` boxes in templates.
 - Every user-facing string goes through i18n (`ui_web/i18n.py`) in **both
   `en` and `es`**; plurals get a `_one` key.
+- **English first (2026-10-12).** Design, copy, prompts, examples and reviews
+  are done in English. The Spanish (LatAm) counterpart is still wired in the
+  same change when building something new (i18n `es` keys, `lang` threaded
+  through prompts) so it's easy to turn on later, but don't mix languages in
+  the work itself: no Spanglish in pages, mocks, fixtures or prompts.
+- **Plain, human English in generated text.** No AI-style em dashes (—) in
+  answers, scripts or copy shown to users; short sentences, everyday words.
 - Templates must render for **old data shapes** too (legacy rows in -edu/prod) —
   guard optional fields; add a render test for both shapes.
 - **Gate:** `.venv/bin/python scripts/lint_ui.py` (ratchet vs
