@@ -49,6 +49,14 @@ be rewritten again." So Get Ready flips from AI-first to candidate-first:
    Get Ready and the live aid.
 4. Session score recalibrated with the same rubric (REQ-042).
 
+## Corrections happen in the app (Eduardo, 2026-10-12)
+"There should be a way to flag it from the app and update it there, not just
+here with you." Any prepared answer can be flagged in the app ("these are two
+different projects", "that number is wrong"); the correction is saved as an
+authoritative fact for that story and the answer is rewritten and
+re-evaluated. Example that prompted it: the CMHC reference answer merged the
+B2O 360 strategy with the CX center transformation, two separate projects.
+
 ## Where it lives (ADR-080)
 An account-level Answer Bank holds the loop above; Get Ready picks and adapts
 per interview (step 0); Practice validates out loud. English first: build and

@@ -8,16 +8,25 @@ Don't merge to `main` until these are closed (or Eduardo ships as an explicit
    evaluates them. [REQ-052](requirements/REQ-052-prepared-answer-quality.md):
    step 0 (material review) → reference set (EXP-003) → evaluator → story-shaped
    generation → recalibrated session score.
-2. **Session-score calibration** — session 55 scored 95 on answers Eduardo calls
+2. **Session-score calibration** (ADR-081: three pillars, Content/Structure/Delivery) — session 55 scored 95 on answers Eduardo calls
    weak. EXP-002 measured only the transcript judge (#22), not the audio judge
    (#23, which grades voice), and only in English; known Spanish false negative
    on `own_actions` (two users speak Spanish). Re-run with audio + Spanish cases.
-3. **Migrations on real data** — run the branch's `init_db` on a backed-up copy
+3. **Migrations on real data** (deferred 2026-10-12: do it once, right before
+   rollout, after the provider layer, which will change cache keys/schema too) — run the branch's `init_db` on a backed-up copy
    of a production DB; check Prep, Feedback, old prep kits (`routes/prep.py`
    still serves `prep_kit`), Delete all.
 4. **Production env flags** — `JOBOT_SAVE_AUDIO` and `JOBOT_VOICE_LAB` OFF on the
    4 user apps; each app's key supports `GEMINI_LIVE_MODEL` + the audio model
-   (`fly secrets list` per app).
+   (`fly secrets list` per app). Checked 2026-10-12: the 4 user apps have only
+   GOOGLE_API_KEY + TAVILY_API_KEY (flags correctly absent); they also lack
+   GEMINI_LIVE_MODEL, so voice needs it added at rollout.
+5. **Provider review before any rollout (Eduardo, 2026-10-12).** Nothing goes
+   to the other users until we've reviewed vendor lock-in and tried other
+   options: OpenAI GPT for text and OpenAI Realtime for the voice coach.
+   Starting point: the provider-layer assessment (2026-10-12: text ~25 call
+   sites behind one `generate_json`, ~3 days to a neutral layer; voice is a
+   separate ~2-week adapter; caches don't key on provider/model yet).
 
 **Before merge, should do:** `/simplify` + `/code-review` on the 6 commits after
 the last review (`63fe6e9`…`9d19d89`); estimate $/user/month (P10 + audio debrief
