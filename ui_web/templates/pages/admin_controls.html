@@ -15,12 +15,12 @@
     {% for b in budgets %}
     {% set left = b.limits.month - b.used.month %}
     <div class="card-quiet p-5 space-y-3">
-      {{ ui.datum(b.used.month ~ ' / ' ~ b.limits.month, ('Voice sessions' if b.kind == 'voice' else 'Company searches') ~ ' this month') }}
+      {{ ui.datum(b.used.month ~ ' / ' ~ b.limits.month, 'Voice, this month' if b.kind == 'voice' else 'Searches, this month') }}
       <p class="text-sm text-body-muted">Today {{ b.used.day }} of {{ b.limits.day }}. {{ left if left > 0 else 0 }} left this month.</p>
     </div>
     {% endfor %}
     <div class="card-quiet p-5 space-y-3">
-      {{ ui.datum(text_cap, 'AI text calls a day') }}
+      {{ ui.datum(text_cap, 'AI calls a day') }}
       <p class="text-sm text-body-muted">Per visitor today, per user once login ships. Totals are on Pulse.</p>
     </div>
   </div>

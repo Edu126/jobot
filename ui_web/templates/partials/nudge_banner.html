@@ -5,7 +5,7 @@
 {% set nudge = nudge_pick(active_tab | default('')) %}
 {% if nudge %}
 {% set k = 'nudge.' ~ nudge.id %}
-<div class="mb-8"
+<div class="mt-6 mb-8"
      x-data='nudgeBanner({{ nudge.id | tojson }}, {{ (nudge.spotlight or "") | tojson }}, {{ {"title": _(k ~ ".spot_title"), "body": _(k ~ ".spot_body")} | tojson }})'
      x-init="seen()" x-show="!gone" x-transition.opacity>
   {% call ui.callout(class_='ui-nudge') %}

@@ -63,7 +63,10 @@ def _context(conn) -> Ctx:
     one = lambda sql: conn.execute(sql).fetchone() is not None  # noqa: E731
     return Ctx(
         has_resume=one("SELECT 1 FROM resumes WHERE is_current = 1 LIMIT 1"),
-        has_search=one("SELECT 1 FROM search_tasks LIMIT 1") or one("SELECT 1 FROM saved_searches LIMIT 1"),
+        # Any trace of a past search: found jobs, scores, a saved search or a
+        # task (search_tasks is pruned, so it alone misses old users).
+        has_search=any(one(f"SELECT 1 FROM {t} LIMIT 1")
+                       for t in ("jobs", "job_scores", "saved_searches", "search_tasks")),
         has_scores=one("SELECT 1 FROM job_scores LIMIT 1"),
     )
 

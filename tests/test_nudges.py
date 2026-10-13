@@ -38,6 +38,15 @@ def main() -> int:
             events.track("nudge.dismissed", id="first_search")
             assert nudges.pick("jobs") is None, "dismissed never returns"
 
+            # An old user whose search tasks were pruned still has jobs: no "start here".
+            with db.tx(p) as conn:
+                conn.execute("DELETE FROM events")
+                conn.execute("INSERT INTO jobs (id, title, company, first_seen, last_seen) VALUES ('j1', 't', 'c', 'x', 'x')")
+            assert nudges.pick("jobs") is None, "past jobs count as having searched"
+            with db.tx(p) as conn:
+                conn.execute("DELETE FROM jobs")
+            events.track("nudge.dismissed", id="first_search")
+
             os.environ["JOBOT_NUDGES_OFF"] = "add_resume"
             with db.tx(p) as conn:
                 conn.execute("UPDATE resumes SET is_current = 0")
