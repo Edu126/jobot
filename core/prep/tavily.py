@@ -32,6 +32,14 @@ def api_key() -> str:
     return (os.getenv("TAVILY_API_KEY") or "").strip()
 
 
+def _charge() -> bool:
+    """Take one unit of this app's Tavily budget (REQ-059). False when the
+    day/month slice is used up: the caller degrades exactly as if the search
+    failed, so the brief still builds from the JD alone."""
+    from core.llm import usage as llm_usage
+    return llm_usage.try_charge_budget("tavily") is None
+
+
 def search_company_hits(company: str, role_title: str = "") -> list[dict]:
     """Fetch public company snippets as per-hit dicts `{title, url, content}` —
     the shape P1 Brief consumes so each company_snapshot point can cite the
@@ -48,6 +56,8 @@ def search_company_hits(company: str, role_title: str = "") -> list[dict]:
     if role_title.strip():
         query += f" (candidate interviewing for {role_title.strip()})"
 
+    if not _charge():
+        return []
     try:
         resp = httpx.post(
             TAVILY_URL,
@@ -94,6 +104,8 @@ def search_company(company: str, role_title: str = "") -> TavilyResult | None:
     if role_title.strip():
         query += f" (candidate interviewing for {role_title.strip()})"
 
+    if not _charge():
+        return None
     try:
         resp = httpx.post(
             TAVILY_URL,

@@ -610,7 +610,8 @@ CREATE TABLE IF NOT EXISTS practice_sessions (
     transcript_json   TEXT,                              -- voice: the full conversation turns [{role,text}] (ADR-052)
     debrief_json      TEXT,                              -- P9 output, set when done
     created_at        TEXT NOT NULL,
-    completed_at      TEXT
+    completed_at      TEXT,
+    voice_charged_at  TEXT                               -- REQ-059: when this session took a voice budget unit
 );
 CREATE INDEX IF NOT EXISTS idx_practice_sessions_interview ON practice_sessions(interview_id);
 
@@ -790,6 +791,8 @@ def init_db(path: Path = DB_PATH) -> None:
             conn.execute("ALTER TABLE practice_sessions ADD COLUMN transcript_json TEXT")
         if pr_cols and "persona" not in pr_cols:  # ADR-052: interviewer persona id
             conn.execute("ALTER TABLE practice_sessions ADD COLUMN persona TEXT NOT NULL DEFAULT ''")
+        if pr_cols and "voice_charged_at" not in pr_cols:  # REQ-059: voice budget, once per session
+            conn.execute("ALTER TABLE practice_sessions ADD COLUMN voice_charged_at TEXT")
 
         # Defensive: interviews.source_url shipped in the same change as the CREATE
         # so fresh deploys have it, but guard anyway (a pre-column interviews row
@@ -2702,6 +2705,16 @@ def create_practice_session(
              json.dumps(questions or [], ensure_ascii=False), now),
         )
     return int(cur.lastrowid)
+
+
+def mark_voice_charged(session_id: int, path: Path = DB_PATH) -> bool:
+    """Stamp the session's first voice connect (REQ-059). True only the first
+    time, so a reconnect inside the same session isn't charged again."""
+    with tx(path) as conn:
+        cur = conn.execute(
+            "UPDATE practice_sessions SET voice_charged_at = ? "
+            "WHERE id = ? AND voice_charged_at IS NULL", (_now(), session_id))
+    return cur.rowcount == 1
 
 
 def get_practice_session(session_id: int, path: Path = DB_PATH) -> Optional[dict]:

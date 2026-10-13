@@ -24,6 +24,7 @@ solo dev / cron scripts.
 """
 from __future__ import annotations
 
+import os
 from contextvars import ContextVar
 from datetime import datetime
 from typing import Optional
@@ -36,6 +37,22 @@ from core import db, feature_flags
 # and docs/working-plan.md for context. Admin panel (post-auth) will
 # allow per-user overrides.
 MAX_LLM_CALLS_PER_DAY = 600
+
+
+# App-wide budgets for the expensive or shared calls (REQ-059). One Fly app is
+# one tester (ADR-082), so these count the whole app, not an identity — a
+# tester switching networks doesn't get a fresh allowance. Stored as rows in
+# `gemini_usage` (identity "app", model "budget:<kind>"), so /admin/pulse
+# already lists them. Override per app without a deploy:
+# `fly secrets set JOBOT_CAP_VOICE_MONTH=40 -a <app>`.
+#   voice  : Gemini Live practice sessions (~$0.15-0.60 each, max 15 min).
+#   tavily : company searches. The free plan's 1,000 credits/month are shared
+#            by every app on one key, so each app gets a slice.
+BUDGETS: dict[str, dict[str, int]] = {
+    "voice": {"day": 3, "month": 20},
+    "tavily": {"day": 10, "month": 100},
+}
+BUDGET_IDENTITY = "app"
 
 
 class LlmDisabledError(RuntimeError):
@@ -159,3 +176,63 @@ def get_usage_today(identity: str) -> dict[str, int]:
         "tokens_out": int(row["tokens_out"]),
         "cap": MAX_LLM_CALLS_PER_DAY,
     }
+
+
+def budget_limits(kind: str) -> dict[str, int]:
+    """The day/month limits for `kind`, with `JOBOT_CAP_<KIND>_<DAY|MONTH>`
+    env overrides read at call time (a `fly secrets set` applies on restart)."""
+    limits = dict(BUDGETS[kind])
+    for period in ("day", "month"):
+        raw = (os.getenv(f"JOBOT_CAP_{kind.upper()}_{period.upper()}") or "").strip()
+        if raw.isdigit():
+            limits[period] = int(raw)
+    return limits
+
+
+def budget_used(kind: str) -> dict[str, int]:
+    """Units of `kind` used today and this month (UTC)."""
+    now = datetime.utcnow()
+    day, month = now.strftime("%Y-%m-%d"), now.strftime("%Y-%m")
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(CASE WHEN day = ? THEN calls END),0) AS d, "
+            "COALESCE(SUM(calls),0) AS m FROM gemini_usage "
+            "WHERE identity = ? AND model = ? AND day LIKE ?",
+            (day, BUDGET_IDENTITY, f"budget:{kind}", month + "-%"),
+        ).fetchone()
+    return {"day": int(row["d"]), "month": int(row["m"])}
+
+
+def try_charge_budget(kind: str) -> Optional[str]:
+    """Reserve one unit of an app-wide budget. Returns None when reserved, or
+    "day" / "month" naming the limit that's already reached (nothing charged).
+    The kill switch counts as reached ("disabled")."""
+    if feature_flags.is_llm_disabled():
+        return "disabled"
+    limits = budget_limits(kind)
+    now = datetime.utcnow()
+    day, month = now.strftime("%Y-%m-%d"), now.strftime("%Y-%m")
+    model = f"budget:{kind}"
+    with db.tx() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(CASE WHEN day = ? THEN calls END),0) AS d, "
+            "COALESCE(SUM(calls),0) AS m FROM gemini_usage "
+            "WHERE identity = ? AND model = ? AND day LIKE ?",
+            (day, BUDGET_IDENTITY, model, month + "-%"),
+        ).fetchone()
+        if int(row["m"]) >= limits["month"]:
+            return "month"
+        if int(row["d"]) >= limits["day"]:
+            return "day"
+        conn.execute(
+            "INSERT INTO gemini_usage (identity, model, day, calls, tokens_in, tokens_out) "
+            "VALUES (?, ?, ?, 1, 0, 0) "
+            "ON CONFLICT(identity, model, day) DO UPDATE SET calls = calls + 1",
+            (BUDGET_IDENTITY, model, day),
+        )
+    return None
+
+
+def budgets_snapshot() -> list[dict]:
+    """Every budget with its limits and use, for the admin page."""
+    return [{"kind": k, "limits": budget_limits(k), "used": budget_used(k)} for k in BUDGETS]

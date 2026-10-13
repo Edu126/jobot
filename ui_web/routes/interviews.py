@@ -24,6 +24,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from core import db
+from core.llm import usage as llm_usage
 from core.llm.gemini import GeminiClient, resolve_api_key
 from core.prep import brief as prep_brief
 from core.prep import audio_metrics as prep_audio_metrics
@@ -628,6 +629,13 @@ async def practice_live_token(request: Request, interview_id: int, session_id: i
     session = db.get_practice_session(session_id)
     if not interview or not session or session["interview_id"] != interview_id:
         return JSONResponse({"error": "not_found"}, status_code=404)
+    # REQ-059: one voice budget unit per session; a reconnect in the same
+    # session reuses it. Over the cap → 429 and the page offers typing.
+    if not session.get("voice_charged_at"):
+        reached = llm_usage.try_charge_budget("voice")
+        if reached:
+            return JSONResponse({"error": "voice_cap", "period": reached}, status_code=429)
+        db.mark_voice_charged(session_id)
     lang = interview.get("lang") or get_output_language()
     result = await asyncio.to_thread(
         prep_live.create_ephemeral_token, interview, session, lang=lang)

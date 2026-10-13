@@ -26,3 +26,8 @@ pages allow only Eduardo.
 Free Supabase projects pause after a week with no activity, which locks
 everyone out. We need a daily keep-alive, then Pro once testers arrive.
 Every tester is one more app to deploy and, later, to migrate (ADR-083).
+
+**Update 2026-10-12:** we start with the email code only, with no Google button.
+That avoids Google's "unverified app" screen and the extra Google setup, and it
+looks clean ("Enter your email, we'll send a code"). Google sign-in comes back
+once we have the domain, the privacy page and Google's app verification.

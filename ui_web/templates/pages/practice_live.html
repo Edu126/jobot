@@ -303,6 +303,10 @@
         let token;
         try {
           const r = await fetch(this.tokenUrl, { method: 'POST' });
+          if (r.status === 429) {   // REQ-059: voice budget reached for today / this month
+            const j = await r.json().catch(() => ({}));
+            return this.fail(j.period === 'month' ? '{{ _('prep2.live.cap_month') }}' : '{{ _('prep2.live.cap_day') }}');
+          }
           if (!r.ok) throw new Error('token ' + r.status);
           const j = await r.json();
           token = j.token; this._ctx = j.context || '';
