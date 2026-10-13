@@ -41,7 +41,6 @@ jobs:
         app:
           - jobbotv2
           - jobbotv2-melissa
-          - jobbotv2-hermana
           - jobbotv2-andrea
           - jobbotv2-carlos
           - jobbotv2-emma
