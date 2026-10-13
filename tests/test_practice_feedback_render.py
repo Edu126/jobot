@@ -21,14 +21,14 @@ def _assert(c, m):
         raise AssertionError(m)
 
 
-def _render(debrief, delta=None, gauges=None):
+def _render(debrief, delta=None, gauges=None, **extra):
     req = Request({"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b"", "app": None})
     return templates.get_template("pages/practice_feedback.html").render(
         request=req, active_tab="prep", interview={"id": 3, "role_title": "S", "company": "C"},
         session={"id": 39, "debrief": debrief, "transcript": [{"role": "you", "text": "x"}]},
         answers=[], comp_names={"c1": "Budget", "c2": "Workforce", "c3": "Stakeholder"},
         readiness={"level": "almost_ready", "pct": 78, "missing": "strengthen", "missing_count": 1},
-        delta=delta, gauges=gauges or [], step="feedback")
+        delta=delta, gauges=gauges or [], step="feedback", **extra)
 
 
 def test_new_shape():
@@ -46,6 +46,12 @@ def test_new_shape():
     _assert("Easy to follow" in html and "per 100 words" in html and "about 150 words per minute" in html,
             "gauges show verdict + unit + the research baseline")
     print("PASS test_new_shape")
+
+    # ADR-085: score hidden for the beta rollout; evidence + takeaway stay.
+    hidden = _render(d, delta=12, show_score=False)
+    _assert("Session score" not in hidden and "+12 vs last session" not in hidden, "score hidden")
+    _assert("How this score works" not in hidden and "Not asked" in hidden, "explainer hidden, evidence kept")
+    print("PASS test_score_hidden")
 
 
 def test_legacy_shape():

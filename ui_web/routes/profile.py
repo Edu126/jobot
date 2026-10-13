@@ -21,6 +21,7 @@ Notes:
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import io
 import json
 import os
@@ -841,6 +842,18 @@ async def data_reset_stats(request: Request, confirmation: str = Form("")):
         status_code=200,
         headers={"HX-Refresh": "true"},
     )
+
+
+@router.get("/profile/data/export")
+async def data_export(request: Request):
+    """Download my data (ADR-084): one ZIP of every user table + the original
+    résumé files. Read-only, so no confirmation phrase."""
+    from fastapi.responses import Response
+    from core import data_export
+    body = await asyncio.to_thread(data_export.build_zip)
+    name = f"jobot-data-{datetime.utcnow():%Y-%m-%d}.zip"
+    return Response(body, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.post("/profile/data/delete-all")

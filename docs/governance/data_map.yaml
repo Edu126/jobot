@@ -1,0 +1,61 @@
+# Every outside service Jobot talks to, what it receives, and why (ADR-084).
+# The privacy page is written from this file. tests/test_data_map.py fails
+# when code reaches a host or network SDK that isn't listed here, so a new
+# vendor can't ship without this file (and then the privacy page) changing.
+#
+# `detect`: strings that prove the code uses the service (hosts or imports).
+# `user_data`: what of the user's leaves us. "none" = only public or our own data.
+
+services:
+  - name: AI text provider (Google Gemini)
+    detect: ["google.genai", "from google import genai"]
+    user_data: résumé text and job posts, with email, phone and profile links removed (core/llm/redact.py)
+    why: fit scores, tailoring, interview prep
+    where: United States
+    trains_on_it: no (paid API)
+
+  - name: AI voice provider (Google Gemini Live)
+    detect: ["live.connect", "auth_tokens"]
+    user_data: your voice during practice, streamed live, never stored by us (GOV-008); the interview context, redacted
+    why: voice interview practice
+    where: United States
+    trains_on_it: no (paid API)
+
+  - name: Company research (Tavily)
+    detect: ["api.tavily.com"]
+    user_data: the company name and the role title only (GOV-007)
+    why: the company section of the interview brief
+    where: United States
+
+  - name: Job boards (LinkedIn, Indeed and others via jobspy; Greenhouse; Lever)
+    detect: ["jobspy", "boards-api.greenhouse.io", "api.lever.co"]
+    user_data: the search terms you type (role, location); never your account or résumé
+    why: finding public job posts
+    where: varies
+
+  - name: Location suggestions (Photon by Komoot)
+    detect: ["photon.komoot.io"]
+    user_data: the letters you type in the location box
+    why: city autocomplete
+    where: Germany
+
+  - name: App updates (GitHub)
+    detect: ["api.github.com"]
+    user_data: none
+    why: checking for a newer app version
+    where: United States
+
+  - name: Hosting (Fly.io)
+    detect: []
+    user_data: everything, stored encrypted on a server in Toronto
+    why: running your app
+    where: Canada (Toronto)
+
+# Not in the code yet; listed so the privacy page is ready when they ship:
+planned:
+  - name: Login (Supabase Auth)
+    user_data: your email address
+    where: Canada (ca-central-1) when we create the project
+  - name: Email (Resend)
+    user_data: your email address and the email content
+    where: United States

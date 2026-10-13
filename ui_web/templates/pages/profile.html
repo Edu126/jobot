@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
 {% block title %}Profile · Jobot{% endblock %}
 
 {% block content %}
@@ -355,6 +356,8 @@
       </p>
 
       <div class="flex flex-wrap gap-3">
+        {# ADR-084: everything we hold, as one ZIP (not destructive; sits with the data actions) #}
+        {{ ui.button(_('profile.data.export'), icon='ph-download-simple', href='/profile/data/export') }}
         <button type="button" @click="resetStatsModal = true; resetStatsPhrase = ''"
                 class="btn btn-sm btn-outline cursor-pointer">
           <i class="ph-thin ph-arrow-counter-clockwise i-4"></i>{{ _('profile.danger.reset_stats') }}

@@ -221,6 +221,9 @@ class GeminiClient:
         # different models; the cap is on total calls per identity per day.
         from core.llm import usage as llm_usage
         llm_usage.check_and_charge(model="any")
+        # ADR-084: no email, phone or profile link ever reaches the provider.
+        from core.llm.redact import redact
+        prompt = redact(prompt)
 
         available = self.available_models()
         if not available:

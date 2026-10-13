@@ -27,6 +27,14 @@ def _flag(name: str) -> bool:
     return (os.environ.get(name) or "").strip().lower() in _TRUTHY
 
 
+def show_session_score() -> bool:
+    """The 0-100 practice session score is in calibration (next-work blocker 2,
+    ADR-085): hidden by default, so Prep rolls out to everyone as a beta with
+    the evidence and takeaway only. -edu sets JOBOT_SHOW_SESSION_SCORE=1 to keep
+    calibrating it."""
+    return _flag("JOBOT_SHOW_SESSION_SCORE")
+
+
 def is_llm_disabled() -> bool:
     """When True, refuse every Gemini path. Overrides everything else —
     if the paid-tier quota alarm goes off, flip this and redeploy is

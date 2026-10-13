@@ -616,6 +616,18 @@ h4 {
   color: oklch(var(--pc) / 0.85);
 }
 
+/* "Beta" tag next to a nav label (ADR-085: Prep ships as a beta). Quiet: small
+   caps in the accent, no pill, so it reads as a note, not a button. */
+.nav-beta {
+  margin-left: 0.3rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: oklch(var(--p));
+  vertical-align: super;
+}
+
 /* Text-only nav tab with animated underline (Wealthsimple pattern) */
 .nav-tab {
   position: relative;

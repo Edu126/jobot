@@ -109,6 +109,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav.jobs": "Jobs",
         "nav.journey": "Journey",
         "nav.prep": "Prep",
+        "nav.beta": "Beta",
         "nav.profile": "Profile",
         "nav.back_to_search": "Back to search",
         # Prep v2 — the interview-prep module (REQ-041)
@@ -1057,6 +1058,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.danger.title": "Danger zone",
         "profile.danger.subtitle": "Destructive actions. Both require typing a confirmation phrase, and the server rejects anything else.",
         "profile.danger.reset_stats": "Reset stats",
+        "profile.data.export": "Download my data",
         "profile.danger.delete_all": "Delete all my data",
         "profile.danger.reset_stats.explainer": "Wipes your activity history (events on the Journey page). Your resume, applications, and settings are preserved.",
         "profile.danger.delete_all.explainer": "Permanently deletes your resume, applications, job scores, events, saved searches, everything. This cannot be undone. Language settings are kept so the app boots in the same language.",
@@ -1102,6 +1104,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav.jobs": "Empleos",
         "nav.journey": "Trayecto",
         "nav.prep": "Preparación",
+        "nav.beta": "Beta",
         "nav.profile": "Perfil",
         "nav.back_to_search": "Volver a la búsqueda",
         # Prep v2 — el módulo de preparación de entrevistas (REQ-041)
@@ -2050,6 +2053,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "profile.danger.title": "Zona peligrosa",
         "profile.danger.subtitle": "Acciones destructivas. Ambas piden que escribas una frase de confirmación. El servidor rechaza cualquier otra cosa.",
         "profile.danger.reset_stats": "Reiniciar estadísticas",
+        "profile.data.export": "Descargar mis datos",
         "profile.danger.delete_all": "Borrar todos mis datos",
         "profile.danger.reset_stats.explainer": "Borra tu historial de actividad (los eventos de la página Trayecto). Tu currículum, postulaciones y ajustes se mantienen.",
         "profile.danger.delete_all.explainer": "Borra permanentemente tu currículum, postulaciones, puntajes, eventos, búsquedas guardadas, todo. No se puede deshacer. Los ajustes de idioma se mantienen para que la app arranque en el mismo idioma.",

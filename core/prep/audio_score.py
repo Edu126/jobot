@@ -48,6 +48,7 @@ def score_from_audio(
 
     # Respect the daily cap / kill-switch, like GeminiClient does.
     from core.llm import usage as llm_usage
+    from core.llm.redact import redact   # ADR-084
     try:
         llm_usage.check_and_charge(model="any")
     except Exception:  # noqa: BLE001 — capped / disabled
@@ -66,7 +67,7 @@ def score_from_audio(
         uploaded = client.files.upload(file=tmp_path)
         resp = client.models.generate_content(
             model=AUDIO_SCORE_MODEL,
-            contents=[uploaded, t.Part(text=_build_prompt(questions, competencies, turns or [], lang=lang))],
+            contents=[uploaded, t.Part(text=redact(_build_prompt(questions, competencies, turns or [], lang=lang)))],
             config=t.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
         )
         raw = json.loads(resp.text or "{}")

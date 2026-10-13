@@ -23,7 +23,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from core import db
+from core import db, feature_flags
 from core.llm import usage as llm_usage
 from core.llm.gemini import GeminiClient, resolve_api_key
 from core.prep import brief as prep_brief
@@ -911,7 +911,8 @@ async def practice_feedback(request: Request, interview_id: int, session_id: int
         request, "pages/practice_feedback.html",
         {"active_tab": "prep", "interview": interview, "session": session,
          "answers": answers, "comp_names": comp_names, "readiness": readiness,
-         "delta": delta, "gauges": gauges, "step": "feedback", "history": history})
+         "delta": delta, "gauges": gauges, "step": "feedback", "history": history,
+         "show_score": feature_flags.show_session_score()})
 
 
 @router.get("/interviews/{interview_id}/feedback")

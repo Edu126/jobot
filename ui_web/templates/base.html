@@ -825,7 +825,7 @@
       <nav class="hidden sm:flex items-center gap-8">
         <a id="tour-nav-jobs" href="/jobs" class="nav-tab {% if active_tab == 'jobs' %}active{% endif %}">{{ _('nav.jobs') }}</a>
         <a id="tour-nav-journey" href="/journey" class="nav-tab {% if active_tab == 'journey' %}active{% endif %}">{{ _('nav.journey') }}</a>
-        <a href="/interviews" class="nav-tab {% if active_tab == 'prep' %}active{% endif %}">{{ _('nav.prep') }}</a>
+        <a href="/interviews" class="nav-tab {% if active_tab == 'prep' %}active{% endif %}">{{ _('nav.prep') }}<span class="nav-beta">{{ _('nav.beta') }}</span></a>
         <a href="/profile" class="nav-tab {% if active_tab == 'profile' %}active{% endif %}">{{ _('nav.profile') }}</a>
       </nav>
 
@@ -888,7 +888,7 @@
         ] %}
         <a href="{{ href }}"
            class="py-2 px-3 rounded-lg text-base {% if active_tab == key %}bg-base-200 font-semibold{% else %}text-base-content/70 hover:bg-base-200/60{% endif %}">
-          {{ _(label_key) }}
+          {{ _(label_key) }}{% if key == 'prep' %}<span class="nav-beta">{{ _('nav.beta') }}</span>{% endif %}
         </a>
         {% endfor %}
       </nav>

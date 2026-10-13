@@ -62,6 +62,8 @@ reference** that lists every score and the principles all of them must follow.
 | 15 | **Offline judges** (eval harness only) — `recruiter_judge.py`, `answer_judge.py` | advance 85 / maybe 55 / reject 20; specificity 1–5 | LLM (self-judging caveat) | Recruiter screen of generated résumés; interviewer check of answer cards | Quality control on what WE generate. Not shown to users |
 
 ### Session score (#12) — exact logic
+
+**Visibility (2026-10-12, ADR-085):** the number is hidden for users while it's calibrated. It's computed and stored as before; `JOBOT_SHOW_SESSION_SCORE=1` shows it (on -edu). Users see the evidence rows and the takeaway.
 - **Five checks per competency.** Each check passed is 1 point:
   - answered the question
   - a real example

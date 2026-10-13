@@ -9,6 +9,9 @@
 
 {% set band_pill = {'strong': 'pill-success', 'solid': 'pill-info', 'needs_work': 'pill-warn'} %}
 {% set debrief = session.debrief or {} %}
+{# ADR-085: the score is hidden while it's calibrated; evidence + takeaway stay #}
+{% set score_on = show_score | default(true) %}
+{% set show_score = score_on and debrief.score is number %}
 
 {% block content %}
 <div class="space-y-6" x-data="{ showTranscript: false }">
@@ -32,9 +35,9 @@
   {% set again_href = '/interviews/' ~ interview.id ~ '/practice' %}
 
   {# ---- THE answer: session score + takeaway (one surface, §2A answer-first) ---- #}
-  {% call ui.callout(eyebrow=_('prep2.score.label') if debrief.score is number else _('prep2.feedback.takeaway')) %}
+  {% call ui.callout(eyebrow=_('prep2.score.label') if show_score else _('prep2.feedback.takeaway')) %}
     <div class="space-y-3">
-      {% if debrief.score is number %}
+      {% if show_score %}
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
         {{ ui.verdict(ring_key.get(debrief.verdict_key or '', 'none'), debrief.score,
                       label=_('prep2.score.verdict.' + debrief.verdict_key),
@@ -95,10 +98,12 @@
       </details>
       {% endfor %}
     </div>
+    {% if score_on %}
     <details class="mt-3 text-sm">
       <summary class="ui-link-quiet cursor-pointer">{{ _('prep2.score.how') }}</summary>
       <p class="text-body-muted mt-2">{{ _('prep2.score.how_body') }}</p>
     </details>
+    {% endif %}
     {% elif debrief.competency_bands %}
     {# legacy debrief (pre-ADR-059): bands only, no score #}
     <div class="space-y-2">
@@ -205,7 +210,7 @@
           <span x-data x-text="new Date('{{ h.completed_at or h.created_at }}').toLocaleDateString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})">{{ (h.completed_at or h.created_at)[:10] }}</span>
           <span class="text-sm text-subtle"> · {{ _('prep2.setup.channel_voice') if h.transcript_json else _('prep2.setup.channel_text') }}{% if h.mode == 'study' %} · {{ _('prep2.feedback.with_help') | lower }}{% endif %}{% if here %} · {{ _('prep2.feedback.viewing') }}{% endif %}</span>
         </span>
-        {% if hd.score is number %}<span class="tabular-nums">{{ hd.score }}</span>{% endif %}
+        {% if score_on and hd.score is number %}<span class="tabular-nums">{{ hd.score }}</span>{% endif %}
       </a>
       {% endfor %}
     </div>

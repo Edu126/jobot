@@ -326,4 +326,5 @@ def create_ephemeral_token(interview: dict, session_row: dict, *, lang: str):
         return None
     _log(f"token minted model={live_model()} personality={personality_id} voice={voice} "
          f"ctx(brief={bool(brief_dict)},persona={bool(candidate_persona)})")
-    return token.name, context
+    from core.llm.redact import redact   # ADR-084: no contact details to the provider
+    return token.name, redact(context)
