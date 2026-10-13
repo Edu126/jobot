@@ -71,6 +71,14 @@
     <div class="text-body-muted">Starting…</div>
   </div>
 
+  {# REQ-058: after 20 s, a gentle ask. Never a modal on its own: one quiet line + a link. #}
+  <p x-data="{ slow: false }" x-init="setTimeout(() => slow = true, 20000)" x-show="slow" x-cloak x-transition.opacity
+     class="mt-2 text-sm text-body-muted max-w-md mx-auto">
+    {{ _('nudge.slow.line') }}
+    <button type="button" class="ui-link-quiet" data-prompt="{{ _('nudge.slow.prompt') }}"
+            @click="$dispatch('feedback-open', { prompt: $el.dataset.prompt })">{{ _('nudge.slow.cta') }}</button>
+  </p>
+
   {# Query context — labeled to match kind. #}
   <div class="mt-8 pt-6 border-t border-base-300 max-w-md mx-auto">
     {% if is_expand %}

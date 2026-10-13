@@ -1,0 +1,28 @@
+{#- The one next step (REQ-058, core/nudges.py). Calm callout, one action,
+    "Not now" dismisses it for good. A spotlight action lights up the target
+    on this page with Driver.js instead of navigating. -#}
+{% import "macros/ui.html" as ui %}
+{% set nudge = nudge_pick(active_tab | default('')) %}
+{% if nudge %}
+{% set k = 'nudge.' ~ nudge.id %}
+<div class="mb-8"
+     x-data='nudgeBanner({{ nudge.id | tojson }}, {{ (nudge.spotlight or "") | tojson }}, {{ {"title": _(k ~ ".spot_title"), "body": _(k ~ ".spot_body")} | tojson }})'
+     x-init="seen()" x-show="!gone" x-transition.opacity>
+  {% call ui.callout(class_='ui-nudge') %}
+  <div class="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+    <div class="min-w-0">
+      <p class="font-semibold">{{ _(k ~ '.title') }}</p>
+      <p class="text-sm text-body-muted">{{ _(k ~ '.body') }}</p>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      {% if nudge.href %}
+      {{ ui.button(_(k ~ '.cta'), variant='primary', href=nudge.href, attrs={'@click': "act('clicked')"}) }}
+      {% else %}
+      {{ ui.button(_(k ~ '.cta'), variant='primary', icon='ph-hand-pointing', attrs={'@click': 'spot()'}) }}
+      {% endif %}
+      {{ ui.button(_('nudge.not_now'), variant='ghost', attrs={'@click': 'dismiss()'}) }}
+    </div>
+  </div>
+  {% endcall %}
+</div>
+{% endif %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% import "macros/ui.html" as ui %}
+{% block title %}Controls · Jobot admin{% endblock %}
+{% block container_class %}max-w-4xl{% endblock %}
+
+{#- Admin only (English). Caps (REQ-059) + nudge rules (REQ-058) for this app.
+    Change a cap: `fly secrets set JOBOT_CAP_VOICE_MONTH=40 -a <app>`.
+    Turn a nudge off: `JOBOT_NUDGES_OFF=id1,id2`. -#}
+{% block content %}
+<div class="space-y-12">
+  {{ ui.page_header('Controls', lede='Caps on the costly calls and the nudges that guide new users, for this app.') }}
+
+  {% call ui.section(title='Usage caps') %}
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+    {% for b in budgets %}
+    {% set left = b.limits.month - b.used.month %}
+    <div class="card-quiet p-5 space-y-3">
+      {{ ui.datum(b.used.month ~ ' / ' ~ b.limits.month, ('Voice sessions' if b.kind == 'voice' else 'Company searches') ~ ' this month') }}
+      <p class="text-sm text-body-muted">Today {{ b.used.day }} of {{ b.limits.day }}. {{ left if left > 0 else 0 }} left this month.</p>
+    </div>
+    {% endfor %}
+    <div class="card-quiet p-5 space-y-3">
+      {{ ui.datum(text_cap, 'AI text calls a day') }}
+      <p class="text-sm text-body-muted">Per visitor today, per user once login ships. Totals are on Pulse.</p>
+    </div>
+  </div>
+  <p class="text-sm text-body-muted">Change a cap without a deploy: <code>fly secrets set JOBOT_CAP_VOICE_MONTH=40 -a &lt;app&gt;</code>. <code>LLM_DISABLED=1</code> stops everything.</p>
+  {% endcall %}
+
+  {% call ui.section(title='Nudges') %}
+  <div class="space-y-2">
+    {% for n in nudges %}
+    <div class="card-quiet p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+      <div class="min-w-0">
+        <div class="font-semibold">{{ n.id }} {{ ui.chip('on' if n.on else 'off') }} <span class="text-sm text-body-muted">{{ n.kind }}{% if n.pages %} · {{ n.pages | join(', ') }}{% endif %}</span></div>
+        <p class="text-sm text-body-muted">{{ n.note }}</p>
+      </div>
+      <div class="flex gap-6 text-sm tabular-nums shrink-0">
+        <span>{{ n.shown }} shown</span><span>{{ n.clicked }} clicked</span><span>{{ n.dismissed }} dismissed</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="text-sm text-body-muted">Rules live in <code>core/nudges.py</code> and ship to everyone. Turn one off here with <code>JOBOT_NUDGES_OFF=add_resume</code>.</p>
+  {% endcall %}
+</div>
+{% endblock %}

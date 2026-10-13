@@ -14,7 +14,16 @@
    Aligned with the "simplicity over escape hatches" memory: the
    file uploader replaces ~50 lines of html2canvas machinery.
    #}
-<div x-data="feedbackWidget()" x-init="init()">
+{#- REQ-058: the button introduces itself once after the first fit score
+    (core/nudges.py "feedback_intro"), and pages can ask gently by firing
+    `feedback-open` with a prompt (slow search, after practice). -#}
+{% set fb_intro = nudge_pick(active_tab | default(''), 'feedback') %}
+<div x-data="feedbackWidget()" x-init="init({{ 'true' if fb_intro else 'false' }})"
+     @feedback-open.window="openModal($event.detail && $event.detail.prompt)">
+
+  <div x-show="intro" x-cloak x-transition.opacity class="feedback-intro" role="status">
+    {{ _('feedback.intro') }}
+  </div>
 
   <button type="button"
           @click="openModal()"
@@ -42,7 +51,7 @@
 
       <div class="flex items-start justify-between gap-3 mb-3">
         <div>
-          <div class="font-semibold text-base">{{ _('feedback.title') }}</div>
+          <div class="font-semibold text-base" data-def="{{ _('feedback.title') }}" x-text="prompt || $el.dataset.def">{{ _('feedback.title') }}</div>
           <div class="text-xs text-body-muted mt-0.5">{{ _('feedback.subtitle') }}</div>
         </div>
         <button type="button"
@@ -141,6 +150,8 @@
     return {
       open: false,
       pulsing: false,
+      intro: false,
+      prompt: '',
       submitting: false,
       message: '',
       shotDataUrl: '',
@@ -148,7 +159,21 @@
       shotSizeLabel: '',
       shotError: '',
 
-      init() {
+      init(introDue) {
+        // REQ-058: say hello once, after the first fit score. The server stops
+        // offering it once "shown" is logged; localStorage covers the gap.
+        let introSeen = false;
+        try { introSeen = !!localStorage.getItem('feedback_intro_done'); } catch (_) {}
+        if (introDue && !introSeen) {
+          setTimeout(() => {
+            if (this.open) return;
+            try { localStorage.setItem('feedback_intro_done', '1'); } catch (_) {}
+            fetch('/nudges/feedback_intro/shown', { method: 'POST' }).catch(() => {});
+            this.pulsing = true; this.intro = true;
+            setTimeout(() => { this.pulsing = false; this.intro = false; }, 8000);
+          }, 2500);
+          return;
+        }
         // One-shot pulse after 10 minutes if the user hasn't opened yet.
         if (sessionStorage.getItem('feedback_nudged')) return;
         setTimeout(() => {
@@ -159,9 +184,11 @@
         }, 10 * 60 * 1000);
       },
 
-      openModal() {
+      openModal(prompt) {
+        this.prompt = typeof prompt === 'string' ? prompt : '';
         this.open = true;
         this.pulsing = false;
+        this.intro = false;
         sessionStorage.setItem('feedback_nudged', '1');
       },
 

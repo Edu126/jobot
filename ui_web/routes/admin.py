@@ -38,6 +38,20 @@ _MD = MarkdownIt("commonmark", {"html": False, "linkify": True}).enable("table")
 _MAX_SIDEBAR_REPORTS = 52
 
 
+@router.get("/admin/controls")
+@limiter.limit("60/hour")
+async def controls(request: Request):
+    """One place for the levers (REQ-058, REQ-059): usage caps with today's
+    and this month's use, and every nudge rule with its counts."""
+    from core import nudges
+    from core.llm import usage as llm_usage
+    return templates.TemplateResponse(request, "pages/admin_controls.html", {
+        "budgets": llm_usage.budgets_snapshot(),
+        "text_cap": llm_usage.MAX_LLM_CALLS_PER_DAY,
+        "nudges": nudges.stats(),
+    })
+
+
 @router.get("/admin/pulse")
 @limiter.limit("30/hour")
 async def pulse_latest(request: Request):

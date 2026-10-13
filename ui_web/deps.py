@@ -356,3 +356,9 @@ def error_snippet(key: str):
     i18n (en + es), never a hard-coded English string."""
     from fastapi.responses import HTMLResponse
     return HTMLResponse(f'<div class="text-error text-sm">{_html.escape(_i18n.translate(key))}</div>')
+
+
+# REQ-058: the one nudge banner for this page (partials/nudge_banner.html).
+from core import nudges as _nudges  # noqa: E402
+
+templates.env.globals["nudge_pick"] = _nudges.pick

@@ -790,6 +790,29 @@
     });
   </script>
   <script src="https://cdn.jsdelivr.net/npm/driver.js@1/dist/driver.js.iife.js"></script>
+  <script>
+    // REQ-058: the nudge banner (partials/nudge_banner.html). "shown" is
+    // reported once per browser session so the admin counts stay honest.
+    window.nudgeBanner = function (id, spotSel, copy) {
+      const post = (a) => fetch('/nudges/' + id + '/' + a, { method: 'POST' }).catch(() => {});
+      return {
+        gone: false,
+        seen() { try { const k = 'nudge_seen_' + id; if (!sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); post('shown'); } } catch (_) { post('shown'); } },
+        act(a) { post(a); },
+        dismiss() { this.gone = true; post('dismissed'); },
+        spot() {
+          post('clicked');
+          const el = spotSel && document.querySelector(spotSel);
+          if (!el) return;
+          if (window.driver) {
+            const d = window.driver.js.driver({ animate: !matchMedia('(prefers-reduced-motion: reduce)').matches,
+              onDestroyed: () => { try { el.focus(); } catch (_) {} } });
+            d.highlight({ element: spotSel, popover: { title: copy.title, description: copy.body, side: 'bottom', align: 'start' } });
+          } else { el.scrollIntoView({ block: 'center' }); el.focus(); }
+        },
+      };
+    };
+  </script>
 </head>
 {# `body_class` lets one page opt into the fixed-height workspace shell
    (`app-shell`, see app.css / ADR-012) without changing the layout of
@@ -899,6 +922,7 @@
      the default `py-16` for something tighter — 4rem of padding top and
      bottom is generous on a document and unaffordable on a fixed shell. #}
   <main class="{% block container_class %}max-w-7xl{% endblock %} mx-auto px-4 sm:px-6 {% block main_class %}py-16{% endblock %} flex-1 w-full">
+    {% block nudge %}{% include "partials/nudge_banner.html" %}{% endblock %}
     {% block content %}{% endblock %}
   </main>
 

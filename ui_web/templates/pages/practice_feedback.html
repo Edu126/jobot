@@ -63,6 +63,10 @@
         {{ ui.button(_('prep2.score.drill', name=comp_names.get(weakest.competency_id, weakest.competency_id)), variant='secondary', icon='ph-target', href=again_href ~ '?focus=' ~ weakest.competency_id) }}
         {% endif %}
       </div>
+      {# REQ-058: one quiet ask after practice #}
+      <p class="text-sm text-body-muted">{{ _('nudge.practice.line') }}
+        <button type="button" class="ui-link-quiet" data-prompt="{{ _('nudge.practice.prompt') }}"
+                @click="$dispatch('feedback-open', { prompt: $el.dataset.prompt })">{{ _('nudge.practice.cta') }}</button></p>
     </div>
   {% endcall %}
 
